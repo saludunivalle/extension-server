@@ -12,7 +12,7 @@ config();
 const drive = google.drive({ version: 'v3', auth: jwtClient });
 
 // Configuración de multer para almacenar los archivos temporalmente
-const upload = multer({ dest: 'uploads/' });
+const upload = multer({ dest: '/tmp/uploads/' });
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -334,37 +334,37 @@ app.post('/saveUser', async (req, res) => {
 
 // Ruta para manejar la subida de archivos a Google Drive
 app.post('/uploadFile', upload.single('anexo_documento'), async (req, res) => {
-    try {
-        const filePath = req.file.path;
-        const fileMetadata = {
-            name: req.file.originalname,
-            parents: ['12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'], // ID de la carpeta donde deseas guardar los archivos
-        };
+  try {
+      const filePath = req.file.path;
+      const fileMetadata = {
+          name: req.file.originalname,
+          parents: ['12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'], // ID de la carpeta donde deseas guardar los archivos
+      };
 
-        const media = {
-            mimeType: req.file.mimetype,
-            body: fs.createReadStream(filePath),
-        };
+      const media = {
+          mimeType: req.file.mimetype,
+          body: fs.createReadStream(filePath),
+      };
 
-        const file = await drive.files.create({
-            resource: fileMetadata,
-            media: media,
-            fields: 'id, webViewLink',
-        });
+      const file = await drive.files.create({
+          resource: fileMetadata,
+          media: media,
+          fields: 'id, webViewLink',
+      });
 
-        // Elimina el archivo temporal después de subirlo
-        try {
-            fs.unlinkSync(filePath);
-        } catch (error) {
-            console.error('Error al eliminar el archivo temporal:', error);
-        }
+      // Elimina el archivo temporal después de subirlo
+      try {
+          fs.unlinkSync(filePath);
+      } catch (error) {
+          console.error('Error al eliminar el archivo temporal:', error);
+      }
 
-        // Devuelve el enlace para visualizar el archivo
-        res.status(200).json({ fileUrl: file.data.webViewLink });
-    } catch (error) {
-        console.error('Error al subir el archivo a Google Drive:', error);
-        res.status(500).json({ error: 'Error al subir el archivo a Google Drive' });
-    }
+      // Devuelve el enlace para visualizar el archivo
+      res.status(200).json({ fileUrl: file.data.webViewLink });
+  } catch (error) {
+      console.error('Error al subir el archivo a Google Drive:', error);
+      res.status(500).json({ error: 'Error al subir el archivo a Google Drive' });
+  }
 });
 
 app.get('/getRequests', async (req, res) => {
