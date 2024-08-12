@@ -47,7 +47,7 @@ app.post('/auth/google', async (req, res) => {
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
     // Comprobar si el usuario ya existe en la hoja
-    const userCheckRange = 'USUARIOS!A2:A'; // Comprueba solo la columna de ID de usuario
+    const userCheckRange = 'USUARIOS!A2:A'; 
     const userCheckResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: userCheckRange,
@@ -101,7 +101,7 @@ app.get('/getLastId', async (req, res) => {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${sheetName}!A:A`, // Solo obtenemos la columna A que contiene los IDs
+      range: `${sheetName}!A:A`, // Solo la columna A que contiene los IDs
     });
 
     const lastRow = response.data.values.length;
@@ -121,7 +121,7 @@ app.post('/saveProgress', async (req, res) => {
     const spreadsheetId = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
     
-    // Formatear la fecha en formato dd/mm/yyyy
+    // Formato dd/mm/yyyy
     const formatFechaSolicitud = (fecha) => {
       const [year, month, day] = fecha.split('-');
       return `${day}/${month}/${year}`;
