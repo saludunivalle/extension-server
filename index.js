@@ -136,10 +136,10 @@ app.post('/saveProgress', async (req, res) => {
 
     switch (activeStep) {
       case 0:
-        // Guardar en SOLICITUDES y RESPUESTAS (primeras columnas)
-        // SOLICITUDES
-        const solicitudesRange = `SOLICITUDES!A${parseInt(formData.id_solicitud) + 1}:F${parseInt(formData.id_solicitud) + 1}`;
-        const solicitudesValues = [
+        // Guardar en ETAPAS y SOLICITUDES (primeras columnas)
+        // ETAPAS
+        const etapasRange = `ETAPAS!A${parseInt(formData.id_solicitud) + 1}:F${parseInt(formData.id_solicitud) + 1}`;
+        const etapasValues = [
           [
             formData.id_solicitud,
             id_usuario,
@@ -150,9 +150,9 @@ app.post('/saveProgress', async (req, res) => {
           ]
         ];
 
-        // RESPUESTAS - Primeras columnas
-        const respuestasRange = `RESPUESTAS!A${parseInt(formData.id_solicitud) + 1}:E${parseInt(formData.id_solicitud) + 1}`;
-        const respuestasValues = [
+        // SOLICITUDES - Primeras columnas
+        const solicitudesRange = `SOLICITUDES!A${parseInt(formData.id_solicitud) + 1}:E${parseInt(formData.id_solicitud) + 1}`;
+        const solicitudesValues = [
           [
             formData.id_solicitud,
             formattedDate, // fecha_solicitud formateada
@@ -166,30 +166,31 @@ app.post('/saveProgress', async (req, res) => {
         await Promise.all([
           sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: solicitudesRange,
+            range: etapasRange,
             valueInputOption: 'RAW',
             resource: {
-              values: solicitudesValues,
+              values: etapasValues,
             },
           }),
           sheets.spreadsheets.values.update({
             spreadsheetId,
-            range: respuestasRange,
+            range: solicitudesRange,
             valueInputOption: 'RAW',
             resource: {
-              values: respuestasValues,
+              values: solicitudesValues,
             },
           })
         ]);
         break;
 
       case 1:
-        // Guardar en RESPUESTAS - Columnas para el paso 1
-        range = `RESPUESTAS!F${parseInt(formData.id_solicitud) + 1}:J${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES - Columnas para el paso 1
+        range = `SOLICITUDES!F${parseInt(formData.id_solicitud) + 1}:K${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
             formData.tipo,
             formData.modalidad,
+            formData.tipo_oferta, 
             formData.ofrecido_por,
             formData.unidad_academica,
             formData.ofrecido_para
@@ -198,13 +199,13 @@ app.post('/saveProgress', async (req, res) => {
         break;
 
       case 2:
-        // Guardar en RESPUESTAS - Columnas para el paso 2
-        range = `RESPUESTAS!K${parseInt(formData.id_solicitud) + 1}:P${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES - Columnas para el paso 2
+        range = `SOLICITUDES!L${parseInt(formData.id_solicitud) + 1}:Q${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
-            formData.intensidad_horaria,
-            formData.horas_modalidad,
-            formData.horas_trabj_ind,
+            formData.total_horas,
+            formData.horas_trabajo_presencial,
+            formData.horas_sincronicas,
             formData.creditos,
             formData.cupo_min,
             formData.cupo_max
@@ -213,11 +214,12 @@ app.post('/saveProgress', async (req, res) => {
         break;
 
       case 3:
-        // Guardar en RESPUESTAS - Columnas para el paso 3
-        range = `RESPUESTAS!Q${parseInt(formData.id_solicitud) + 1}:X${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES - Columnas para el paso 3
+        range = `SOLICITUDES!R${parseInt(formData.id_solicitud) + 1}:Z${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
             formData.nombre_coordinador,
+            formData.correo_coordinador,
             formData.tel_coordinador,
             formData.profesor_participante,
             formData.formas_evaluacion,
@@ -230,8 +232,8 @@ app.post('/saveProgress', async (req, res) => {
         break;
 
       case 4:
-        // Guardar en RESPUESTAS - Columnas para el paso 4
-        range = `RESPUESTAS!Y${parseInt(formData.id_solicitud) + 1}:AI${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES - Columnas para el paso 4
+        range = `SOLICITUDES!AA${parseInt(formData.id_solicitud) + 1}:AN${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
             formData.becas_convenio,
@@ -240,16 +242,19 @@ app.post('/saveProgress', async (req, res) => {
             formData.becas_otros,
             formData.becas_total,
             formData.fechas_actividad,
+            formData.fecha_por_meses,
+            formData.fecha_inicio,
+            formData.fecha_final,
             formData.organizacion_actividad,
             formData.nombre_firma,
             formData.cargo_firma,
             formData.firma,
-            formData.anexo_documento
+            formData.matriz_riesgo
           ]
         ];
 
         // Actualizar el estado a "Terminado" cuando se complete el último paso
-        const updateRange = `SOLICITUDES!F${parseInt(formData.id_solicitud) + 1}`;  // Columna F para etapa_actual
+        const updateRange = `ETAPAS!F${parseInt(formData.id_solicitud) + 1}`;  // Columna F para etapa_actual
         const updateValues = [['Terminado']];
 
         await sheets.spreadsheets.values.update({
@@ -333,12 +338,12 @@ app.post('/saveUser', async (req, res) => {
   }); 
 
 // Ruta para manejar la subida de archivos a Google Drive
-app.post('/uploadFile', upload.single('anexo_documento'), async (req, res) => {
+app.post('/uploadFile', upload.single('matriz_riesgo'), async (req, res) => {
   try {
       const filePath = req.file.path;
       const fileMetadata = {
           name: req.file.originalname,
-          parents: ['12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'], // ID de la carpeta donde deseas guardar los archivos
+          parents: ['12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'], 
       };
 
       const media = {
@@ -373,20 +378,20 @@ app.get('/getRequests', async (req, res) => {
     const spreadsheetId = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
-    // Obtener solicitudes activas desde la hoja SOLICITUDES
+    // Obtener etapas activas desde la hoja ETAPAS
     const activeResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `SOLICITUDES!A2:F`,
+      range: `ETAPAS!A2:F`,
     });
 
     const activeRequests = activeResponse.data.values.filter(
       (row) => row[1] === userId && row[5] === 'En progreso'
     );
 
-    // Obtener solicitudes terminadas desde la hoja SOLICITUDES
+    // Obtener etapas terminadas desde la hoja ETAPAS
     const completedResponse = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `SOLICITUDES!A2:F`,
+      range: `ETAPAS!A2:F`,
     });
 
     const completedRequests = completedResponse.data.values.filter(
@@ -398,8 +403,8 @@ app.get('/getRequests', async (req, res) => {
       completedRequests,
     });
   } catch (error) {
-    console.error('Error al obtener las solicitudes:', error);
-    res.status(500).json({ error: 'Error al obtener las solicitudes' });
+    console.error('Error al obtener las etapas:', error);
+    res.status(500).json({ error: 'Error al obtener las etapas' });
   }
 });
 
@@ -409,10 +414,9 @@ app.get('/getFormData', async (req, res) => {
     const spreadsheetId = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
-    // Obtener los detalles de la solicitud desde la hoja RESPUESTAS
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `RESPUESTAS!A${parseInt(id_solicitud) + 1}:AI${parseInt(id_solicitud) + 1}`,
+      range: `SOLICITUDES!A${parseInt(id_solicitud) + 1}:AN${parseInt(id_solicitud) + 1}`,
     });
 
     if (!response.data.values || response.data.values.length === 0) {
@@ -429,34 +433,39 @@ app.get('/getFormData', async (req, res) => {
       nombre_dependencia: formData[4],
       tipo: formData[5],
       modalidad: formData[6],
-      ofrecido_por: formData[7],
-      unidad_academica: formData[8],
-      ofrecido_para: formData[9],
-      intensidad_horaria: formData[10],
-      horas_modalidad: formData[11],
-      horas_trabj_ind: formData[12],
-      creditos: formData[13],
-      cupo_min: formData[14],
-      cupo_max: formData[15],
-      nombre_coordinador: formData[16],
-      tel_coordinador: formData[17],
-      profesor_participante: formData[18],
-      formas_evaluacion: formData[19],
-      certificado_solicitado: formData[20],
-      calificacion_minima: formData[21],
-      razon_no_certificado: formData[22],
-      valor_inscripcion: formData[23],
-      becas_convenio: formData[24],
-      becas_estudiantes: formData[25],
-      becas_docentes: formData[26],
-      becas_otros: formData[27],
-      becas_total: formData[28],
-      fechas_actividad: formData[29],
-      organizacion_actividad: formData[30],
-      nombre_firma: formData[31],
-      cargo_firma: formData[32],
-      firma: formData[33],
-      anexo_documento: formData[34]
+      tipo_oferta: formData[7],
+      ofrecido_por: formData[8],
+      unidad_academica: formData[9],
+      ofrecido_para: formData[10],
+      total_horas: formData[11],
+      horas_trabajo_presencial: formData[12],
+      horas_sincronicas: formData[13],
+      creditos: formData[14],
+      cupo_min: formData[15],
+      cupo_max: formData[16],
+      nombre_coordinador: formData[17],
+      correo_coordinador: formData[18],
+      tel_coordinador: formData[19],
+      profesor_participante: formData[20],
+      formas_evaluacion: formData[21],
+      certificado_solicitado: formData[22],
+      calificacion_minima: formData[23],
+      razon_no_certificado: formData[24],
+      valor_inscripcion: formData[25],
+      becas_convenio: formData[266],
+      becas_estudiantes: formData[27],
+      becas_docentes: formData[29],
+      becas_otros: formData[29],
+      becas_total: formData[30],
+      fechas_actividad: formData[31],
+      fecha_por_meses: formData[32],
+      fecha_inicio: formData[33],
+      fecha_final:formData[34],
+      organizacion_actividad: formData[35],
+      nombre_firma: formData[36],
+      cargo_firma: formData[37],
+      firma: formData[38],
+      matriz_riesgo: formData[39]
     });
   } catch (error) {
     console.error('Error al obtener los datos del formulario:', error);
@@ -464,6 +473,54 @@ app.get('/getFormData', async (req, res) => {
   }
 });
 
+
+app.get('/getProgramasYOficinas', async (req, res) => {
+  try {
+    const spreadsheetId = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
+    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'PROGRAMAS!A2:K500', 
+    });
+
+    const rows = response.data.values;
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ error: 'No se encontraron datos en la hoja de Google Sheets' });
+    }
+
+    const programas = [];
+    const oficinas = new Set(); 
+
+    rows.forEach(row => {
+      if (row[4] || row[5] || row[6] || row[7]) { 
+        programas.push({
+          Programa: row[0],
+          Snies: row[1],
+          Sede: row[2],
+          Facultad: row[3],
+          Escuela: row[4],
+          Departamento: row[5],
+          Sección: row[6] || 'General',
+          PregradoPosgrado: row[7],
+        });
+      }
+
+      if (row[9]) { 
+        oficinas.add(row[9]);
+      }
+    });
+
+    res.status(200).json({
+      programas,
+      oficinas: Array.from(oficinas), 
+    });
+  } catch (error) {
+    console.error('Error al obtener datos de la hoja de Google Sheets:', error);
+    res.status(500).json({ error: 'Error al obtener datos de la hoja de Google Sheets' });
+  }
+});
 
 
 app.listen(PORT, () => {
