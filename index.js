@@ -120,7 +120,7 @@ app.post('/saveProgress', async (req, res) => {
     const { id_usuario, formData, activeStep } = req.body;
     const spreadsheetId = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
-    
+
     // Formato dd/mm/yyyy
     const formatFechaSolicitud = (fecha) => {
       const [year, month, day] = fecha.split('-');
@@ -144,8 +144,7 @@ app.post('/saveProgress', async (req, res) => {
             formData.id_solicitud,
             id_usuario,
             formattedDate, // fecha_solicitud formateada
-            formData.nombre_dependencia, 
-            formData.nombre_solicitante,
+            formData.nombre_solicitante, 
             'En progreso' // estado
           ]
         ];
@@ -184,8 +183,8 @@ app.post('/saveProgress', async (req, res) => {
         break;
 
       case 1:
-        // Guardar en SOLICITUDES - Columnas para el paso 1
-        range = `SOLICITUDES!F${parseInt(formData.id_solicitud) + 1}:K${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES2 - Columnas para el paso 1
+        range = `SOLICITUDES2!F${parseInt(formData.id_solicitud) + 1}:K${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
             formData.tipo,
@@ -199,8 +198,8 @@ app.post('/saveProgress', async (req, res) => {
         break;
 
       case 2:
-        // Guardar en SOLICITUDES - Columnas para el paso 2
-        range = `SOLICITUDES!L${parseInt(formData.id_solicitud) + 1}:Q${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES2 - Columnas para el paso 2
+        range = `SOLICITUDES2!L${parseInt(formData.id_solicitud) + 1}:Q${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
             formData.total_horas,
@@ -214,8 +213,8 @@ app.post('/saveProgress', async (req, res) => {
         break;
 
       case 3:
-        // Guardar en SOLICITUDES - Columnas para el paso 3
-        range = `SOLICITUDES!R${parseInt(formData.id_solicitud) + 1}:Z${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES2 - Columnas para el paso 3
+        range = `SOLICITUDES2!R${parseInt(formData.id_solicitud) + 1}:Z${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
             formData.nombre_coordinador,
@@ -232,8 +231,8 @@ app.post('/saveProgress', async (req, res) => {
         break;
 
       case 4:
-        // Guardar en SOLICITUDES - Columnas para el paso 4
-        range = `SOLICITUDES!AA${parseInt(formData.id_solicitud) + 1}:AN${parseInt(formData.id_solicitud) + 1}`;
+        // Guardar en SOLICITUDES2 - Columnas para el paso 4
+        range = `SOLICITUDES2!AA${parseInt(formData.id_solicitud) + 1}:AN${parseInt(formData.id_solicitud) + 1}`;
         values = [
           [
             formData.becas_convenio,
@@ -289,6 +288,7 @@ app.post('/saveProgress', async (req, res) => {
     res.status(500).json({ error: 'Error guardando el progreso', status: false });
   }
 });
+
 
 // Ruta para guardar el usuario en la hoja de Google Sheets
 app.post('/saveUser', async (req, res) => {
@@ -452,15 +452,15 @@ app.get('/getFormData', async (req, res) => {
       calificacion_minima: formData[23],
       razon_no_certificado: formData[24],
       valor_inscripcion: formData[25],
-      becas_convenio: formData[266],
+      becas_convenio: formData[26],
       becas_estudiantes: formData[27],
-      becas_docentes: formData[29],
+      becas_docentes: formData[28],
       becas_otros: formData[29],
       becas_total: formData[30],
       fechas_actividad: formData[31],
       fecha_por_meses: formData[32],
       fecha_inicio: formData[33],
-      fecha_final:formData[34],
+      fecha_final: formData[34],
       organizacion_actividad: formData[35],
       nombre_firma: formData[36],
       cargo_firma: formData[37],
@@ -472,6 +472,7 @@ app.get('/getFormData', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener los datos del formulario' });
   }
 });
+
 
 
 app.get('/getProgramasYOficinas', async (req, res) => {
