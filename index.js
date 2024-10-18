@@ -202,7 +202,7 @@ app.post('/saveProgress', async (req, res) => {
         ]
       ];
 
-      const solicitudesRange = `SOLICITUDES!A${nextRow}:F${nextRow}`;
+      const solicitudesRange = `SOLICITUDES!A${nextRow}:L${nextRow}`;  // Asegúrate de que el rango cubra todas las columnas necesarias
       const solicitudesValues = [
         [
           idSolicitud,
@@ -210,7 +210,14 @@ app.post('/saveProgress', async (req, res) => {
           formData.objetivo_general || '',
           formData.objetivos_especificos || '',
           formData.justificacion || '',
-          formData.descripcion || ''
+          formData.descripcion || '',
+          formData.alcance || '',
+          formData.metodologia || '',
+          formData.dirigido_a || '',
+          formData.programa_contenidos || '',
+          formData.duracion || '',
+          formData.certificacion || '',
+          formData.recursos || ''
         ]
       ];
 
