@@ -115,6 +115,7 @@ app.post('/guardarProgreso', async (req, res) => {
     const sheets = getSpreadsheet();
     let sheetName = '';
     let columnas = [];
+    const fechaActual = new Date().toLocaleDateString();
 
     // Identificar la hoja y las columnas según el formulario
     switch (hoja) {
@@ -224,41 +225,40 @@ app.post('/guardarProgreso', async (req, res) => {
       resource: { values: [valores] }, // Actualiza los valores del paso
     });
 
-    // Ahora actualizamos la hoja de ETAPAS
-    const etapaActual = `Paso ${paso}`;
-    const estado = paso === 5 ? 'Completado' : 'En progreso';
-    const fechaActual = new Date().toLocaleDateString();
+    // Definir el estado global de la solicitud
+    const estadoGlobal = (hoja === 5 && paso === 5) ? 'Completado' : 'En progreso';
+    const etapaActual = hoja; // Guardar solo el número del formulario; // Actualizamos para que sea "Formulario" en lugar de "Paso"
 
     // Buscar el id_solicitud en la hoja ETAPAS
     const etapasResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `ETAPAS!A:A`,
+      range: `ETAPAS!A:A`, // Suponiendo que los ID de solicitud están en la columna A
     });
 
     const etapasRows = etapasResponse.data.values || [];
     let filaEtapas = etapasRows.findIndex((row) => row[0] === id_solicitud.toString());
 
+    // Si no existe un registro en ETAPAS para esta solicitud, agregarlo
     if (filaEtapas === -1) {
-      // Si no existe un registro en ETAPAS para esta solicitud, agregarlo
       filaEtapas = etapasRows.length + 1;
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
         range: `ETAPAS!A${filaEtapas}`,
         valueInputOption: 'RAW',
         resource: {
-          values: [[id_solicitud, userData.id_usuario, fechaActual, userData.name, etapaActual, estado, formData.dependencia || '']]
+          values: [[id_solicitud, userData.id, fechaActual, userData.name, etapaActual, estadoGlobal, formData.nombre_actividad || '', paso]]
         },
       });
     } else {
-      filaEtapas += 1; // Ajustar el índice de la fila para trabajar con la API (basada en 1)
+      // Si ya existe un registro, actualizamos la fila con el estado y la etapa actual
+      filaEtapas += 1; // Ajustamos el índice de la fila para trabajar con la API (basada en 1)
 
-      // Actualizar el registro en ETAPAS
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
-        range: `ETAPAS!B${filaEtapas}:G${filaEtapas}`,
+        range: `ETAPAS!B${filaEtapas}:H${filaEtapas}`, // Actualiza las columnas correspondientes
         valueInputOption: 'RAW',
         resource: {
-          values: [[userData.id_usuario, fechaActual, userData.name, etapaActual, estado, formData.dependencia || '']],
+          values: [[userData.id, fechaActual, userData.name, etapaActual, estadoGlobal, formData.nombre_actividad || '', paso]],
         },
       });
     }
@@ -330,6 +330,66 @@ app.get('/getRequests', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener las etapas' });
   }
 });
+
+// Extraer solicitudes en progreso
+app.get('/getActiveRequests', async (req, res) => {
+  try {
+    const { userId } = req.query;
+    const sheets = getSpreadsheet();
+
+    const etapasResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `ETAPAS!A2:I`, // Asegúrate de incluir la columna de formulario y paso
+    });
+
+    const rows = etapasResponse.data.values;
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ error: 'No se encontraron solicitudes activas' });
+    }
+
+    const activeRequests = rows.filter((row) => row[1] === userId && row[5] === 'En progreso')
+      .map((row) => ({
+        idSolicitud: row[0], // id_solicitud
+        formulario: parseInt(row[4]), // columna para el formulario
+        paso: parseInt(row[7]), // columna para el paso
+        nombre_actividad: row[6] // nombre de la actividad
+      }));
+
+    res.status(200).json(activeRequests);
+  } catch (error) {
+    console.error('Error al obtener solicitudes activas:', error);
+    res.status(500).json({ error: 'Error al obtener solicitudes activas' });
+  }
+});
+
+
+// Extraer solicitudes terminadas
+app.get('/getCompletedRequests', async (req, res) => {
+  try {
+    const { userId } = req.query; // Asegúrate de recibir el id del usuario
+    const sheets = getSpreadsheet();
+
+    // Obtener la hoja de ETAPAS
+    const etapasResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `ETAPAS!A2:H`, // Ajustar el rango según tu estructura
+    });
+
+    const rows = etapasResponse.data.values;
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ error: 'No se encontraron solicitudes terminadas' });
+    }
+
+    // Filtrar las solicitudes que están terminadas (completadas)
+    const completedRequests = rows.filter((row) => row[1] === userId && row[5] === 'Completado');
+
+    res.status(200).json(completedRequests);
+  } catch (error) {
+    console.error('Error al obtener solicitudes terminadas:', error);
+    res.status(500).json({ error: 'Error al obtener solicitudes terminadas' });
+  }
+});
+
 
 app.get('/getProgramasYOficinas', async (req, res) => {
   try {
