@@ -10,29 +10,14 @@ const { jwtClient, oAuth2Client } = require('./google');
 config();
 
 const drive = google.drive({ version: 'v3', auth: jwtClient });
-
-// Configuración de multer para almacenar los archivos temporalmente
-const upload = multer({ dest: '/tmp/uploads/' });
-
-// Configuración del Servidor
 const app = express();
+const upload = multer({ dest: '/tmp/uploads/' });
 const PORT = process.env.PORT || 3001;
 
 app.use(bodyParser.json());
 app.use(cors());
 
-// Middleware de CORS y body-parser
-app.use(bodyParser.json());
-app.use(cors());
-
-// Ruta Raíz
-app.get('/', (req, res) => {
-  res.send('El servidor de extensión está funcionando correctamente');
-});
-
-// ==========================================================================
-// Funciones Utilitarias
-// ==========================================================================
+// Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
 const SPREADSHEET_ID = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
 
@@ -40,11 +25,9 @@ const SPREADSHEET_ID = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
 // Rutas de Autenticación y Usuarios
 // ==========================================================================
 
-// Ruta para manejar el inicio de sesión con Google y guardar el usuario en la hoja de Google Sheets
 app.post('/auth/google', async (req, res) => {
   try {
     const { token } = req.body;
-
     const ticket = await oAuth2Client.verifyIdToken({
       idToken: token,
       audience: process.env.CLIENT_ID,
@@ -55,11 +38,7 @@ app.post('/auth/google', async (req, res) => {
     const userEmail = payload['email'];
     const userName = payload['name'];
 
-    console.log('Datos del usuario obtenidos del token:', { userId, userEmail, userName });
-
     const sheets = getSpreadsheet();
-
-    // Comprobar si el usuario ya existe en la hoja
     const userCheckRange = 'USUARIOS!A2:A';
     const userCheckResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -76,13 +55,8 @@ app.post('/auth/google', async (req, res) => {
         range: userRange,
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
-        resource: {
-          values: userValues,
-        },
+        resource: { values: userValues },
       });
-      console.log('Usuario guardado correctamente.');
-    } else {
-      console.log('El usuario ya existe en la hoja de USUARIOS.');
     }
 
     res.status(200).json({
@@ -99,13 +73,10 @@ app.post('/auth/google', async (req, res) => {
   }
 });
 
-// Ruta para guardar el usuario en la hoja de Google Sheets
 app.post('/saveUser', async (req, res) => {
   try {
     const { id, email, name } = req.body;
     const sheets = getSpreadsheet();
-
-    // Comprobar si el usuario ya existe en la hoja
     const userCheckRange = 'USUARIOS!A2:A';
     const userCheckResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
@@ -122,13 +93,8 @@ app.post('/saveUser', async (req, res) => {
         range: userRange,
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
-        resource: {
-          values: userValues,
-        },
+        resource: { values: userValues },
       });
-      console.log('Usuario guardado correctamente.');
-    } else {
-      console.log('El usuario ya existe en la hoja de USUARIOS.');
     }
 
     res.status(200).json({ success: true });
@@ -139,154 +105,204 @@ app.post('/saveUser', async (req, res) => {
 });
 
 // ==========================================================================
-// Rutas de Formularios y Datos
+// Rutas de Formularios y Guardado de Progreso
 // ==========================================================================
 
-// Ruta para obtener el último ID de la hoja de Google Sheets
-app.get('/getLastId', async (req, res) => {
-  try {
-    const { sheetName } = req.query;
-    const sheets = getSpreadsheet();
+app.post('/guardarProgreso', async (req, res) => {
+  const { id_solicitud, formData, paso, hoja, userData } = req.body;
 
+  try {
+    const sheets = getSpreadsheet();
+    let sheetName = '';
+    let columnas = [];
+
+    // Identificar la hoja y las columnas según el formulario
+    switch (hoja) {
+        case 1:
+          sheetName = 'SOLICITUDES';
+          columnas = {
+            1: ['B', 'C', 'D'], // Columnas para los datos del paso 1
+            2: ['E', 'F'], // Columnas para los datos del paso 2
+            3: ['G', 'H', 'I'], // Columnas para los datos del paso 3
+            4: ['J', 'K'],      // Columnas para los datos del paso 4
+            5: ['L', 'M'],      // Columnas para los datos del paso 5
+          };
+          break;
+          case 2:
+            sheetName = 'SOLICITUDES2';
+            columnas = {
+              1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'], // Columnas para los datos del paso 1
+              2: ['J', 'K', 'L'], // Columnas para los datos del paso 2
+              3: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // Columnas para los datos del paso 3
+              4: ['U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC'],      // Columnas para los datos del paso 4
+              5: ['AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL'],      // Columnas para los datos del paso 5
+            };
+            break;
+          case 3:
+            sheetName = 'SOLICITUDES3';
+            columnas = {
+              1: ['B', 'C'], // Columnas para los datos del paso 1 (B a C)
+              2: [
+                'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 
+                'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 
+                'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 
+                'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 
+                'BP', 'BQ', 'BR', 'BS', 'BT', 'BU', 'BV', 'BW', 'BX', 'BY', 'BZ', 'CA', 'CB', 'CC', 'CD', 
+                'CE', 'CF', 'CG', 'CH', 'CI'
+              ], // Columnas para los datos del paso 2 (D a CI)
+              3: ['CJ', 'CK', 'CL'], // Columnas para los datos del paso 3 (CJ a CL)
+            };
+            break;
+
+            case 4:
+              sheetName = 'SOLICITUDES4';
+              columnas = {
+                1: ['B', 'C'], // Paso 1 va de B a C
+                2: ['D', 'E', 'F', 'G', 'H', 'I'], // Paso 2 va de D a I
+                3: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'], // Paso 3 va de J a X
+                4: ['Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO'], // Paso 4 va de Y a AO
+                5: ['AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK'], // Paso 5 va de AP a BK
+              };            
+            break;
+            case 5:
+              sheetName = 'SOLICITUDES5';
+              columnas = {
+                1: ['B', 'C', 'D', 'E', 'F'], // Paso 1 va de B a F
+                2: ['G', 'H', 'I', 'J'], // Paso 2 va de G a J
+                3: ['K', 'L', 'M', 'N', 'O'], // Paso 3 va de K a O
+                4: ['P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // Paso 4 va de P a Z
+                5: ['AA', 'AB', 'AC'] // Paso 5 va de AA a AC
+              };            
+            break;
+      default:
+        return res.status(400).json({ error: 'Hoja no válida' });
+    }
+
+    // Buscar el id_solicitud en la primera columna (columna A) en la hoja correspondiente
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${sheetName}!A:A`,
     });
 
-    const lastRow = response.data.values.length;
-    const lastId = lastRow > 1 ? response.data.values[lastRow - 1][0] : 0;
+    const rows = response.data.values || [];
+    let fila = rows.findIndex((row) => row[0] === id_solicitud.toString());
 
+    // Si no existe, agrega una nueva fila
+    if (fila === -1) {
+      fila = rows.length + 1;
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${sheetName}!A${fila}`,
+        valueInputOption: 'RAW',
+        resource: { values: [[id_solicitud]] }, // Inserta el id_solicitud en la primera columna
+      });
+    } else {
+      fila += 1; // Ajustar el índice de la fila para trabajar con la API (basada en 1)
+    }
+
+
+    // Actualizar el progreso del formulario
+    const columnasPaso = columnas[paso];
+    const valores = Object.values(formData);
+
+    // Agrega los logs para verificar las columnas y los valores enviados
+    console.log('Columnas esperadas:', columnasPaso.length);
+    console.log('Valores enviados:', valores.length);
+    console.log('Valores enviados:', valores);
+
+    if (valores.length !== columnasPaso.length) {
+      return res.status(400).json({ error: 'Número de columnas no coincide con los valores' });
+    }
+
+    const columnaInicial = columnasPaso[0]; // Columna inicial
+    const columnaFinal = columnasPaso[columnasPaso.length - 1]; // Columna final
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!${columnaInicial}${fila}:${columnaFinal}${fila}`,
+      valueInputOption: 'RAW',
+      resource: { values: [valores] }, // Actualiza los valores del paso
+    });
+
+    // Ahora actualizamos la hoja de ETAPAS
+    const etapaActual = `Paso ${paso}`;
+    const estado = paso === 5 ? 'Completado' : 'En progreso';
+    const fechaActual = new Date().toLocaleDateString();
+
+    // Buscar el id_solicitud en la hoja ETAPAS
+    const etapasResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `ETAPAS!A:A`,
+    });
+
+    const etapasRows = etapasResponse.data.values || [];
+    let filaEtapas = etapasRows.findIndex((row) => row[0] === id_solicitud.toString());
+
+    if (filaEtapas === -1) {
+      // Si no existe un registro en ETAPAS para esta solicitud, agregarlo
+      filaEtapas = etapasRows.length + 1;
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `ETAPAS!A${filaEtapas}`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: [[id_solicitud, userData.id_usuario, fechaActual, userData.name, etapaActual, estado, formData.dependencia || '']]
+        },
+      });
+    } else {
+      filaEtapas += 1; // Ajustar el índice de la fila para trabajar con la API (basada en 1)
+
+      // Actualizar el registro en ETAPAS
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `ETAPAS!B${filaEtapas}:G${filaEtapas}`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: [[userData.id_usuario, fechaActual, userData.name, etapaActual, estado, formData.dependencia || '']],
+        },
+      });
+    }
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('Error al guardar el progreso:', error);
+    res.status(500).json({ error: 'Error al guardar el progreso' });
+  }
+});
+
+
+
+// ==========================================================================
+// Otras rutas auxiliares
+// ==========================================================================
+
+
+
+
+// Ruta para obtener el último ID
+app.get('/getLastId', async (req, res) => {
+  const { sheetName } = req.query;
+  try {
+    const sheets = getSpreadsheet();
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A:A`, // Columna A contiene el id_solicitud
+    });
+    const lastRow = response.data.values ? response.data.values.length : 0;
+    const lastId = lastRow > 1 ? parseInt(response.data.values[lastRow - 1][0], 10) : 0;
     res.status(200).json({ lastId });
   } catch (error) {
     console.error('Error al obtener el último ID:', error);
-    res.status(500).json({ error: 'Error al obtener el último ID', success: false });
-  }
-});
-
-// Ruta para guardar el progreso del formulario
-app.post('/saveProgress', async (req, res) => {
-  try {
-    const { id_usuario, formData, activeStep } = req.body;
-
-    console.log("Recibido del frontend:", formData);
-    const sheets = getSpreadsheet();
-
-    let idSolicitud = formData.id_solicitud;
-
-    // Obtener el próximo ID si no existe un ID de solicitud
-    if (!idSolicitud) {
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: 'ETAPAS!A:A',
-      });
-
-      const rows = response.data.values;
-      idSolicitud = rows && rows.length > 1 ? rows.length : 1;
-      formData.id_solicitud = idSolicitud.toString();
-    }
-
-    console.log('Datos procesados para guardar:', { idSolicitud, formData, activeStep });
-
-    const nextRow = parseInt(idSolicitud) + 1;
-
-    if (activeStep === 0) {
-      const etapasRange = `ETAPAS!A${nextRow}:F${nextRow}`;
-      const etapasValues = [
-        [
-          idSolicitud,
-          id_usuario,
-          formData.fecha_solicitud || new Date().toLocaleDateString('es-ES'),
-          formData.nombre_solicitante || '',
-          'En progreso',
-          'En progreso'
-        ]
-      ];
-
-      const solicitudesRange = `SOLICITUDES!A${nextRow}:L${nextRow}`;  // Asegúrate de que el rango cubra todas las columnas necesarias
-      const solicitudesValues = [
-        [
-          idSolicitud,
-          formData.introduccion || '',
-          formData.objetivo_general || '',
-          formData.objetivos_especificos || '',
-          formData.justificacion || '',
-          formData.descripcion || '',
-          formData.alcance || '',
-          formData.metodologia || '',
-          formData.dirigido_a || '',
-          formData.programa_contenidos || '',
-          formData.duracion || '',
-          formData.certificacion || '',
-          formData.recursos || ''
-        ]
-      ];
-
-      await Promise.all([
-        sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: etapasRange,
-          valueInputOption: 'RAW',
-          resource: { values: etapasValues },
-        }),
-        sheets.spreadsheets.values.update({
-          spreadsheetId: SPREADSHEET_ID,
-          range: solicitudesRange,
-          valueInputOption: 'RAW',
-          resource: { values: solicitudesValues },
-        })
-      ]);
-    } else {
-      return res.status(400).json({ error: 'Paso inválido', status: false });
-    }
-
-    res.status(200).json({ success: 'Progreso guardado correctamente', status: true });
-  } catch (error) {
-    console.error('Error guardando el progreso:', error);
-    res.status(500).json({ error: 'Error guardando el progreso', status: false });
+    res.status(500).json({ error: 'Error al obtener el último ID' });
   }
 });
 
 
-// ==========================================================================
-// Rutas de Manejo de Archivos
-// ==========================================================================
-
-// Ruta para manejar la subida de archivos a Google Drive
-app.post('/uploadFile', upload.single('matriz_riesgo'), async (req, res) => {
-  try {
-    const filePath = req.file.path;
-    const fileMetadata = {
-      name: req.file.originalname,
-      parents: ['12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'],
-    };
-
-    const media = {
-      mimeType: req.file.mimetype,
-      body: fs.createReadStream(filePath),
-    };
-
-    const file = await drive.files.create({
-      resource: fileMetadata,
-      media: media,
-      fields: 'id, webViewLink',
-    });
-
-    fs.unlinkSync(filePath);
-
-    res.status(200).json({ fileUrl: file.data.webViewLink });
-  } catch (error) {
-    console.error('Error al subir el archivo a Google Drive:', error);
-    res.status(500).json({ error: 'Error al subir el archivo a Google Drive' });
-  }
-});
-
-// Ruta para obtener las solicitudes del usuario
 app.get('/getRequests', async (req, res) => {
   try {
     const { userId } = req.query;
     const sheets = getSpreadsheet();
 
-    // Obtener etapas activas desde la hoja ETAPAS
     const activeResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `ETAPAS!A2:F`,
@@ -294,11 +310,9 @@ app.get('/getRequests', async (req, res) => {
 
     const rows = activeResponse.data.values;
     if (!rows || rows.length === 0) {
-      // Si no se encuentran registros, devolver un mensaje adecuado
       return res.status(404).json({ error: 'No se encontraron solicitudes activas o terminadas' });
     }
 
-    // Filtrar las solicitudes activas y terminadas
     const activeRequests = rows.filter(
       (row) => row[1] === userId && row[5] === 'En progreso'
     );
@@ -364,9 +378,8 @@ app.get('/getProgramasYOficinas', async (req, res) => {
   }
 });
 
-
 // ==========================================================================
-// Inicializar el Servidor
+// Inicializar el servidor
 // ==========================================================================
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
