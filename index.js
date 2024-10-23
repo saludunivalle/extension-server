@@ -438,9 +438,180 @@ app.get('/getProgramasYOficinas', async (req, res) => {
   }
 });
 
+// app.get('/getSolicitud', async (req, res) => {
+//   try {
+//     const { id_solicitud } = req.query;
+//     const sheets = getSpreadsheet();
+
+//     // Definir las hojas que queremos consultar
+//     const hojas = ['SOLICITUDES', 'SOLICITUDES2', 'SOLICITUDES3', 'SOLICITUDES4', 'SOLICITUDES5'];
+
+//     // Variable para almacenar los datos de todas las hojas
+//     const resultados = {};
+
+//     // Recorremos cada hoja y buscamos los datos asociados al id_solicitud
+//     for (let hoja of hojas) {
+//       const response = await sheets.spreadsheets.values.get({
+//         spreadsheetId: SPREADSHEET_ID,
+//         range: `${hoja}!A2:CL`, // Ajusta el rango según el número de columnas de cada hoja
+//       });
+
+//       const rows = response.data.values || [];
+      
+//       // Buscar la fila que coincida con el id_solicitud
+//       const solicitudData = rows.find(row => row[0] === id_solicitud);
+
+//       if (solicitudData) {
+//         // Almacenar los datos de esta hoja dentro del objeto `resultados`
+//         resultados[hoja] = solicitudData;
+//       }
+//     }
+
+//     // Verificar si se encontraron datos en al menos una hoja
+//     if (Object.keys(resultados).length === 0) {
+//       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
+//     }
+
+//     // Devolver todos los datos encontrados
+//     res.status(200).json(resultados);
+//   } catch (error) {
+//     console.error('Error al obtener los datos de la solicitud:', error);
+//     res.status(500).json({ error: 'Error al obtener los datos de la solicitud' });
+//   }
+// });
+
+
 // ==========================================================================
 // Inicializar el servidor
 // ==========================================================================
+
+app.get('/getSolicitud', async (req, res) => {
+  try {
+    const { id_solicitud } = req.query;
+    const sheets = getSpreadsheet();
+
+    // Definir las hojas y el mapeo de columnas a campos
+    const hojas = {
+      SOLICITUDES: {
+        range: 'SOLICITUDES!A2:M',
+        fields: [
+          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 
+          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 
+          'certificacion', 'recursos'
+        ]
+      },
+      SOLICITUDES2: {
+        range: 'SOLICITUDES2!A2:AL',
+        fields: [
+          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 
+          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
+          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
+          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
+          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 
+          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 
+          'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
+        ]
+      },
+      SOLICITUDES3: {
+        range: 'SOLICITUDES3!A2:CL',
+        fields: [
+          'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
+          'costos_personal_cantidad', 'costos_personal_vr_unit', 'total_costos_personal', 
+          'personal_universidad_cantidad', 'personal_universidad_vr_unit', 'total_personal_universidad', 
+          'honorarios_docentes_cantidad', 'honorarios_docentes_vr_unit', 'total_honorarios_docentes',
+          'otro_personal_cantidad', 'otro_personal_vr_unit', 'total_otro_personal', 
+          'materiales_sumi_cantidad', 'materiales_sumi_vr_unit', 'total_materiales_sumi',
+          'gastos_alojamiento_cantidad', 'gastos_alojamiento_vr_unit', 'total_gastos_alojamiento',
+          'gastos_alimentacion_cantidad', 'gastos_alimentacion_vr_unit', 'total_gastos_alimentacion',
+          'gastos_transporte_cantidad', 'gastos_transporte_vr_unit', 'total_gastos_transporte',
+          'equipos_alquiler_compra_cantidad', 'equipos_alquiler_compra_vr_unit', 'total_equipos_alquiler_compra',
+          'dotacion_participantes_cantidad', 'dotacion_participantes_vr_unit', 'total_dotacion_participantes',
+          'carpetas_cantidad', 'carpetas_vr_unit', 'total_carpetas',
+          'libretas_cantidad', 'libretas_vr_unit', 'total_libretas',
+          'lapiceros_cantidad', 'lapiceros_vr_unit', 'total_lapiceros',
+          'memorias_cantidad', 'memorias_vr_unit', 'total_memorias',
+          'marcadores_papel_otros_cantidad', 'marcadores_papel_otros_vr_unit', 'total_marcadores_papel_otros',
+          'impresos_cantidad', 'impresos_vr_unit', 'total_impresos',
+          'labels_cantidad', 'labels_vr_unit', 'total_labels',
+          'certificados_cantidad', 'certificados_vr_unit', 'total_certificados',
+          'escarapelas_cantidad', 'escarapelas_vr_unit', 'total_escarapelas',
+          'fotocopias_cantidad', 'fotocopias_vr_unit', 'total_fotocopias',
+          'estacion_cafe_cantidad', 'estacion_cafe_vr_unit', 'total_estacion_cafe',
+          'transporte_mensaje_cantidad', 'transporte_mensaje_vr_unit', 'total_transporte_mensaje',
+          'refrigerios_cantidad', 'refrigerios_vr_unit', 'total_refrigerios',
+          'infraestructura_fisica_cantidad', 'infraestructura_fisica_vr_unit', 'total_infraestructura_fisica',
+          'gastos_generales_cantidad', 'gastos_generales_vr_unit', 'total_gastos_generales',
+          'infraestructura_universitaria_cantidad', 'infraestructura_universitaria_vr_unit', 
+          'total_infraestructura_universitaria', 'imprevistos',
+          'escuela_departamento_porcentaje', 'total_aportes_univalle'
+        ]
+      },
+      SOLICITUDES4: {
+        range: 'SOLICITUDES4!A2:BK',
+        fields: [
+          'id_solicitud', 'descripcionPrograma', 'identificacionNecesidades', 'atributosBasicos', 
+          'atributosDiferenciadores', 'competencia', 'programa', 'programasSimilares', 
+          'estrategiasCompetencia', 'personasInteres', 'personasMatriculadas', 'otroInteres', 
+          'innovacion', 'solicitudExterno', 'interesSondeo', 'llamadas', 'encuestas', 'webinar', 
+          'preregistro', 'mesasTrabajo', 'focusGroup', 'desayunosTrabajo', 'almuerzosTrabajo', 'openHouse', 
+          'valorEconomico', 'modalidadPresencial', 'modalidadVirtual', 'modalidadSemipresencial', 
+          'otraModalidad', 'beneficiosTangibles', 'beneficiosIntangibles', 'particulares', 'colegios', 
+          'empresas', 'egresados', 'colaboradores', 'otros_publicos_potenciales', 'tendenciasActuales', 
+          'dofaDebilidades', 'dofaOportunidades', 'dofaFortalezas', 'dofaAmenazas', 'paginaWeb', 
+          'facebook', 'instagram', 'linkedin', 'correo', 'prensa', 'boletin', 'llamadas_redes', 'otro_canal'
+        ]
+      },
+      SOLICITUDES5: {
+        range: 'SOLICITUDES5!A2:AC',
+        fields: [
+          'id_solicitud', 'proposito', 'comentario', 'fecha', 'elaboradoPor', 'aplicaDiseno1', 'aplicaDiseno2', 
+          'aplicaDiseno3', 'aplicaLocacion1', 'aplicaLocacion2', 'aplicaLocacion3', 'aplicaDesarrollo1', 
+          'aplicaDesarrollo2', 'aplicaDesarrollo3', 'aplicaDesarrollo4', 'aplicaCierre1', 'aplicaCierre2', 
+          'aplicaOtros1', 'aplicaOtros2'
+        ]
+      }
+    };
+
+    const resultados = {};
+
+    // Recorremos cada hoja y buscamos los datos asociados al id_solicitud
+    for (let [hoja, { range, fields }] of Object.entries(hojas)) {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range
+      });
+
+      const rows = response.data.values || [];
+
+      // Buscar la fila que coincida con el id_solicitud
+      const solicitudData = rows.find(row => row[0] === id_solicitud);
+
+      if (solicitudData) {
+        // Crear un objeto donde las claves son los nombres de los campos
+        const mappedData = fields.reduce((acc, field, index) => {
+          acc[field] = solicitudData[index] || ''; // Asigna el valor correspondiente o vacío si no existe
+          return acc;
+        }, {});
+
+        // Almacenar los datos mapeados de esta hoja dentro del objeto `resultados`
+        resultados[hoja] = mappedData;
+      }
+    }
+
+    // Verificar si se encontraron datos en al menos una hoja
+    if (Object.keys(resultados).length === 0) {
+      return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
+    }
+
+    // Devolver todos los datos encontrados
+    res.status(200).json(resultados);
+  } catch (error) {
+    console.error('Error al obtener los datos de la solicitud:', error);
+    res.status(500).json({ error: 'Error al obtener los datos de la solicitud' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
 });
