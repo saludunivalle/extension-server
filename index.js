@@ -13,6 +13,8 @@ const drive = google.drive({ version: 'v3', auth: jwtClient });
 const app = express();
 const upload = multer({ dest: '/tmp/uploads/' });
 const PORT = process.env.PORT || 3001;
+const axios = require('axios');
+
 
 app.use(bodyParser.json());
 app.use(cors());
@@ -615,58 +617,111 @@ app.get('/getSolicitud', async (req, res) => {
 app.post('/generateReport', async (req, res) => {
   try {
     const { solicitudId } = req.body;
-    const sheets = getSpreadsheet();
 
-    // Paso 1: Recuperar datos de la solicitud
+    // Paso 1: Recuperar datos de la solicitud (de todas las hojas relevantes)
     const response = await axios.get(`http://localhost:${PORT}/getSolicitud`, {
       params: { id_solicitud: solicitudId },
     });
     const solicitudData = response.data;
 
-    // Paso 2: Clonar las plantillas
+    // Paso 2: Consolidar datos de ambos formularios
+    const consolidatedData = {
+      ...(solicitudData.SOLICITUDES || {}),
+      ...(solicitudData.SOLICITUDES2 || {}),
+    };
+
+    // Paso 3: Convertir las plantillas de Excel a Google Sheets
     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Carpeta destino en Google Drive
     const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla del Formulario 1
     const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
 
-    const fileName1 = `Formulario1_Solicitud_${solicitudId}.xlsx`;
-    const fileName2 = `Formulario2_Solicitud_${solicitudId}.xlsx`;
-
-    // Clonar plantillas en la carpeta destino
-    const form1File = await drive.files.copy({
-      fileId: form1TemplateId,
-      requestBody: {
-        name: fileName1,
-        parents: [folderId],
-      },
-    });
-    const form2File = await drive.files.copy({
-      fileId: form2TemplateId,
-      requestBody: {
-        name: fileName2,
-        parents: [folderId],
-      },
-    });
-
-    const form1FileId = form1File.data.id;
-    const form2FileId = form2File.data.id;
-
-    // Paso 3: Rellenar los datos en las hojas de cálculo
-    const rangesToFill = [
-      { fileId: form1FileId, range: 'Formulario1!A1:Z', data: solicitudData.SOLICITUDES || {} },
-      { fileId: form2FileId, range: 'Formulario2!A1:Z', data: solicitudData.SOLICITUDES2 || {} },
-    ];
-
-    for (const { fileId, range, data } of rangesToFill) {
-      const values = Object.keys(data).map((key) => [key, data[key]]);
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: fileId,
-        range,
-        valueInputOption: 'USER_ENTERED',
-        resource: { values },
+    const convertExcelToGoogleSheets = async (fileId, folderId, fileName) => {
+      const copiedFile = await drive.files.copy({
+        fileId: fileId,
+        requestBody: {
+          name: fileName,
+          parents: [folderId],
+          mimeType: 'application/vnd.google-apps.spreadsheet', // Convertir a Google Sheets
+        },
       });
-    }
+      return copiedFile.data.id;
+    };
 
-    // Paso 4: Compartir los archivos generados
+    const form1FileId = await convertExcelToGoogleSheets(
+      form1TemplateId,
+      folderId,
+      `Formulario1_Solicitud_${solicitudId}`
+    );
+    const form2FileId = await convertExcelToGoogleSheets(
+      form2TemplateId,
+      folderId,
+      `Formulario2_Solicitud_${solicitudId}`
+    );
+
+    // Paso 4: Transformar los datos consolidados
+    const transformData = (data) => {
+      const transformed = {};
+
+      // Procesar fecha si está presente
+      if (data.fecha_solicitud) {
+        const [dia, mes, anio] = data.fecha_solicitud.split('/');
+        transformed['{{dia}}'] = dia;
+        transformed['{{mes}}'] = mes;
+        transformed['{{anio}}'] = anio;
+      }
+
+      // Agregar todos los datos con sus respectivos marcadores
+      Object.keys(data).forEach((key) => {
+        transformed[`{{${key}}}`] = data[key];
+      });
+
+      return transformed;
+    };
+
+    const transformedData = transformData(consolidatedData);
+
+    // Paso 5: Reemplazar los marcadores en las plantillas convertidas
+    const replaceMarkers = async (fileId, data) => {
+      const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+      const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
+
+      const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
+
+      for (const sheetName of sheetNames) {
+        const range = `${sheetName}!A1:Z100`; // Rango a cubrir
+        const response = await sheets.spreadsheets.values.get({
+          spreadsheetId: fileId,
+          range,
+        });
+
+        const values = response.data.values || [];
+
+        // Reemplazar marcadores en cada celda
+        const updatedValues = values.map((row) =>
+          row.map((cell) =>
+            typeof cell === 'string'
+              ? Object.keys(data).reduce(
+                  (updatedCell, marker) => updatedCell.replace(marker, data[marker] || ''),
+                  cell
+                )
+              : cell
+          )
+        );
+
+        // Actualizar los datos en la hoja
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: fileId,
+          range,
+          valueInputOption: 'USER_ENTERED',
+          resource: { values: updatedValues },
+        });
+      }
+    };
+
+    await replaceMarkers(form1FileId, transformedData);
+    await replaceMarkers(form2FileId, transformedData);
+
+    // Paso 6: Compartir los archivos generados
     const generatedLinks = [];
 
     for (const fileId of [form1FileId, form2FileId]) {
