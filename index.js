@@ -17,7 +17,17 @@ const axios = require('axios');
 
 
 app.use(bodyParser.json());
-app.use(cors());
+const cors = require('cors');
+
+// Configuración de CORS
+app.use(cors({
+  origin: [
+    'http://localhost:5173', // Para desarrollo local
+    'https://siac-extension-form.vercel.app' // Para producción en Vercel
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Métodos permitidos
+  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeceras permitidas
+}));
 
 
 
