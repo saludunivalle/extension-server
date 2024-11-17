@@ -619,7 +619,7 @@ app.post('/generateReport', async (req, res) => {
     const { solicitudId } = req.body;
 
     // Paso 1: Recuperar datos de la solicitud (de todas las hojas relevantes)
-    const response = await axios.get(`http://localhost:${PORT}/getSolicitud`, {
+    const response = await axios.get(`https://siac-extension-server.vercel.app/getSolicitud`, {
       params: { id_solicitud: solicitudId },
     });
     const solicitudData = response.data;
