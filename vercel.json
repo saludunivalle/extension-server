@@ -8,9 +8,12 @@
     ],
     "routes": [
         {
-            "src": "/(.*)",
-            "dest": "index.js"
+        "src": "/generateReport",
+        "dest": "index.js"
+        },
+        {
+        "src": "/(.*)",
+        "dest": "index.js"
         }
-    ]
-    
+    ]           
 }
