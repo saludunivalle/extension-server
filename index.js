@@ -22,16 +22,24 @@ const cors = require('cors');
 // Configuración de CORS
 const cors = require('cors');
 
+app.options('*', (req, res) => {
+  res.set('Access-Control-Allow-Origin', 'https://siac-extension-form.vercel.app');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(204);
+});
+
+
+const cors = require('cors');
+
+// Configurar CORS
 app.use(cors({
-  origin: '*', // Permitir solicitudes desde cualquier origen. Cámbialo si deseas restringir.
+  origin: 'https://siac-extension-form.vercel.app', // Asegúrate de usar la URL de tu frontend
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'], // Agrega los encabezados necesarios
-  preflightContinue: false, // Maneja las solicitudes OPTIONS automáticamente
-  optionsSuccessStatus: 204 // Responde con 204 para solicitudes OPTIONS exitosas
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true // Si usas cookies o cabeceras de autorización
 }));
-
-
-
 
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
