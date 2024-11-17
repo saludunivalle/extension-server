@@ -19,6 +19,8 @@ const axios = require('axios');
 app.use(bodyParser.json());
 app.use(cors());
 
+
+
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
 const SPREADSHEET_ID = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
@@ -618,11 +620,56 @@ app.post('/generateReport', async (req, res) => {
   try {
     const { solicitudId } = req.body;
 
-    // Paso 1: Recuperar datos de la solicitud (de todas las hojas relevantes)
-    const response = await axios.get(`https://siac-extension-server.vercel.app/getSolicitud`, {
-      params: { id_solicitud: solicitudId },
-    });
-    const solicitudData = response.data;
+    // Paso 1: Obtener datos directamente en lugar de usar Axios
+    const sheets = getSpreadsheet();
+
+    // Definir las hojas y campos necesarios
+    const hojas = {
+      SOLICITUDES: {
+        range: 'SOLICITUDES!A2:M',
+        fields: [
+          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion',
+          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion',
+          'certificacion', 'recursos',
+        ],
+      },
+      SOLICITUDES2: {
+        range: 'SOLICITUDES2!A2:AL',
+        fields: [
+          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo',
+          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
+          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador',
+          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion',
+          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion',
+          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
+          'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad',
+        ],
+      },
+    };
+
+    const solicitudData = {};
+
+    for (const [hoja, { range, fields }] of Object.entries(hojas)) {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range,
+      });
+
+      const rows = response.data.values || [];
+      const solicitudRow = rows.find((row) => row[0] === solicitudId.toString());
+
+      if (solicitudRow) {
+        solicitudData[hoja] = fields.reduce((acc, field, index) => {
+          acc[field] = solicitudRow[index] || '';
+          return acc;
+        }, {});
+      }
+    }
+
+    if (!solicitudData.SOLICITUDES && !solicitudData.SOLICITUDES2) {
+      return res.status(404).json({ error: 'No se encontraron datos para la solicitud' });
+    }
 
     // Paso 2: Consolidar datos de ambos formularios
     const consolidatedData = {
