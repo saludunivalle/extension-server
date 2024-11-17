@@ -20,14 +20,16 @@ app.use(bodyParser.json());
 const cors = require('cors');
 
 // Configuración de CORS
+const cors = require('cors');
+
 app.use(cors({
-  origin: [
-    'http://localhost:5173', // Para desarrollo local
-    'https://siac-extension-form.vercel.app' // Para producción en Vercel
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], // Métodos permitidos
-  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeceras permitidas
+  origin: '*', // Permitir solicitudes desde cualquier origen. Cámbialo si deseas restringir.
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'], // Agrega los encabezados necesarios
+  preflightContinue: false, // Maneja las solicitudes OPTIONS automáticamente
+  optionsSuccessStatus: 204 // Responde con 204 para solicitudes OPTIONS exitosas
 }));
+
 
 
 
