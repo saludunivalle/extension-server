@@ -617,43 +617,43 @@ app.get('/getSolicitud', async (req, res) => {
 });
 
 app.post('/generateReport', async (req, res) => {
-  res.status(200).json({ success: true, message: 'Ruta funcional' });
-  console.log('Ruta /generateReport invocada'); 
-  console.log('Body recibido:', req.body); // Log para depuración
   try {
     const { solicitudId } = req.body;
+
     if (!solicitudId) {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
-    }    const sheets = getSpreadsheet();
+    }
 
-    // Lógica de /getSolicitud para obtener los datos directamente
+    const sheets = getSpreadsheet();
+
+    // Definir las hojas y sus campos correspondientes
     const hojas = {
       SOLICITUDES: {
         range: 'SOLICITUDES!A2:M',
         fields: [
-          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 
-          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 
+          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion',
+          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion',
           'certificacion', 'recursos'
         ]
       },
       SOLICITUDES2: {
         range: 'SOLICITUDES2!A2:AL',
         fields: [
-          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
-          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 
-          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
-          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
-          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
-          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 
-          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 
+          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo',
+          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
+          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador',
+          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion',
+          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion',
+          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
           'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
         ]
       }
-      // Agrega más hojas según sea necesario
     };
 
     const resultados = {};
 
+    // Recolectar datos de todas las hojas
     for (let [hoja, { range, fields }] of Object.entries(hojas)) {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
@@ -682,8 +682,8 @@ app.post('/generateReport', async (req, res) => {
       ...(resultados.SOLICITUDES2 || {})
     };
 
-    // Paso 3 en adelante: lógica para generar el informe
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
+    // Generar informes en Google Drive
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
     const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
     const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
 
@@ -788,7 +788,6 @@ app.post('/generateReport', async (req, res) => {
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
-
 
 
 app.listen(PORT, () => {
