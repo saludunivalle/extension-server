@@ -616,30 +616,71 @@ app.get('/getSolicitud', async (req, res) => {
   }
 });
 
-app.post('/generateReport', cors({
-  origin: 'http://localhost:5173', // Cambia a la URL de tu frontend en producción
-  methods: ['POST'],
-  allowedHeaders: ['Content-Type']
-}), async (req, res) => {
+app.post('/generateReport', async (req, res) => {
   try {
     const { solicitudId } = req.body;
+    const sheets = getSpreadsheet();
 
-    // Paso 1: Recuperar datos de la solicitud
-    const response = await axios.get(`https://siac-extension-server.vercel.app/getSolicitud`, {
-      params: { id_solicitud: solicitudId },
-    });
-    const solicitudData = response.data;
-
-    // Paso 2: Consolidar datos de ambos formularios
-    const consolidatedData = {
-      ...(solicitudData.SOLICITUDES || {}),
-      ...(solicitudData.SOLICITUDES2 || {}),
+    // Lógica de /getSolicitud para obtener los datos directamente
+    const hojas = {
+      SOLICITUDES: {
+        range: 'SOLICITUDES!A2:M',
+        fields: [
+          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 
+          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 
+          'certificacion', 'recursos'
+        ]
+      },
+      SOLICITUDES2: {
+        range: 'SOLICITUDES2!A2:AL',
+        fields: [
+          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 
+          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
+          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
+          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
+          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 
+          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 
+          'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
+        ]
+      }
+      // Agrega más hojas según sea necesario
     };
 
-    // Paso 3: Convertir las plantillas de Excel a Google Sheets
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Carpeta destino en Google Drive
-    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla del Formulario 1
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
+    const resultados = {};
+
+    for (let [hoja, { range, fields }] of Object.entries(hojas)) {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range
+      });
+
+      const rows = response.data.values || [];
+      const solicitudData = rows.find(row => row[0] === solicitudId);
+
+      if (solicitudData) {
+        const mappedData = fields.reduce((acc, field, index) => {
+          acc[field] = solicitudData[index] || '';
+          return acc;
+        }, {});
+        resultados[hoja] = mappedData;
+      }
+    }
+
+    if (Object.keys(resultados).length === 0) {
+      return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
+    }
+
+    // Consolidar datos de los formularios
+    const consolidatedData = {
+      ...(resultados.SOLICITUDES || {}),
+      ...(resultados.SOLICITUDES2 || {})
+    };
+
+    // Paso 3 en adelante: lógica para generar el informe
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
+    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
 
     const convertExcelToGoogleSheets = async (fileId, folderId, fileName) => {
       const copiedFile = await drive.files.copy({
@@ -647,7 +688,7 @@ app.post('/generateReport', cors({
         requestBody: {
           name: fileName,
           parents: [folderId],
-          mimeType: 'application/vnd.google-apps.spreadsheet', // Convertir a Google Sheets
+          mimeType: 'application/vnd.google-apps.spreadsheet',
         },
       });
       return copiedFile.data.id;
@@ -664,11 +705,8 @@ app.post('/generateReport', cors({
       `Formulario2_Solicitud_${solicitudId}`
     );
 
-    // Paso 4: Transformar los datos consolidados
     const transformData = (data) => {
       const transformed = {};
-
-      // Procesar fecha si está presente
       if (data.fecha_solicitud) {
         const [dia, mes, anio] = data.fecha_solicitud.split('/');
         transformed['{{dia}}'] = dia;
@@ -676,7 +714,6 @@ app.post('/generateReport', cors({
         transformed['{{anio}}'] = anio;
       }
 
-      // Agregar todos los datos con sus respectivos marcadores
       Object.keys(data).forEach((key) => {
         transformed[`{{${key}}}`] = data[key];
       });
@@ -686,23 +723,19 @@ app.post('/generateReport', cors({
 
     const transformedData = transformData(consolidatedData);
 
-    // Paso 5: Reemplazar los marcadores en las plantillas convertidas
     const replaceMarkers = async (fileId, data) => {
       const sheets = google.sheets({ version: 'v4', auth: jwtClient });
       const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
-
       const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
 
       for (const sheetName of sheetNames) {
-        const range = `${sheetName}!A1:Z100`; // Rango a cubrir
+        const range = `${sheetName}!A1:Z100`;
         const response = await sheets.spreadsheets.values.get({
           spreadsheetId: fileId,
           range,
         });
 
         const values = response.data.values || [];
-
-        // Reemplazar marcadores en cada celda
         const updatedValues = values.map((row) =>
           row.map((cell) =>
             typeof cell === 'string'
@@ -714,7 +747,6 @@ app.post('/generateReport', cors({
           )
         );
 
-        // Actualizar los datos en la hoja
         await sheets.spreadsheets.values.update({
           spreadsheetId: fileId,
           range,
@@ -727,7 +759,6 @@ app.post('/generateReport', cors({
     await replaceMarkers(form1FileId, transformedData);
     await replaceMarkers(form2FileId, transformedData);
 
-    // Paso 6: Compartir los archivos generados
     const generatedLinks = [];
 
     for (const fileId of [form1FileId, form2FileId]) {
@@ -752,6 +783,7 @@ app.post('/generateReport', cors({
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
+
 
 
 app.listen(PORT, () => {
