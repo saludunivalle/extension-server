@@ -617,9 +617,14 @@ app.get('/getSolicitud', async (req, res) => {
 });
 
 app.post('/generateReport', async (req, res) => {
+  res.status(200).json({ success: true, message: 'Ruta funcional' });
+  console.log('Ruta /generateReport invocada'); 
+  console.log('Body recibido:', req.body); // Log para depuración
   try {
     const { solicitudId } = req.body;
-    const sheets = getSpreadsheet();
+    if (!solicitudId) {
+      return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
+    }    const sheets = getSpreadsheet();
 
     // Lógica de /getSolicitud para obtener los datos directamente
     const hojas = {
