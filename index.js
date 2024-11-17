@@ -616,11 +616,15 @@ app.get('/getSolicitud', async (req, res) => {
   }
 });
 
-app.post('/generateReport', async (req, res) => {
+app.post('/generateReport', cors({
+  origin: 'http://localhost:5173', // Cambia a la URL de tu frontend en producción
+  methods: ['POST'],
+  allowedHeaders: ['Content-Type']
+}), async (req, res) => {
   try {
     const { solicitudId } = req.body;
 
-    // Paso 1: Recuperar datos de la solicitud (de todas las hojas relevantes)
+    // Paso 1: Recuperar datos de la solicitud
     const response = await axios.get(`https://siac-extension-server.vercel.app/getSolicitud`, {
       params: { id_solicitud: solicitudId },
     });
