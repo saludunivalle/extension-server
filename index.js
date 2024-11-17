@@ -612,6 +612,87 @@ app.get('/getSolicitud', async (req, res) => {
   }
 });
 
+app.post('/generateReport', async (req, res) => {
+  try {
+    const { solicitudId } = req.body;
+    const sheets = getSpreadsheet();
+
+    // Paso 1: Recuperar datos de la solicitud
+    const response = await axios.get(`http://localhost:${PORT}/getSolicitud`, {
+      params: { id_solicitud: solicitudId },
+    });
+    const solicitudData = response.data;
+
+    // Paso 2: Clonar las plantillas
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Carpeta destino en Google Drive
+    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla del Formulario 1
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
+
+    const fileName1 = `Formulario1_Solicitud_${solicitudId}.xlsx`;
+    const fileName2 = `Formulario2_Solicitud_${solicitudId}.xlsx`;
+
+    // Clonar plantillas en la carpeta destino
+    const form1File = await drive.files.copy({
+      fileId: form1TemplateId,
+      requestBody: {
+        name: fileName1,
+        parents: [folderId],
+      },
+    });
+    const form2File = await drive.files.copy({
+      fileId: form2TemplateId,
+      requestBody: {
+        name: fileName2,
+        parents: [folderId],
+      },
+    });
+
+    const form1FileId = form1File.data.id;
+    const form2FileId = form2File.data.id;
+
+    // Paso 3: Rellenar los datos en las hojas de cálculo
+    const rangesToFill = [
+      { fileId: form1FileId, range: 'Formulario1!A1:Z', data: solicitudData.SOLICITUDES || {} },
+      { fileId: form2FileId, range: 'Formulario2!A1:Z', data: solicitudData.SOLICITUDES2 || {} },
+    ];
+
+    for (const { fileId, range, data } of rangesToFill) {
+      const values = Object.keys(data).map((key) => [key, data[key]]);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: fileId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        resource: { values },
+      });
+    }
+
+    // Paso 4: Compartir los archivos generados
+    const generatedLinks = [];
+
+    for (const fileId of [form1FileId, form2FileId]) {
+      await drive.permissions.create({
+        fileId,
+        requestBody: {
+          role: 'reader',
+          type: 'anyone',
+        },
+      });
+
+      const fileLink = `https://drive.google.com/file/d/${fileId}/view`;
+      generatedLinks.push(fileLink);
+    }
+
+    res.status(200).json({
+      message: 'Informes generados exitosamente',
+      links: generatedLinks,
+    });
+  } catch (error) {
+    console.error('Error al generar los informes:', error);
+    res.status(500).json({ error: 'Error al generar los informes' });
+  }
+});
+
+
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
 });
