@@ -770,79 +770,27 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    // Datos simulados o reales desde Google Sheets (esto sería parte de tu lógica)
-    const resultados = {
-      SOLICITUDES: { id_solicitud: solicitudId, introduccion: "Ejemplo de introducción" },
-      SOLICITUDES2: { fecha_solicitud: "2024-11-17", nombre_actividad: "Ejemplo de actividad" },
-    };
+    console.log(`Solicitud recibida para generar informes. ID de solicitud: ${solicitudId}`);
 
-    // Generar informes en Google Drive
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
-    const templateFileId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla
+    // Simulando generación de informes con enlaces estáticos
+    const generatedLinks = [
+      'https://drive.google.com/file/d/EXAMPLE_FILE_ID_1/view',
+      'https://drive.google.com/file/d/EXAMPLE_FILE_ID_2/view'
+    ];
 
-    async function generateReportInDrive(templateFileId, folderId, data, fileName) {
-      try {
-        console.log('Iniciando copia del archivo en Google Drive...');
-        
-        // Copiar la plantilla en la carpeta destino
-        const copiedFile = await drive.files.copy({
-          fileId: templateFileId,
-          requestBody: {
-            name: fileName,
-            parents: [folderId],
-          },
-        });
+    console.log('Enlaces simulados generados:', generatedLinks);
 
-        if (!copiedFile.data.id) {
-          throw new Error('Error al copiar el archivo, no se recibió un ID válido');
-        }
-
-        const fileId = copiedFile.data.id;
-        console.log('Archivo copiado exitosamente con ID:', fileId);
-
-        // Compartir el archivo generado
-        await drive.permissions.create({
-          fileId: fileId,
-          requestBody: {
-            role: 'reader',
-            type: 'anyone',
-          },
-        });
-
-        console.log('Permisos asignados exitosamente al archivo:', fileId);
-
-        // Devolver enlace del archivo
-        return `https://drive.google.com/file/d/${fileId}/view`;
-      } catch (error) {
-        console.error('Error al generar informe en Google Drive:', JSON.stringify(error, null, 2));
-        throw new Error('Error al generar informe en Google Drive');
-      }
-    }
-
-    const fileName = `Reporte_Solicitud_${solicitudId}`;
-    let generatedLink;
-
-    try {
-      // Generar el informe en Google Drive
-      console.log('Generando informe en Google Drive...');
-      generatedLink = await generateReportInDrive(templateFileId, folderId, resultados, fileName);
-    } catch (error) {
-      console.error('Error al generar el informe:', error.message);
-      return res.status(500).json({ error: 'Error al generar el informe' });
-    }
-
-    if (!generatedLink) {
-      console.error('No se generaron enlaces de informes, revise los registros.');
-      return res.status(500).json({ error: 'No se generaron enlaces de informes' });
+    if (!generatedLinks || generatedLinks.length === 0) {
+      throw new Error('No se generaron enlaces de informes (simulación).');
     }
 
     res.status(200).json({
-      message: 'Informe generado exitosamente',
-      link: generatedLink,
+      message: 'Informes generados exitosamente (simulación)',
+      links: generatedLinks,
     });
   } catch (error) {
-    console.error('Error al generar los informes:', error.message);
-    res.status(500).json({ error: 'Error al generar los informes' });
+    console.error('Error al generar los informes (simulación):', error.message);
+    res.status(500).json({ error: 'Error al generar los informes (simulación)' });
   }
 });
 
