@@ -785,15 +785,19 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
+    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
+
     const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
 
     // Obtener datos desde Google Sheets
     const fetchSheetData = async (spreadsheetId, ranges) => {
-      const sheets = getSpreadsheet();
       try {
+        const sheets = getSpreadsheet();
         const response = await sheets.spreadsheets.values.batchGet({
-          spreadsheetId: spreadsheetId,
-          ranges: ranges,
+          spreadsheetId,
+          ranges,
         });
 
         const data = {};
@@ -801,6 +805,7 @@ app.post('/generateReport', async (req, res) => {
           data[ranges[index]] = valueRange.values || [];
         });
 
+        console.log('Datos obtenidos desde Google Sheets:', data);
         return data;
       } catch (error) {
         console.error('Error al obtener datos de Google Sheets:', error.message);
@@ -811,7 +816,6 @@ app.post('/generateReport', async (req, res) => {
     let data;
     try {
       data = await fetchSheetData(SPREADSHEET_ID, ranges);
-      console.log('Datos obtenidos desde Google Sheets:', data);
     } catch (error) {
       console.error('Error al consultar Google Sheets:', error.message);
       return res.status(500).json({ error: 'Error al consultar datos de Google Sheets' });
@@ -840,12 +844,10 @@ app.post('/generateReport', async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
     }
 
-    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
-
+    // Reemplazo de marcadores en las plantillas
     const replaceMarkers = async (templateId, data, fileName) => {
       try {
+        console.log(`Generando archivo desde la plantilla: ${templateId}`);
         const copiedFile = await drive.files.copy({
           fileId: templateId,
           requestBody: {
@@ -856,16 +858,19 @@ app.post('/generateReport', async (req, res) => {
 
         const fileId = copiedFile.data.id;
 
+        // Otorgar permisos públicos
         await drive.permissions.create({
-          fileId: fileId,
+          fileId,
           requestBody: {
             role: 'reader',
             type: 'anyone',
           },
         });
 
-        const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+        console.log(`Archivo generado: ${fileId}`);
 
+        // Actualizar datos en el archivo generado
+        const sheets = google.sheets({ version: 'v4', auth: jwtClient });
         const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
         const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
 
@@ -898,7 +903,7 @@ app.post('/generateReport', async (req, res) => {
 
         return `https://drive.google.com/file/d/${fileId}/view`;
       } catch (error) {
-        console.error('Error al reemplazar marcadores en el archivo:', error.message);
+        console.error('Error al reemplazar marcadores:', error.message);
         throw new Error('Error al reemplazar marcadores en el archivo');
       }
     };
@@ -920,17 +925,12 @@ app.post('/generateReport', async (req, res) => {
       return res.status(500).json({ error: 'Error al generar los informes' });
     }
 
-    if (!form1Link || !form2Link) {
-      console.error('Error: No se generaron todos los informes');
-      return res.status(500).json({ error: 'No se generaron todos los informes' });
-    }
-
     res.status(200).json({
       message: 'Informes generados exitosamente',
       links: [form1Link, form2Link],
     });
   } catch (error) {
-    console.error('Error al generar los informes:', error.message);
+    console.error('Error general al generar los informes:', error.message);
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
