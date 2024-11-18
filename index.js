@@ -17,24 +17,17 @@ const axios = require('axios');
 
 
 app.use(bodyParser.json());
+const cors = require('cors');
 
-app.use(
-  cors({
-    origin: 'https://siac-extension-form.vercel.app', // Cambiar por el dominio del frontend
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], // Métodos permitidos
-    allowedHeaders: ['Content-Type', 'Authorization'], // Cabeceras permitidas
-    credentials: true,
-  })
-);
+// Configura CORS para permitir el origen de tu frontend
+const corsOptions = {
+  origin: ['https://siac-extension-form.vercel.app'], // Agrega tu dominio frontend
+  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Métodos permitidos
+  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeceras permitidas
+};
 
-// Middleware para agregar encabezados de CORS manualmente
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://siac-extension-form.vercel.app'); // Dominio permitido
-  res.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE'); // Métodos permitidos
-  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization'); // Cabeceras permitidas
-  res.header('Access-Control-Allow-Credentials', 'true'); // Permitir credenciales
-  next();
-});
+// Aplica CORS en todo el servidor
+app.use(cors(corsOptions));
 
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
@@ -117,7 +110,6 @@ app.post('/saveUser', async (req, res) => {
     }
 
     res.status(200).json({ success: true });
-    res.send('Usuario guardado');
   } catch (error) {
     console.error('Error al guardar usuario:', error);
     res.status(500).json({ error: 'Error al guardar usuario', success: false });
