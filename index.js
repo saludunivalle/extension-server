@@ -23,9 +23,9 @@ app.use(cors({
   origin: 'https://siac-extension-form.vercel.app', // Cambia esto al origen que necesites
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   credentials: true,
-  optionsSuccessStatus: 204
+  optionsSuccessStatus: 204,
+  allowedHeaders: 'Content-Type,Authorization' // Agrega Content-Type aquí
 }));
-
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
 const SPREADSHEET_ID = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
