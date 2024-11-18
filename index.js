@@ -713,7 +713,6 @@ const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
   try {
     const resultados = {};
 
-    // Recorremos cada hoja y buscamos los datos asociados al id_solicitud
     for (let [hoja, { range, fields }] of Object.entries(hojas)) {
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -722,36 +721,37 @@ const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
 
       const rows = response.data.values || [];
 
-      // Buscar la fila que coincida con el id_solicitud
       const solicitudData = rows.find((row) => row[0] === solicitudId);
 
       if (solicitudData) {
-        // Crear un objeto donde las claves son los nombres de los campos
         const mappedData = fields.reduce((acc, field, index) => {
-          acc[field] = solicitudData[index] || ''; // Asigna el valor correspondiente o vacío si no existe
+          acc[field] = solicitudData[index] || '';
           return acc;
         }, {});
 
-        // Almacenar los datos mapeados de esta hoja dentro del objeto `resultados`
         resultados[hoja] = mappedData;
       }
     }
 
-    // Verificar si se encontraron datos en al menos una hoja
     if (Object.keys(resultados).length === 0) {
       throw new Error('No se encontraron datos para esta solicitud');
     }
 
-    // Consolidar todos los datos en un solo objeto
-    const consolidatedData = Object.values(resultados).reduce((acc, hojaData) => {
-      return { ...acc, ...hojaData };
-    }, {});
-
-    return consolidatedData;
+    return resultados;
   } catch (error) {
     console.error('Error al obtener los datos de la solicitud:', error.message);
     throw new Error('Error al obtener los datos de la solicitud');
   }
+};
+
+// Función para formatear partes de una fecha
+const formatDateParts = (date) => {
+  const fecha = new Date(date);
+  return {
+    dia: fecha.getDate().toString().padStart(2, '0'),
+    mes: (fecha.getMonth() + 1).toString().padStart(2, '0'),
+    anio: fecha.getFullYear().toString(),
+  };
 };
 
 // Función para procesar y reemplazar marcadores en archivos XLSX
@@ -763,7 +763,6 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
       { responseType: 'stream' }
     );
 
-    // Guardar archivo temporalmente
     const tempFilePath = path.join('/tmp', `${fileName}.xlsx`);
     const writeStream = fs.createWriteStream(tempFilePath);
     await new Promise((resolve, reject) => {
@@ -772,17 +771,14 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
       fileResponse.data.on('error', reject);
     });
 
-    // Leer archivo XLSX con ExcelJS
     console.log('Leyendo el archivo descargado...');
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(tempFilePath);
 
-    // Reemplazar marcadores en todas las hojas
     workbook.eachSheet((sheet) => {
       sheet.eachRow((row) => {
         row.eachCell((cell) => {
           if (typeof cell.value === 'string') {
-            // Reemplazar marcadores {{key}}
             Object.keys(data).forEach((key) => {
               const marker = `{{${key}}}`;
               if (cell.value.includes(marker)) {
@@ -794,12 +790,10 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
       });
     });
 
-    // Guardar el archivo actualizado
     const updatedFilePath = path.join('/tmp', `updated_${fileName}.xlsx`);
     await workbook.xlsx.writeFile(updatedFilePath);
     console.log('Archivo actualizado con los datos reemplazados.');
 
-    // Subir el archivo actualizado a Google Drive
     console.log('Subiendo el archivo actualizado a Google Drive...');
     const uploadResponse = await drive.files.create({
       requestBody: {
@@ -813,7 +807,6 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
       },
     });
 
-    // Hacer el archivo público
     const fileId = uploadResponse.data.id;
     await drive.permissions.create({
       fileId,
@@ -842,9 +835,9 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Carpeta en Google Drive
-    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla del Formulario 1
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
+    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe';
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
 
     const hojas = {
       SOLICITUDES: {
@@ -859,21 +852,24 @@ app.post('/generateReport', async (req, res) => {
 
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
-    // Obtener y consolidar los datos de la solicitud
     console.log(`Obteniendo datos para la solicitud: ${solicitudId}`);
-    const consolidatedData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
+    const solicitudData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
 
-    // Generar archivos
+    const fechaPartes = formatDateParts(solicitudData['SOLICITUDES2']['fecha_solicitud']);
+    Object.assign(solicitudData['SOLICITUDES'], fechaPartes);
+
+    const combinedData = { ...solicitudData['SOLICITUDES'], ...solicitudData['SOLICITUDES2'] };
+
     console.log('Generando reportes...');
     const form1Link = await processXLSXWithStyles(
       form1TemplateId,
-      consolidatedData,
+      combinedData,
       `Formulario1_${solicitudId}`,
       folderId
     );
     const form2Link = await processXLSXWithStyles(
       form2TemplateId,
-      consolidatedData,
+      combinedData,
       `Formulario2_${solicitudId}`,
       folderId
     );
