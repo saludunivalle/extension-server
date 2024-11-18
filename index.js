@@ -704,25 +704,6 @@ app.post('/generateReport', async (req, res) => {
       ...(resultados.SOLICITUDES2 || {})
     };
 
-    // Transformar los datos
-    const transformData = (data) => {
-      const transformed = {};
-      if (data.fecha_solicitud) {
-        const [dia, mes, anio] = data.fecha_solicitud.split('/');
-        transformed['{{dia}}'] = dia;
-        transformed['{{mes}}'] = mes;
-        transformed['{{anio}}'] = anio;
-      }
-
-      Object.keys(data).forEach((key) => {
-        transformed[`{{${key}}}`] = data[key];
-      });
-
-      return transformed;
-    };
-
-    const transformedData = transformData(consolidatedData);
-
     // Generar informes en Google Drive
     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
     const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
@@ -751,42 +732,6 @@ app.post('/generateReport', async (req, res) => {
       `Formulario2_Solicitud_${solicitudId}`
     );
 
-    const replaceMarkers = async (fileId, data) => {
-      const sheets = google.sheets({ version: 'v4', auth: jwtClient });
-      const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
-      const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
-
-      for (const sheetName of sheetNames) {
-        const range = `${sheetName}!A1:Z100`;
-        const response = await sheets.spreadsheets.values.get({
-          spreadsheetId: fileId,
-          range,
-        });
-
-        const values = response.data.values || [];
-        const updatedValues = values.map((row) =>
-          row.map((cell) =>
-            typeof cell === 'string'
-              ? Object.keys(data).reduce(
-                  (updatedCell, marker) => updatedCell.replace(marker, data[marker] || ''),
-                  cell
-                )
-              : cell
-          )
-        );
-
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: fileId,
-          range,
-          valueInputOption: 'USER_ENTERED',
-          resource: { values: updatedValues },
-        });
-      }
-    };
-
-    await replaceMarkers(form1FileId, transformedData);
-    await replaceMarkers(form2FileId, transformedData);
-
     const generatedLinks = [];
 
     for (const fileId of [form1FileId, form2FileId]) {
@@ -803,7 +748,7 @@ app.post('/generateReport', async (req, res) => {
     }
 
     if (generatedLinks.length === 0) {
-      throw new Error('No se generaron enlaces de informes');
+      return res.status(500).json({ error: 'No se generaron enlaces de informes' });
     }
 
     res.status(200).json({
