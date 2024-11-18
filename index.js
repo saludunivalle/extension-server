@@ -770,7 +770,7 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    // Datos simulados o reales desde Google Sheets
+    // Datos simulados o reales desde Google Sheets (esto sería parte de tu lógica)
     const resultados = {
       SOLICITUDES: { id_solicitud: solicitudId, introduccion: "Ejemplo de introducción" },
       SOLICITUDES2: { fecha_solicitud: "2024-11-17", nombre_actividad: "Ejemplo de actividad" },
@@ -782,6 +782,8 @@ app.post('/generateReport', async (req, res) => {
 
     async function generateReportInDrive(templateFileId, folderId, data, fileName) {
       try {
+        console.log('Iniciando copia del archivo en Google Drive...');
+        
         // Copiar la plantilla en la carpeta destino
         const copiedFile = await drive.files.copy({
           fileId: templateFileId,
@@ -791,7 +793,12 @@ app.post('/generateReport', async (req, res) => {
           },
         });
 
+        if (!copiedFile.data.id) {
+          throw new Error('Error al copiar el archivo, no se recibió un ID válido');
+        }
+
         const fileId = copiedFile.data.id;
+        console.log('Archivo copiado exitosamente con ID:', fileId);
 
         // Compartir el archivo generado
         await drive.permissions.create({
@@ -802,10 +809,12 @@ app.post('/generateReport', async (req, res) => {
           },
         });
 
+        console.log('Permisos asignados exitosamente al archivo:', fileId);
+
         // Devolver enlace del archivo
         return `https://drive.google.com/file/d/${fileId}/view`;
       } catch (error) {
-        console.error('Error al generar informe en Google Drive:', error.message);
+        console.error('Error al generar informe en Google Drive:', JSON.stringify(error, null, 2));
         throw new Error('Error al generar informe en Google Drive');
       }
     }
@@ -815,6 +824,7 @@ app.post('/generateReport', async (req, res) => {
 
     try {
       // Generar el informe en Google Drive
+      console.log('Generando informe en Google Drive...');
       generatedLink = await generateReportInDrive(templateFileId, folderId, resultados, fileName);
     } catch (error) {
       console.error('Error al generar el informe:', error.message);
@@ -822,6 +832,7 @@ app.post('/generateReport', async (req, res) => {
     }
 
     if (!generatedLink) {
+      console.error('No se generaron enlaces de informes, revise los registros.');
       return res.status(500).json({ error: 'No se generaron enlaces de informes' });
     }
 
