@@ -18,14 +18,24 @@ const axios = require('axios');
 
 app.use(bodyParser.json());
 
-// Configurar CORS para permitir solicitudes desde cualquier origen
-app.use(cors({
-  origin: 'https://siac-extension-form.vercel.app', // Cambia esto al origen que necesites
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-  credentials: true,
-  optionsSuccessStatus: 204,
-  allowedHeaders: 'Content-Type,Authorization' // Agrega Content-Type aquí
-}));
+app.use(
+  cors({
+    origin: 'https://siac-extension-form.vercel.app', // Cambiar por el dominio del frontend
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], // Métodos permitidos
+    allowedHeaders: ['Content-Type', 'Authorization'], // Cabeceras permitidas
+    credentials: true,
+  })
+);
+
+// Middleware para agregar encabezados de CORS manualmente
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'https://siac-extension-form.vercel.app'); // Dominio permitido
+  res.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE'); // Métodos permitidos
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization'); // Cabeceras permitidas
+  res.header('Access-Control-Allow-Credentials', 'true'); // Permitir credenciales
+  next();
+});
+
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
 const SPREADSHEET_ID = '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
