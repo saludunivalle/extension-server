@@ -20,7 +20,7 @@ app.use(bodyParser.json());
 
 // Configurar CORS para permitir solicitudes desde cualquier origen
 app.use(cors({
-  origin: 'https://siac-extension-server.vercel.app', // Cambia esto al origen que necesites
+  origin: 'https://siac-extension-form.vercel.app', // Cambia esto al origen que necesites
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   credentials: true,
   optionsSuccessStatus: 204
