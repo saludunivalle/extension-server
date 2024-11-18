@@ -616,178 +616,192 @@ app.get('/getSolicitud', async (req, res) => {
   }
 });
 
-app.post('/generateReport', async (req, res) => {
-  try {
-    const { solicitudId } = req.body;
-
-    if (!solicitudId) {
-      return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
+app.post(
+  '/generateReport',
+  (req, res, next) => {
+    // Configurar CORS únicamente para esta ruta
+    res.header('Access-Control-Allow-Origin', 'https://siac-extension-form.vercel.app');
+    res.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE');
+    res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') {
+      return res.status(200).send(); // Responder rápido a preflight requests
     }
+    next();
+  },
+  async (req, res) => {
+    try {
+      const { solicitudId } = req.body;
 
-    const sheets = getSpreadsheet();
-
-    // Definir las hojas y sus campos correspondientes
-    const hojas = {
-      SOLICITUDES: {
-        range: 'SOLICITUDES!A2:M',
-        fields: [
-          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion',
-          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion',
-          'certificacion', 'recursos'
-        ]
-      },
-      SOLICITUDES2: {
-        range: 'SOLICITUDES2!A2:AL',
-        fields: [
-          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
-          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo',
-          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
-          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador',
-          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion',
-          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion',
-          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
-          'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
-        ]
+      if (!solicitudId) {
+        return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
       }
-    };
 
-    const resultados = {};
+      const sheets = getSpreadsheet();
 
-    // Recolectar datos de todas las hojas
-    for (let [hoja, { range, fields }] of Object.entries(hojas)) {
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range
-      });
-
-      const rows = response.data.values || [];
-      const solicitudData = rows.find(row => row[0] === solicitudId);
-
-      if (solicitudData) {
-        const mappedData = fields.reduce((acc, field, index) => {
-          acc[field] = solicitudData[index] || '';
-          return acc;
-        }, {});
-        resultados[hoja] = mappedData;
-      }
-    }
-
-    if (Object.keys(resultados).length === 0) {
-      return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
-    }
-
-    // Consolidar datos de los formularios
-    const consolidatedData = {
-      ...(resultados.SOLICITUDES || {}),
-      ...(resultados.SOLICITUDES2 || {})
-    };
-
-    // Generar informes en Google Drive
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
-    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
-
-    const convertExcelToGoogleSheets = async (fileId, folderId, fileName) => {
-      const copiedFile = await drive.files.copy({
-        fileId: fileId,
-        requestBody: {
-          name: fileName,
-          parents: [folderId],
-          mimeType: 'application/vnd.google-apps.spreadsheet',
+      // Definir las hojas y sus campos correspondientes
+      const hojas = {
+        SOLICITUDES: {
+          range: 'SOLICITUDES!A2:M',
+          fields: [
+            'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion',
+            'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion',
+            'certificacion', 'recursos',
+          ],
         },
-      });
-      return copiedFile.data.id;
-    };
+        SOLICITUDES2: {
+          range: 'SOLICITUDES2!A2:AL',
+          fields: [
+            'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
+            'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo',
+            'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
+            'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador',
+            'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion',
+            'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion',
+            'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
+            'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad',
+          ],
+        },
+      };
 
-    const form1FileId = await convertExcelToGoogleSheets(
-      form1TemplateId,
-      folderId,
-      `Formulario1_Solicitud_${solicitudId}`
-    );
-    const form2FileId = await convertExcelToGoogleSheets(
-      form2TemplateId,
-      folderId,
-      `Formulario2_Solicitud_${solicitudId}`
-    );
+      const resultados = {};
 
-    const transformData = (data) => {
-      const transformed = {};
-      if (data.fecha_solicitud) {
-        const [dia, mes, anio] = data.fecha_solicitud.split('/');
-        transformed['{{dia}}'] = dia;
-        transformed['{{mes}}'] = mes;
-        transformed['{{anio}}'] = anio;
-      }
-
-      Object.keys(data).forEach((key) => {
-        transformed[`{{${key}}}`] = data[key];
-      });
-
-      return transformed;
-    };
-
-    const transformedData = transformData(consolidatedData);
-
-    const replaceMarkers = async (fileId, data) => {
-      const sheets = google.sheets({ version: 'v4', auth: jwtClient });
-      const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
-      const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
-
-      for (const sheetName of sheetNames) {
-        const range = `${sheetName}!A1:Z100`;
+      // Recolectar datos de todas las hojas
+      for (let [hoja, { range, fields }] of Object.entries(hojas)) {
         const response = await sheets.spreadsheets.values.get({
-          spreadsheetId: fileId,
+          spreadsheetId: SPREADSHEET_ID,
           range,
         });
 
-        const values = response.data.values || [];
-        const updatedValues = values.map((row) =>
-          row.map((cell) =>
-            typeof cell === 'string'
-              ? Object.keys(data).reduce(
-                  (updatedCell, marker) => updatedCell.replace(marker, data[marker] || ''),
-                  cell
-                )
-              : cell
-          )
-        );
+        const rows = response.data.values || [];
+        const solicitudData = rows.find((row) => row[0] === solicitudId);
 
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: fileId,
-          range,
-          valueInputOption: 'USER_ENTERED',
-          resource: { values: updatedValues },
-        });
+        if (solicitudData) {
+          const mappedData = fields.reduce((acc, field, index) => {
+            acc[field] = solicitudData[index] || '';
+            return acc;
+          }, {});
+          resultados[hoja] = mappedData;
+        }
       }
-    };
 
-    await replaceMarkers(form1FileId, transformedData);
-    await replaceMarkers(form2FileId, transformedData);
+      if (Object.keys(resultados).length === 0) {
+        return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
+      }
 
-    const generatedLinks = [];
+      // Consolidar datos de los formularios
+      const consolidatedData = {
+        ...(resultados.SOLICITUDES || {}),
+        ...(resultados.SOLICITUDES2 || {}),
+      };
 
-    for (const fileId of [form1FileId, form2FileId]) {
-      await drive.permissions.create({
-        fileId,
-        requestBody: {
-          role: 'reader',
-          type: 'anyone',
-        },
+      // Generar informes en Google Drive
+      const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
+      const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
+      const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
+
+      const convertExcelToGoogleSheets = async (fileId, folderId, fileName) => {
+        const copiedFile = await drive.files.copy({
+          fileId: fileId,
+          requestBody: {
+            name: fileName,
+            parents: [folderId],
+            mimeType: 'application/vnd.google-apps.spreadsheet',
+          },
+        });
+        return copiedFile.data.id;
+      };
+
+      const form1FileId = await convertExcelToGoogleSheets(
+        form1TemplateId,
+        folderId,
+        `Formulario1_Solicitud_${solicitudId}`
+      );
+      const form2FileId = await convertExcelToGoogleSheets(
+        form2TemplateId,
+        folderId,
+        `Formulario2_Solicitud_${solicitudId}`
+      );
+
+      const transformData = (data) => {
+        const transformed = {};
+        if (data.fecha_solicitud) {
+          const [dia, mes, anio] = data.fecha_solicitud.split('/');
+          transformed['{{dia}}'] = dia;
+          transformed['{{mes}}'] = mes;
+          transformed['{{anio}}'] = anio;
+        }
+
+        Object.keys(data).forEach((key) => {
+          transformed[`{{${key}}}`] = data[key];
+        });
+
+        return transformed;
+      };
+
+      const transformedData = transformData(consolidatedData);
+
+      const replaceMarkers = async (fileId, data) => {
+        const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+        const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
+        const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
+
+        for (const sheetName of sheetNames) {
+          const range = `${sheetName}!A1:Z100`;
+          const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: fileId,
+            range,
+          });
+
+          const values = response.data.values || [];
+          const updatedValues = values.map((row) =>
+            row.map((cell) =>
+              typeof cell === 'string'
+                ? Object.keys(data).reduce(
+                    (updatedCell, marker) => updatedCell.replace(marker, data[marker] || ''),
+                    cell
+                  )
+                : cell
+            )
+          );
+
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: fileId,
+            range,
+            valueInputOption: 'USER_ENTERED',
+            resource: { values: updatedValues },
+          });
+        }
+      };
+
+      await replaceMarkers(form1FileId, transformedData);
+      await replaceMarkers(form2FileId, transformedData);
+
+      const generatedLinks = [];
+
+      for (const fileId of [form1FileId, form2FileId]) {
+        await drive.permissions.create({
+          fileId,
+          requestBody: {
+            role: 'reader',
+            type: 'anyone',
+          },
+        });
+
+        const fileLink = `https://drive.google.com/file/d/${fileId}/view`;
+        generatedLinks.push(fileLink);
+      }
+
+      res.status(200).json({
+        message: 'Informes generados exitosamente',
+        links: generatedLinks,
       });
-
-      const fileLink = `https://drive.google.com/file/d/${fileId}/view`;
-      generatedLinks.push(fileLink);
+    } catch (error) {
+      console.error('Error al generar los informes:', error);
+      res.status(500).json({ error: 'Error al generar los informes' });
     }
-
-    res.status(200).json({
-      message: 'Informes generados exitosamente',
-      links: generatedLinks,
-    });
-  } catch (error) {
-    console.error('Error al generar los informes:', error);
-    res.status(500).json({ error: 'Error al generar los informes' });
   }
-});
+);
 
 
 app.listen(PORT, () => {
