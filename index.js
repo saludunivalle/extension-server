@@ -754,6 +754,56 @@ const formatDateParts = (date) => {
   };
 };
 
+// Función para transformar datos de la solicitud para casillas de selección
+const transformDataForTemplate = (formData) => {
+  // Procesar "tipo"
+  const tipo = formData.tipo || '';
+  const tipoData = {
+    tipo_curso: tipo === 'Curso' ? 'X' : '',
+    tipo_taller: tipo === 'Taller' ? 'X' : '',
+    tipo_seminario: tipo === 'Seminario' ? 'X' : '',
+    tipo_diplomado: tipo === 'Diplomado' ? 'X' : '',
+    tipo_programa: tipo === 'Programa' ? 'X' : '',
+    otro_cual: tipo === 'Otro' ? formData.otro_tipo || '' : '',
+  };
+
+  // Procesar "modalidad"
+  const modalidad = formData.modalidad || '';
+  const modalidadData = {
+    modalidad_presencial: modalidad === 'Presencial' ? 'X' : '',
+    modalidad_tecnologia: modalidad === 'Presencialidad asistida por Tecnología' ? 'X' : '',
+    modalidad_virtual: modalidad === 'Virtual' ? 'X' : '',
+    modalidad_mixta: modalidad === 'Mixta' ? 'X' : '',
+    modalidad_todas: modalidad === 'Todas las anteriores' ? 'X' : '',
+  };
+
+  // Procesar periodicidad
+  const periodicidad = formData.periodicidad_oferta || '';
+  const periodicidadData = {
+    per_anual: periodicidad === 'Anual' ? 'X' : '',
+    per_semestral: periodicidad === 'Semestral' ? 'X' : '',
+    per_permanente: periodicidad === 'Permanente' ? 'X' : '',
+  };
+
+  // Procesar organización de la actividad
+  const organizacion = formData.organizacion_actividad || '';
+  const organizacionData = {
+    oficina_extension: organizacion === 'Oficina de Extensión' ? 'X' : '',
+    unidad_acad: organizacion === 'Unidad Académica' ? 'X' : '',
+    otro_organizacion: organizacion === 'Otro' ? 'X' : '',
+    cual_otro: organizacion === 'Otro' ? formData.otro_tipo_act || '' : '',
+  };
+
+  // Combinar todos los datos transformados
+  return {
+    ...formData,
+    ...tipoData,
+    ...modalidadData,
+    ...periodicidadData,
+    ...organizacionData,
+  };
+};
+
 // Función para procesar y reemplazar marcadores en archivos XLSX
 const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
   try {
@@ -835,9 +885,9 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
-    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe';
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Carpeta en Google Drive
+    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla del Formulario 1
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
 
     const hojas = {
       SOLICITUDES: {
@@ -846,34 +896,45 @@ app.post('/generateReport', async (req, res) => {
       },
       SOLICITUDES2: {
         range: 'SOLICITUDES2!A2:AL',
-        fields: ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'],
+        fields: ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act'],
       },
     };
 
+    // Inicializar Google Sheets API
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
     console.log(`Obteniendo datos para la solicitud: ${solicitudId}`);
     const solicitudData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
 
+    // Formatear la fecha de solicitud
     const fechaPartes = formatDateParts(solicitudData['SOLICITUDES2']['fecha_solicitud']);
-    Object.assign(solicitudData['SOLICITUDES'], fechaPartes);
+    solicitudData['SOLICITUDES2'] = { ...solicitudData['SOLICITUDES2'], ...fechaPartes };
 
+    // Combinar datos de las hojas en un único objeto
     const combinedData = { ...solicitudData['SOLICITUDES'], ...solicitudData['SOLICITUDES2'] };
 
+    // Transformar datos para manejar las casillas de selección
+    const transformedData = transformDataForTemplate(combinedData);
+
     console.log('Generando reportes...');
+
+    // Generar el Formulario 1
     const form1Link = await processXLSXWithStyles(
       form1TemplateId,
-      combinedData,
+      transformedData,
       `Formulario1_${solicitudId}`,
       folderId
     );
+
+    // Generar el Formulario 2
     const form2Link = await processXLSXWithStyles(
       form2TemplateId,
-      combinedData,
+      transformedData,
       `Formulario2_${solicitudId}`,
       folderId
     );
 
+    // Respuesta exitosa con los links generados
     res.status(200).json({
       message: 'Informes generados exitosamente',
       links: [form1Link, form2Link],
