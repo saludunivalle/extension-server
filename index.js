@@ -643,24 +643,28 @@ async function fetchSheetData(spreadsheetId, ranges) {
 //     const { solicitudId } = req.body;
 
 //     if (!solicitudId) {
+//       console.error('Error: El parámetro solicitudId es requerido');
 //       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
 //     }
 
-//     // Función interna para obtener datos desde Google Sheets
+//     console.log(`Procesando solicitud con ID: ${solicitudId}`);
+
+//     // Función para obtener datos desde Google Sheets
 //     async function fetchSheetData(spreadsheetId, ranges) {
 //       const sheets = getSpreadsheet();
 //       try {
+//         console.log('Obteniendo datos de Google Sheets...');
 //         const response = await sheets.spreadsheets.values.batchGet({
 //           spreadsheetId: spreadsheetId,
 //           ranges: ranges,
 //         });
 
-//         // Mapear datos de cada rango
 //         const data = {};
 //         response.data.valueRanges.forEach((valueRange, index) => {
 //           data[ranges[index]] = valueRange.values || [];
 //         });
 
+//         console.log('Datos obtenidos de Google Sheets:', data);
 //         return data;
 //       } catch (error) {
 //         console.error('Error al obtener datos de Google Sheets:', error.message);
@@ -672,7 +676,6 @@ async function fetchSheetData(spreadsheetId, ranges) {
 //     let data;
 
 //     try {
-//       // Obtener datos de los rangos especificados
 //       data = await fetchSheetData(SPREADSHEET_ID, ranges);
 //     } catch (error) {
 //       console.error('Error al consultar Google Sheets:', error.message);
@@ -681,11 +684,15 @@ async function fetchSheetData(spreadsheetId, ranges) {
 
 //     const resultados = {};
 
-//     // Procesar los datos obtenidos
+//     // Procesar datos obtenidos
 //     ranges.forEach((range, index) => {
 //       const rows = data[range];
-//       const solicitudData = rows.find((row) => row[0] === solicitudId);
+//       if (!rows || rows.length === 0) {
+//         console.warn(`No se encontraron datos en el rango: ${range}`);
+//         return;
+//       }
 
+//       const solicitudData = rows.find((row) => row[0] === solicitudId);
 //       if (solicitudData) {
 //         const fields =
 //           index === 0
@@ -700,16 +707,19 @@ async function fetchSheetData(spreadsheetId, ranges) {
 //     });
 
 //     if (!Object.keys(resultados).length) {
+//       console.warn('No se encontraron datos para la solicitud proporcionada');
 //       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
 //     }
 
-//     // Generar informes en Google Drive
+//     console.log('Datos procesados:', resultados);
+
+//     // Generar informe en Google Drive
 //     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
 //     const templateFileId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla
 
-//     async function generateReportInDrive(templateFileId, folderId, data, fileName) {
+//     async function generateReportInDrive(templateFileId, folderId, fileName) {
 //       try {
-//         // Copiar la plantilla en la carpeta destino
+//         console.log('Generando informe en Google Drive...');
 //         const copiedFile = await drive.files.copy({
 //           fileId: templateFileId,
 //           requestBody: {
@@ -720,6 +730,8 @@ async function fetchSheetData(spreadsheetId, ranges) {
 
 //         const fileId = copiedFile.data.id;
 
+//         console.log(`Archivo generado con ID: ${fileId}`);
+
 //         // Compartir el archivo generado
 //         await drive.permissions.create({
 //           fileId: fileId,
@@ -729,7 +741,7 @@ async function fetchSheetData(spreadsheetId, ranges) {
 //           },
 //         });
 
-//         // Devolver enlace del archivo
+//         console.log(`Archivo compartido públicamente: ${fileId}`);
 //         return `https://drive.google.com/file/d/${fileId}/view`;
 //       } catch (error) {
 //         console.error('Error al generar informe en Google Drive:', error.message);
@@ -741,16 +753,18 @@ async function fetchSheetData(spreadsheetId, ranges) {
 //     let generatedLink;
 
 //     try {
-//       // Generar el informe en Google Drive
-//       generatedLink = await generateReportInDrive(templateFileId, folderId, resultados, fileName);
+//       generatedLink = await generateReportInDrive(templateFileId, folderId, fileName);
 //     } catch (error) {
 //       console.error('Error al generar el informe:', error.message);
 //       return res.status(500).json({ error: 'Error al generar el informe' });
 //     }
 
 //     if (!generatedLink) {
+//       console.error('No se generaron enlaces de informes');
 //       return res.status(500).json({ error: 'No se generaron enlaces de informes' });
 //     }
+
+//     console.log('Informe generado exitosamente:', generatedLink);
 
 //     res.status(200).json({
 //       message: 'Informe generado exitosamente',
@@ -767,6 +781,7 @@ app.post('/generateReport', async (req, res) => {
     const { solicitudId } = req.body;
 
     if (!solicitudId) {
+      console.error('Error: El parámetro solicitudId es requerido');
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
@@ -796,6 +811,7 @@ app.post('/generateReport', async (req, res) => {
     let data;
     try {
       data = await fetchSheetData(SPREADSHEET_ID, ranges);
+      console.log('Datos obtenidos desde Google Sheets:', data);
     } catch (error) {
       console.error('Error al consultar Google Sheets:', error.message);
       return res.status(500).json({ error: 'Error al consultar datos de Google Sheets' });
@@ -820,18 +836,16 @@ app.post('/generateReport', async (req, res) => {
     });
 
     if (!Object.keys(resultados).length) {
+      console.error('Error: No se encontraron datos para la solicitud:', solicitudId);
       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
     }
 
-    // Plantillas de los formularios
     const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
     const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
 
-    // Reemplazar marcadores en las plantillas
     const replaceMarkers = async (templateId, data, fileName) => {
       try {
-        // Copiar el archivo
         const copiedFile = await drive.files.copy({
           fileId: templateId,
           requestBody: {
@@ -842,7 +856,6 @@ app.post('/generateReport', async (req, res) => {
 
         const fileId = copiedFile.data.id;
 
-        // Compartir el archivo generado
         await drive.permissions.create({
           fileId: fileId,
           requestBody: {
@@ -853,7 +866,6 @@ app.post('/generateReport', async (req, res) => {
 
         const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
-        // Reemplazar marcadores en las hojas del archivo copiado
         const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
         const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
 
@@ -909,6 +921,7 @@ app.post('/generateReport', async (req, res) => {
     }
 
     if (!form1Link || !form2Link) {
+      console.error('Error: No se generaron todos los informes');
       return res.status(500).json({ error: 'No se generaron todos los informes' });
     }
 
