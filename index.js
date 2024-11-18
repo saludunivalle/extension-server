@@ -2,6 +2,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const xlsx = require('xlsx');
+const ExcelJS = require('exceljs');
 const path = require('path');
 const cors = require('cors');
 const { google } = require('googleapis');
@@ -865,9 +866,7 @@ async function replaceMarkers(templateId, data, fileName) {
   }
 }
 
-
-// Función para reemplazar marcadores en archivos XLSX
-async function processXLSX(templateId, data, fileName, folderId) {
+async function processXLSXWithStyles(templateId, data, fileName, folderId) {
   try {
     // Descargar archivo desde Google Drive
     console.log(`Descargando la plantilla: ${templateId}`);
@@ -885,37 +884,34 @@ async function processXLSX(templateId, data, fileName, folderId) {
       fileResponse.data.on('error', reject);
     });
 
-    // Leer archivo .xlsx
+    // Leer archivo XLSX con ExcelJS
     console.log('Leyendo el archivo descargado...');
-    const workbook = xlsx.readFile(tempFilePath);
-    const sheetNames = workbook.SheetNames;
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(tempFilePath);
 
-    sheetNames.forEach((sheetName) => {
-      const worksheet = workbook.Sheets[sheetName];
-      const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
-
-      // Reemplazar marcadores en las celdas
-      const updatedRows = rows.map((row) =>
-        row.map((cell) =>
-          typeof cell === 'string'
-            ? Object.keys(data).reduce(
-                (updatedCell, marker) => updatedCell.replace(`{{${marker}}}`, data[marker] || ''),
-                cell
-              )
-            : cell
-        )
-      );
-
-      // Sobrescribir la hoja con los valores actualizados
-      workbook.Sheets[sheetName] = xlsx.utils.aoa_to_sheet(updatedRows);
+    // Reemplazar marcadores en todas las hojas
+    workbook.eachSheet((sheet) => {
+      sheet.eachRow((row) => {
+        row.eachCell((cell) => {
+          if (typeof cell.value === 'string') {
+            // Reemplazar marcadores {{key}}
+            Object.keys(data).forEach((key) => {
+              const marker = `{{${key}}}`;
+              if (cell.value.includes(marker)) {
+                cell.value = cell.value.replace(marker, data[key]);
+              }
+            });
+          }
+        });
+      });
     });
 
     // Guardar el archivo actualizado
     const updatedFilePath = path.join('/tmp', `updated_${fileName}.xlsx`);
-    xlsx.writeFile(workbook, updatedFilePath);
+    await workbook.xlsx.writeFile(updatedFilePath);
     console.log('Archivo actualizado con los datos reemplazados.');
 
-    // Subir el archivo actualizado a Drive
+    // Subir el archivo actualizado a Google Drive
     console.log('Subiendo el archivo actualizado a Google Drive...');
     const uploadResponse = await drive.files.create({
       requestBody: {
@@ -943,8 +939,8 @@ async function processXLSX(templateId, data, fileName, folderId) {
     console.log(`Archivo subido y disponible en: ${link}`);
     return link;
   } catch (error) {
-    console.error('Error al procesar archivo XLSX:', error.message);
-    throw new Error('Error al procesar archivo XLSX');
+    console.error('Error al procesar archivo XLSX con estilos:', error.message);
+    throw new Error('Error al procesar archivo XLSX con estilos');
   }
 }
 
@@ -972,8 +968,18 @@ app.post('/generateReport', async (req, res) => {
 
     // Generar archivos
     console.log('Generando reportes...');
-    const form1Link = await processXLSX(form1TemplateId, data, `Formulario1_${solicitudId}`, folderId);
-    const form2Link = await processXLSX(form2TemplateId, data, `Formulario2_${solicitudId}`, folderId);
+    const form1Link = await processXLSXWithStyles(
+      form1TemplateId,
+      data,
+      `Formulario1_${solicitudId}`,
+      folderId
+    );
+    const form2Link = await processXLSXWithStyles(
+      form2TemplateId,
+      data,
+      `Formulario2_${solicitudId}`,
+      folderId
+    );
 
     res.status(200).json({
       message: 'Informes generados exitosamente',
