@@ -107,6 +107,7 @@ app.post('/saveUser', async (req, res) => {
     }
 
     res.status(200).json({ success: true });
+    res.send('Usuario guardado');
   } catch (error) {
     console.error('Error al guardar usuario:', error);
     res.status(500).json({ error: 'Error al guardar usuario', success: false });
