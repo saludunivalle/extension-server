@@ -767,17 +767,15 @@ app.post('/generateReport', async (req, res) => {
     const { solicitudId } = req.body;
 
     if (!solicitudId) {
-      console.error('Error: El parámetro solicitudId es requerido');
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    console.log(`Procesando solicitud con ID: ${solicitudId}`);
+    const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
 
-    // Función para obtener datos desde Google Sheets
-    async function fetchSheetData(spreadsheetId, ranges) {
+    // Obtener datos desde Google Sheets
+    const fetchSheetData = async (spreadsheetId, ranges) => {
       const sheets = getSpreadsheet();
       try {
-        console.log('Obteniendo datos de Google Sheets...');
         const response = await sheets.spreadsheets.values.batchGet({
           spreadsheetId: spreadsheetId,
           ranges: ranges,
@@ -788,17 +786,14 @@ app.post('/generateReport', async (req, res) => {
           data[ranges[index]] = valueRange.values || [];
         });
 
-        console.log('Datos obtenidos de Google Sheets:', data);
         return data;
       } catch (error) {
         console.error('Error al obtener datos de Google Sheets:', error.message);
         throw new Error('Error al obtener datos de Google Sheets');
       }
-    }
+    };
 
-    const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
     let data;
-
     try {
       data = await fetchSheetData(SPREADSHEET_ID, ranges);
     } catch (error) {
@@ -807,16 +802,10 @@ app.post('/generateReport', async (req, res) => {
     }
 
     const resultados = {};
-
-    // Procesar datos obtenidos
     ranges.forEach((range, index) => {
       const rows = data[range];
-      if (!rows || rows.length === 0) {
-        console.warn(`No se encontraron datos en el rango: ${range}`);
-        return;
-      }
-
       const solicitudData = rows.find((row) => row[0] === solicitudId);
+
       if (solicitudData) {
         const fields =
           index === 0
@@ -831,21 +820,20 @@ app.post('/generateReport', async (req, res) => {
     });
 
     if (!Object.keys(resultados).length) {
-      console.warn('No se encontraron datos para la solicitud proporcionada');
       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
     }
 
-    console.log('Datos procesados:', resultados);
+    // Plantillas de los formularios
+    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
 
-    // Generar informe en Google Drive
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
-    const templateFileId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla
-
-    async function generateReportInDrive(templateFileId, folderId, fileName) {
+    // Reemplazar marcadores en las plantillas
+    const replaceMarkers = async (templateId, data, fileName) => {
       try {
-        console.log('Generando informe en Google Drive...');
+        // Copiar el archivo
         const copiedFile = await drive.files.copy({
-          fileId: templateFileId,
+          fileId: templateId,
           requestBody: {
             name: fileName,
             parents: [folderId],
@@ -853,8 +841,6 @@ app.post('/generateReport', async (req, res) => {
         });
 
         const fileId = copiedFile.data.id;
-
-        console.log(`Archivo generado con ID: ${fileId}`);
 
         // Compartir el archivo generado
         await drive.permissions.create({
@@ -865,40 +851,77 @@ app.post('/generateReport', async (req, res) => {
           },
         });
 
-        console.log(`Archivo compartido públicamente: ${fileId}`);
+        const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+
+        // Reemplazar marcadores en las hojas del archivo copiado
+        const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
+        const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
+
+        for (const sheetName of sheetNames) {
+          const range = `${sheetName}!A1:Z100`;
+          const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: fileId,
+            range,
+          });
+
+          const values = response.data.values || [];
+          const updatedValues = values.map((row) =>
+            row.map((cell) =>
+              typeof cell === 'string'
+                ? Object.keys(data).reduce(
+                    (updatedCell, marker) => updatedCell.replace(`{{${marker}}}`, data[marker] || ''),
+                    cell
+                  )
+                : cell
+            )
+          );
+
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: fileId,
+            range,
+            valueInputOption: 'USER_ENTERED',
+            resource: { values: updatedValues },
+          });
+        }
+
         return `https://drive.google.com/file/d/${fileId}/view`;
       } catch (error) {
-        console.error('Error al generar informe en Google Drive:', error.message);
-        throw new Error('Error al generar informe en Google Drive');
+        console.error('Error al reemplazar marcadores en el archivo:', error.message);
+        throw new Error('Error al reemplazar marcadores en el archivo');
       }
-    }
+    };
 
-    const fileName = `Reporte_Solicitud_${solicitudId}`;
-    let generatedLink;
-
+    let form1Link, form2Link;
     try {
-      generatedLink = await generateReportInDrive(templateFileId, folderId, fileName);
+      form1Link = await replaceMarkers(
+        form1TemplateId,
+        resultados['SOLICITUDES'],
+        `Formulario1_Solicitud_${solicitudId}`
+      );
+      form2Link = await replaceMarkers(
+        form2TemplateId,
+        resultados['SOLICITUDES2'],
+        `Formulario2_Solicitud_${solicitudId}`
+      );
     } catch (error) {
-      console.error('Error al generar el informe:', error.message);
-      return res.status(500).json({ error: 'Error al generar el informe' });
+      console.error('Error al generar los informes:', error.message);
+      return res.status(500).json({ error: 'Error al generar los informes' });
     }
 
-    if (!generatedLink) {
-      console.error('No se generaron enlaces de informes');
-      return res.status(500).json({ error: 'No se generaron enlaces de informes' });
+    if (!form1Link || !form2Link) {
+      return res.status(500).json({ error: 'No se generaron todos los informes' });
     }
-
-    console.log('Informe generado exitosamente:', generatedLink);
 
     res.status(200).json({
-      message: 'Informe generado exitosamente',
-      link: generatedLink,
+      message: 'Informes generados exitosamente',
+      links: [form1Link, form2Link],
     });
   } catch (error) {
     console.error('Error al generar los informes:', error.message);
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
