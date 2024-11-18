@@ -620,7 +620,7 @@ app.post(
   '/generateReport',
   (req, res, next) => {
     // Configurar CORS únicamente para esta ruta
-    res.header('Access-Control-Allow-Origin', 'https://siac-extension-form.vercel.app');
+    res.header('Access-Control-Allow-Origin', '*');
     res.header('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE');
     res.header('Access-Control-Allow-Headers', 'Content-Type,Authorization');
     res.header('Access-Control-Allow-Credentials', 'true');
