@@ -865,16 +865,19 @@ async function replaceMarkers(templateId, data, fileName) {
   }
 }
 
+
+// Función para reemplazar marcadores en archivos XLSX
 async function processXLSX(templateId, data, fileName, folderId) {
   try {
     // Descargar archivo desde Google Drive
+    console.log(`Descargando la plantilla: ${templateId}`);
     const fileResponse = await drive.files.get(
       { fileId: templateId, alt: 'media' },
       { responseType: 'stream' }
     );
 
     // Guardar archivo temporalmente
-    const tempFilePath = `/tmp/${fileName}.xlsx`;
+    const tempFilePath = path.join('/tmp', `${fileName}.xlsx`);
     const writeStream = fs.createWriteStream(tempFilePath);
     await new Promise((resolve, reject) => {
       fileResponse.data.pipe(writeStream);
@@ -883,25 +886,37 @@ async function processXLSX(templateId, data, fileName, folderId) {
     });
 
     // Leer archivo .xlsx
+    console.log('Leyendo el archivo descargado...');
     const workbook = xlsx.readFile(tempFilePath);
-    const sheetName = workbook.SheetNames[0]; // Leer primera hoja
-    const worksheet = workbook.Sheets[sheetName];
+    const sheetNames = workbook.SheetNames;
 
-    // Reemplazar marcadores en las celdas
-    Object.keys(data).forEach((key) => {
-      const marker = `{{${key}}}`;
-      for (const cell in worksheet) {
-        if (worksheet[cell].v && worksheet[cell].v.includes(marker)) {
-          worksheet[cell].v = worksheet[cell].v.replace(marker, data[key]);
-        }
-      }
+    sheetNames.forEach((sheetName) => {
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = xlsx.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // Reemplazar marcadores en las celdas
+      const updatedRows = rows.map((row) =>
+        row.map((cell) =>
+          typeof cell === 'string'
+            ? Object.keys(data).reduce(
+                (updatedCell, marker) => updatedCell.replace(`{{${marker}}}`, data[marker] || ''),
+                cell
+              )
+            : cell
+        )
+      );
+
+      // Sobrescribir la hoja con los valores actualizados
+      workbook.Sheets[sheetName] = xlsx.utils.aoa_to_sheet(updatedRows);
     });
 
     // Guardar el archivo actualizado
-    const updatedFilePath = `/tmp/updated_${fileName}.xlsx`;
+    const updatedFilePath = path.join('/tmp', `updated_${fileName}.xlsx`);
     xlsx.writeFile(workbook, updatedFilePath);
+    console.log('Archivo actualizado con los datos reemplazados.');
 
-    // Subir el archivo modificado a Drive
+    // Subir el archivo actualizado a Drive
+    console.log('Subiendo el archivo actualizado a Google Drive...');
     const uploadResponse = await drive.files.create({
       requestBody: {
         name: fileName,
@@ -924,13 +939,16 @@ async function processXLSX(templateId, data, fileName, folderId) {
       },
     });
 
-    return `https://drive.google.com/file/d/${fileId}/view`;
+    const link = `https://drive.google.com/file/d/${fileId}/view`;
+    console.log(`Archivo subido y disponible en: ${link}`);
+    return link;
   } catch (error) {
     console.error('Error al procesar archivo XLSX:', error.message);
     throw new Error('Error al procesar archivo XLSX');
   }
 }
 
+// Endpoint para generar reportes
 app.post('/generateReport', async (req, res) => {
   try {
     const { solicitudId } = req.body;
@@ -940,87 +958,22 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Cambia esto según tu carpeta
-    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla 1
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla 2
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Carpeta en Google Drive
+    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla del Formulario 1
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
 
-    // Función para procesar un archivo XLSX
-    async function processXLSX(templateId, data, fileName, folderId) {
-      try {
-        // Descargar archivo desde Google Drive
-        const fileResponse = await drive.files.get(
-          { fileId: templateId, alt: 'media' },
-          { responseType: 'stream' }
-        );
-
-        // Guardar archivo temporalmente
-        const tempFilePath = `/tmp/${fileName}.xlsx`;
-        const writeStream = fs.createWriteStream(tempFilePath);
-        await new Promise((resolve, reject) => {
-          fileResponse.data.pipe(writeStream);
-          fileResponse.data.on('end', resolve);
-          fileResponse.data.on('error', reject);
-        });
-
-        // Leer archivo .xlsx
-        const workbook = xlsx.readFile(tempFilePath);
-        const sheetName = workbook.SheetNames[0]; // Leer primera hoja
-        const worksheet = workbook.Sheets[sheetName];
-
-        // Reemplazar marcadores en las celdas
-        Object.keys(data).forEach((key) => {
-          const marker = `{{${key}}}`;
-          for (const cell in worksheet) {
-            if (worksheet[cell]?.v && worksheet[cell].v.includes(marker)) {
-              worksheet[cell].v = worksheet[cell].v.replace(marker, data[key]);
-            }
-          }
-        });
-
-        // Guardar el archivo actualizado
-        const updatedFilePath = `/tmp/updated_${fileName}.xlsx`;
-        xlsx.writeFile(workbook, updatedFilePath);
-
-        // Subir el archivo actualizado a Drive
-        const uploadResponse = await drive.files.create({
-          requestBody: {
-            name: fileName,
-            parents: [folderId],
-            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          },
-          media: {
-            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            body: fs.createReadStream(updatedFilePath),
-          },
-        });
-
-        // Hacer el archivo público
-        const fileId = uploadResponse.data.id;
-        await drive.permissions.create({
-          fileId,
-          requestBody: {
-            role: 'reader',
-            type: 'anyone',
-          },
-        });
-
-        return `https://drive.google.com/file/d/${fileId}/view`;
-      } catch (error) {
-        console.error('Error al procesar archivo XLSX:', error.message);
-        throw new Error('Error al procesar archivo XLSX');
-      }
-    }
-
-    // Datos de ejemplo para reemplazo
-    const mockData = {
-      solicitudId,
-      nombre: 'Juan Pérez',
-      fecha: '2024-11-17',
+    // Datos de ejemplo (deberás adaptarlo según la solicitud real)
+    const data = {
+      nombre_solicitante: 'Juan Pérez',
+      nombre_actividad: 'Taller de Innovación',
+      introduccion: 'Esta es una introducción de ejemplo.',
+      objetivo_general: 'Desarrollar habilidades en innovación.',
     };
 
-    // Procesar plantillas y generar enlaces
-    const form1Link = await processXLSX(form1TemplateId, mockData, `Formulario1_${solicitudId}`, folderId);
-    const form2Link = await processXLSX(form2TemplateId, mockData, `Formulario2_${solicitudId}`, folderId);
+    // Generar archivos
+    console.log('Generando reportes...');
+    const form1Link = await processXLSX(form1TemplateId, data, `Formulario1_${solicitudId}`, folderId);
+    const form2Link = await processXLSX(form2TemplateId, data, `Formulario2_${solicitudId}`, folderId);
 
     res.status(200).json({
       message: 'Informes generados exitosamente',
@@ -1031,6 +984,7 @@ app.post('/generateReport', async (req, res) => {
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
