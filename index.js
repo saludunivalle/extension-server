@@ -866,9 +866,51 @@ async function replaceMarkers(templateId, data, fileName) {
   }
 }
 
-async function processXLSXWithStyles(templateId, data, fileName, folderId) {
+
+// Función para obtener datos desde Google Sheets
+const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
   try {
-    // Descargar archivo desde Google Drive
+    const resultados = {};
+
+    // Recorremos cada hoja y buscamos los datos asociados al id_solicitud
+    for (let [hoja, { range, fields }] of Object.entries(hojas)) {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range,
+      });
+
+      const rows = response.data.values || [];
+
+      // Buscar la fila que coincida con el id_solicitud
+      const solicitudData = rows.find((row) => row[0] === solicitudId);
+
+      if (solicitudData) {
+        // Crear un objeto donde las claves son los nombres de los campos
+        const mappedData = fields.reduce((acc, field, index) => {
+          acc[field] = solicitudData[index] || ''; // Asigna el valor correspondiente o vacío si no existe
+          return acc;
+        }, {});
+
+        // Almacenar los datos mapeados de esta hoja dentro del objeto `resultados`
+        resultados[hoja] = mappedData;
+      }
+    }
+
+    // Verificar si se encontraron datos en al menos una hoja
+    if (Object.keys(resultados).length === 0) {
+      throw new Error('No se encontraron datos para esta solicitud');
+    }
+
+    return resultados;
+  } catch (error) {
+    console.error('Error al obtener los datos de la solicitud:', error.message);
+    throw new Error('Error al obtener los datos de la solicitud');
+  }
+};
+
+// Función para procesar y reemplazar marcadores en archivos XLSX
+const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
+  try {
     console.log(`Descargando la plantilla: ${templateId}`);
     const fileResponse = await drive.files.get(
       { fileId: templateId, alt: 'media' },
@@ -942,7 +984,7 @@ async function processXLSXWithStyles(templateId, data, fileName, folderId) {
     console.error('Error al procesar archivo XLSX con estilos:', error.message);
     throw new Error('Error al procesar archivo XLSX con estilos');
   }
-}
+};
 
 // Endpoint para generar reportes
 app.post('/generateReport', async (req, res) => {
@@ -958,25 +1000,34 @@ app.post('/generateReport', async (req, res) => {
     const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla del Formulario 1
     const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
 
-    // Datos de ejemplo (deberás adaptarlo según la solicitud real)
-    const data = {
-      nombre_solicitante: 'Juan Pérez',
-      nombre_actividad: 'Taller de Innovación',
-      introduccion: 'Esta es una introducción de ejemplo.',
-      objetivo_general: 'Desarrollar habilidades en innovación.',
+    const hojas = {
+      SOLICITUDES: {
+        range: 'SOLICITUDES!A2:M',
+        fields: ['id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 'certificacion', 'recursos'],
+      },
+      SOLICITUDES2: {
+        range: 'SOLICITUDES2!A2:AL',
+        fields: ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'],
+      },
     };
+
+    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+
+    // Obtener los datos de la solicitud
+    console.log(`Obteniendo datos para la solicitud: ${solicitudId}`);
+    const solicitudData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
 
     // Generar archivos
     console.log('Generando reportes...');
     const form1Link = await processXLSXWithStyles(
       form1TemplateId,
-      data,
+      solicitudData['SOLICITUDES'] || {},
       `Formulario1_${solicitudId}`,
       folderId
     );
     const form2Link = await processXLSXWithStyles(
       form2TemplateId,
-      data,
+      solicitudData['SOLICITUDES2'] || {},
       `Formulario2_${solicitudId}`,
       folderId
     );
