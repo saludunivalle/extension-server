@@ -11,6 +11,25 @@
         "src": "/(.*)",
         "dest": "index.js"
       }
+    ],
+     "headers": [
+        {
+        "source": "/(.*)",
+        "headers": [
+            {
+            "key": "Access-Control-Allow-Origin",
+            "value": "https://siac-extension-form.vercel.app" 
+            },
+            {
+            "key": "Access-Control-Allow-Methods",
+            "value": "GET,HEAD,PUT,PATCH,POST,DELETE"
+            },
+            {
+            "key": "Access-Control-Allow-Credentials",
+            "value": "true"
+            }
+        ]
+        }
     ]
   }
   
