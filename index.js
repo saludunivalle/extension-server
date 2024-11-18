@@ -780,7 +780,7 @@ async function replaceMarkers(templateId, data, fileName) {
 
 //     // Generar informe en Google Drive
 //     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
-//     const templateFileId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla
+//     const templateFileId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla
 
 //     async function generateReportInDrive(templateFileId, folderId, fileName) {
 //       try {
@@ -850,7 +850,7 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    const form1TemplateId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0';
+    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe';
     const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
 
