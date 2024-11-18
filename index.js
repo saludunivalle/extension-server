@@ -18,15 +18,13 @@ const axios = require('axios');
 
 app.use(bodyParser.json());
 
-// Configura CORS para permitir el origen de tu frontend
-const corsOptions = {
-  origin: ['https://siac-extension-form.vercel.app'], // Agrega tu dominio frontend
-  methods: ['GET', 'POST', 'PUT', 'DELETE'], // Métodos permitidos
-  allowedHeaders: ['Content-Type', 'Authorization'], // Cabeceras permitidas
-};
-
-// Aplica CORS en todo el servidor
-app.use(cors(corsOptions));
+// Configurar CORS para permitir solicitudes desde cualquier origen
+app.use(cors({
+  origin: 'https://siac-extension-server.vercel.app', // Cambia esto al origen que necesites
+  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+  credentials: true,
+  optionsSuccessStatus: 204
+}));
 
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
