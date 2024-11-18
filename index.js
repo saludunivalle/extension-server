@@ -617,26 +617,91 @@ app.get('/getSolicitud', async (req, res) => {
 });
 
 // Función para obtener datos desde Google Sheets
-async function fetchSheetData(spreadsheetId, ranges) {
-  const sheets = getSpreadsheet(); // Asegúrate de que `getSpreadsheet` esté definido en tu archivo
+// async function fetchSheetData(spreadsheetId, ranges) {
+//   const sheets = getSpreadsheet(); // Asegúrate de que `getSpreadsheet` esté definido en tu archivo
+//   try {
+//     const response = await sheets.spreadsheets.values.batchGet({
+//       spreadsheetId: spreadsheetId,
+//       ranges: ranges,
+//     });
+
+//     // Mapeamos los datos de cada rango
+//     const data = {};
+//     response.data.valueRanges.forEach((valueRange, index) => {
+//       data[ranges[index]] = valueRange.values || []; // Si no hay valores, devolvemos un arreglo vacío
+//     });
+
+//     return data;
+//   } catch (error) {
+//     console.error('Error al obtener datos de Google Sheets:', error.message);
+//     throw new Error('Error al obtener datos de Google Sheets');
+//   }
+// }
+
+async function replaceMarkers(templateId, data, fileName) {
   try {
-    const response = await sheets.spreadsheets.values.batchGet({
-      spreadsheetId: spreadsheetId,
-      ranges: ranges,
+    console.log(`Generando archivo desde la plantilla: ${templateId}`);
+    const copiedFile = await drive.files.copy({
+      fileId: templateId,
+      requestBody: {
+        name: fileName,
+        parents: [folderId],
+        mimeType: 'application/vnd.google-apps.spreadsheet', // Convertir a Google Sheets
+      },
     });
 
-    // Mapeamos los datos de cada rango
-    const data = {};
-    response.data.valueRanges.forEach((valueRange, index) => {
-      data[ranges[index]] = valueRange.values || []; // Si no hay valores, devolvemos un arreglo vacío
+    const fileId = copiedFile.data.id;
+
+    // Otorgar permisos públicos
+    await drive.permissions.create({
+      fileId,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
     });
 
-    return data;
+    console.log(`Archivo generado: ${fileId}`);
+
+    // Actualizar datos en el archivo generado
+    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+    const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
+    const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
+
+    for (const sheetName of sheetNames) {
+      const range = `${sheetName}!A1:Z100`;
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: fileId,
+        range,
+      });
+
+      const values = response.data.values || [];
+      const updatedValues = values.map((row) =>
+        row.map((cell) =>
+          typeof cell === 'string'
+            ? Object.keys(data).reduce(
+                (updatedCell, marker) => updatedCell.replace(`{{${marker}}}`, data[marker] || ''),
+                cell
+              )
+            : cell
+        )
+      );
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: fileId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        resource: { values: updatedValues },
+      });
+    }
+
+    return `https://drive.google.com/file/d/${fileId}/view`;
   } catch (error) {
-    console.error('Error al obtener datos de Google Sheets:', error.message);
-    throw new Error('Error al obtener datos de Google Sheets');
+    console.error('Error al reemplazar marcadores:', error.message);
+    throw new Error('Error al reemplazar marcadores en el archivo');
   }
 }
+
  
 // app.post('/generateReport', async (req, res) => {
 //   try {
