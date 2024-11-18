@@ -638,6 +638,130 @@ async function fetchSheetData(spreadsheetId, ranges) {
   }
 }
  
+// app.post('/generateReport', async (req, res) => {
+//   try {
+//     const { solicitudId } = req.body;
+
+//     if (!solicitudId) {
+//       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
+//     }
+
+//     // Función interna para obtener datos desde Google Sheets
+//     async function fetchSheetData(spreadsheetId, ranges) {
+//       const sheets = getSpreadsheet();
+//       try {
+//         const response = await sheets.spreadsheets.values.batchGet({
+//           spreadsheetId: spreadsheetId,
+//           ranges: ranges,
+//         });
+
+//         // Mapear datos de cada rango
+//         const data = {};
+//         response.data.valueRanges.forEach((valueRange, index) => {
+//           data[ranges[index]] = valueRange.values || [];
+//         });
+
+//         return data;
+//       } catch (error) {
+//         console.error('Error al obtener datos de Google Sheets:', error.message);
+//         throw new Error('Error al obtener datos de Google Sheets');
+//       }
+//     }
+
+//     const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
+//     let data;
+
+//     try {
+//       // Obtener datos de los rangos especificados
+//       data = await fetchSheetData(SPREADSHEET_ID, ranges);
+//     } catch (error) {
+//       console.error('Error al consultar Google Sheets:', error.message);
+//       return res.status(500).json({ error: 'Error al consultar datos de Google Sheets' });
+//     }
+
+//     const resultados = {};
+
+//     // Procesar los datos obtenidos
+//     ranges.forEach((range, index) => {
+//       const rows = data[range];
+//       const solicitudData = rows.find((row) => row[0] === solicitudId);
+
+//       if (solicitudData) {
+//         const fields =
+//           index === 0
+//             ? ['id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 'certificacion', 'recursos']
+//             : ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'];
+
+//         resultados[range.split('!')[0]] = fields.reduce((acc, field, idx) => {
+//           acc[field] = solicitudData[idx] || '';
+//           return acc;
+//         }, {});
+//       }
+//     });
+
+//     if (!Object.keys(resultados).length) {
+//       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
+//     }
+
+//     // Generar informes en Google Drive
+//     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
+//     const templateFileId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla
+
+//     async function generateReportInDrive(templateFileId, folderId, data, fileName) {
+//       try {
+//         // Copiar la plantilla en la carpeta destino
+//         const copiedFile = await drive.files.copy({
+//           fileId: templateFileId,
+//           requestBody: {
+//             name: fileName,
+//             parents: [folderId],
+//           },
+//         });
+
+//         const fileId = copiedFile.data.id;
+
+//         // Compartir el archivo generado
+//         await drive.permissions.create({
+//           fileId: fileId,
+//           requestBody: {
+//             role: 'reader',
+//             type: 'anyone',
+//           },
+//         });
+
+//         // Devolver enlace del archivo
+//         return `https://drive.google.com/file/d/${fileId}/view`;
+//       } catch (error) {
+//         console.error('Error al generar informe en Google Drive:', error.message);
+//         throw new Error('Error al generar informe en Google Drive');
+//       }
+//     }
+
+//     const fileName = `Reporte_Solicitud_${solicitudId}`;
+//     let generatedLink;
+
+//     try {
+//       // Generar el informe en Google Drive
+//       generatedLink = await generateReportInDrive(templateFileId, folderId, resultados, fileName);
+//     } catch (error) {
+//       console.error('Error al generar el informe:', error.message);
+//       return res.status(500).json({ error: 'Error al generar el informe' });
+//     }
+
+//     if (!generatedLink) {
+//       return res.status(500).json({ error: 'No se generaron enlaces de informes' });
+//     }
+
+//     res.status(200).json({
+//       message: 'Informe generado exitosamente',
+//       link: generatedLink,
+//     });
+//   } catch (error) {
+//     console.error('Error al generar los informes:', error.message);
+//     res.status(500).json({ error: 'Error al generar los informes' });
+//   }
+// });
+
 app.post('/generateReport', async (req, res) => {
   try {
     const { solicitudId } = req.body;
@@ -646,62 +770,11 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    // Función interna para obtener datos desde Google Sheets
-    async function fetchSheetData(spreadsheetId, ranges) {
-      const sheets = getSpreadsheet();
-      try {
-        const response = await sheets.spreadsheets.values.batchGet({
-          spreadsheetId: spreadsheetId,
-          ranges: ranges,
-        });
-
-        // Mapear datos de cada rango
-        const data = {};
-        response.data.valueRanges.forEach((valueRange, index) => {
-          data[ranges[index]] = valueRange.values || [];
-        });
-
-        return data;
-      } catch (error) {
-        console.error('Error al obtener datos de Google Sheets:', error.message);
-        throw new Error('Error al obtener datos de Google Sheets');
-      }
-    }
-
-    const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
-    let data;
-
-    try {
-      // Obtener datos de los rangos especificados
-      data = await fetchSheetData(SPREADSHEET_ID, ranges);
-    } catch (error) {
-      console.error('Error al consultar Google Sheets:', error.message);
-      return res.status(500).json({ error: 'Error al consultar datos de Google Sheets' });
-    }
-
-    const resultados = {};
-
-    // Procesar los datos obtenidos
-    ranges.forEach((range, index) => {
-      const rows = data[range];
-      const solicitudData = rows.find((row) => row[0] === solicitudId);
-
-      if (solicitudData) {
-        const fields =
-          index === 0
-            ? ['id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 'certificacion', 'recursos']
-            : ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'];
-
-        resultados[range.split('!')[0]] = fields.reduce((acc, field, idx) => {
-          acc[field] = solicitudData[idx] || '';
-          return acc;
-        }, {});
-      }
-    });
-
-    if (!Object.keys(resultados).length) {
-      return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
-    }
+    // Datos simulados o reales desde Google Sheets
+    const resultados = {
+      SOLICITUDES: { id_solicitud: solicitudId, introduccion: "Ejemplo de introducción" },
+      SOLICITUDES2: { fecha_solicitud: "2024-11-17", nombre_actividad: "Ejemplo de actividad" },
+    };
 
     // Generar informes en Google Drive
     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
