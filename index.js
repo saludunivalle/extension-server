@@ -703,16 +703,58 @@ app.post('/generateReport', async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
     }
 
-    // Aquí continuas con la lógica de generación de informes en Google Drive
-    const generatedLinks = []; // Simular la generación de enlaces por ahora
+    // Generar informes en Google Drive
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
+    const templateFileId = '1WiNfcR2_hRcvcNFohFyh0BPzLek9o9f0'; // ID de la plantilla
 
-    if (!generatedLinks.length) {
+    async function generateReportInDrive(templateFileId, folderId, data, fileName) {
+      try {
+        // Copiar la plantilla en la carpeta destino
+        const copiedFile = await drive.files.copy({
+          fileId: templateFileId,
+          requestBody: {
+            name: fileName,
+            parents: [folderId],
+          },
+        });
+
+        const fileId = copiedFile.data.id;
+
+        // Compartir el archivo generado
+        await drive.permissions.create({
+          fileId: fileId,
+          requestBody: {
+            role: 'reader',
+            type: 'anyone',
+          },
+        });
+
+        // Devolver enlace del archivo
+        return `https://drive.google.com/file/d/${fileId}/view`;
+      } catch (error) {
+        console.error('Error al generar informe en Google Drive:', error.message);
+        throw new Error('Error al generar informe en Google Drive');
+      }
+    }
+
+    const fileName = `Reporte_Solicitud_${solicitudId}`;
+    let generatedLink;
+
+    try {
+      // Generar el informe en Google Drive
+      generatedLink = await generateReportInDrive(templateFileId, folderId, resultados, fileName);
+    } catch (error) {
+      console.error('Error al generar el informe:', error.message);
+      return res.status(500).json({ error: 'Error al generar el informe' });
+    }
+
+    if (!generatedLink) {
       return res.status(500).json({ error: 'No se generaron enlaces de informes' });
     }
 
     res.status(200).json({
-      message: 'Informes generados exitosamente',
-      links: generatedLinks,
+      message: 'Informe generado exitosamente',
+      link: generatedLink,
     });
   } catch (error) {
     console.error('Error al generar los informes:', error.message);
