@@ -875,39 +875,87 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
     const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe';
     const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
 
-    const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
+    // Función para procesar archivos XLSX
+    const processXLSX = async (templateId, data, fileName) => {
+      try {
+        const fileResponse = await drive.files.get(
+          { fileId: templateId, alt: 'media' },
+          { responseType: 'stream' }
+        );
 
-    // Obtener datos de Google Sheets
-    const data = await fetchSheetData(SPREADSHEET_ID, ranges);
-    if (!data) {
-      return res.status(500).json({ error: 'No se pudieron obtener datos de Google Sheets' });
-    }
+        // Guardar el archivo descargado temporalmente
+        const tempFilePath = `/tmp/${fileName}.xlsx`;
+        const writeStream = fs.createWriteStream(tempFilePath);
 
-    const resultados = procesarDatos(data, ranges, solicitudId);
-    if (!resultados) {
-      return res.status(404).json({ error: 'No se encontraron datos para la solicitud' });
-    }
+        await new Promise((resolve, reject) => {
+          fileResponse.data.pipe(writeStream);
+          fileResponse.data.on('end', resolve);
+          fileResponse.data.on('error', reject);
+        });
 
-    let form1Link, form2Link;
-    try {
-      form1Link = await replaceMarkers(
-        form1TemplateId,
-        resultados['SOLICITUDES'],
-        `Formulario1_Solicitud_${solicitudId}`
-      );
-      form2Link = await replaceMarkers(
-        form2TemplateId,
-        resultados['SOLICITUDES2'],
-        `Formulario2_Solicitud_${solicitudId}`
-      );
-    } catch (error) {
-      console.error('Error al generar los informes:', error.message);
-      return res.status(500).json({ error: 'Error al generar los informes' });
-    }
+        // Leer el archivo XLSX
+        const workbook = xlsx.readFile(tempFilePath);
+        const sheetName = workbook.SheetNames[0]; // Primera hoja
+        const worksheet = workbook.Sheets[sheetName];
+
+        // Reemplazar los marcadores
+        Object.keys(data).forEach((key) => {
+          const marker = `{{${key}}}`;
+          for (const cell in worksheet) {
+            if (worksheet[cell].v && worksheet[cell].v.includes(marker)) {
+              worksheet[cell].v = worksheet[cell].v.replace(marker, data[key]);
+            }
+          }
+        });
+
+        // Guardar el archivo actualizado
+        const updatedFilePath = `/tmp/updated_${fileName}.xlsx`;
+        xlsx.writeFile(workbook, updatedFilePath);
+
+        // Subir el archivo actualizado a Drive
+        const uploadResponse = await drive.files.create({
+          requestBody: {
+            name: fileName,
+            parents: [folderId],
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+          media: {
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            body: fs.createReadStream(updatedFilePath),
+          },
+        });
+
+        // Hacer público el archivo
+        const fileId = uploadResponse.data.id;
+        await drive.permissions.create({
+          fileId,
+          requestBody: {
+            role: 'reader',
+            type: 'anyone',
+          },
+        });
+
+        return `https://drive.google.com/file/d/${fileId}/view`;
+      } catch (error) {
+        console.error('Error al procesar archivo XLSX:', error.message);
+        throw new Error('Error al procesar archivo XLSX');
+      }
+    };
+
+    // Ejemplo de datos para reemplazar (actualízalo según tus necesidades)
+    const mockData = {
+      solicitudId,
+      nombre: 'Juan Pérez',
+      fecha: '2024-11-17',
+    };
+
+    // Generar los archivos
+    const form1Link = await processXLSX(form1TemplateId, mockData, `Formulario1_${solicitudId}`);
+    const form2Link = await processXLSX(form2TemplateId, mockData, `Formulario2_${solicitudId}`);
 
     res.status(200).json({
       message: 'Informes generados exitosamente',
@@ -918,7 +966,6 @@ app.post('/generateReport', async (req, res) => {
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
-
 
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
