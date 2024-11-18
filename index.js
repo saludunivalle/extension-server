@@ -1,6 +1,8 @@
 // Importaciones y Configuraciones Iniciales
 const express = require('express');
 const bodyParser = require('body-parser');
+const XLSX = require('xlsx');
+const path = require('path');
 const cors = require('cors');
 const { google } = require('googleapis');
 const { config } = require('dotenv');
@@ -646,37 +648,36 @@ async function replaceMarkers(templateId, data, fileName) {
       requestBody: {
         name: fileName,
         parents: [folderId],
-        mimeType: 'application/vnd.google-apps.spreadsheet', // Convertir a Google Sheets
       },
     });
 
     const fileId = copiedFile.data.id;
 
-    // Otorgar permisos públicos
-    await drive.permissions.create({
-      fileId,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone',
-      },
-    });
+    // Descargar archivo .xlsx
+    const dest = path.resolve(__dirname, `${fileName}.xlsx`);
+    const destStream = fs.createWriteStream(dest);
+    await drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'stream' },
+      (err, { data }) => {
+        if (err) throw new Error('Error al descargar el archivo XLSX');
+        data.pipe(destStream);
+      }
+    );
 
-    console.log(`Archivo generado: ${fileId}`);
+    await new Promise((resolve) => destStream.on('finish', resolve));
+    console.log('Archivo XLSX descargado:', dest);
 
-    // Actualizar datos en el archivo generado
-    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
-    const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
-    const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
+    // Leer el archivo .xlsx
+    const workbook = XLSX.readFile(dest);
+    const sheetNames = workbook.SheetNames;
 
-    for (const sheetName of sheetNames) {
-      const range = `${sheetName}!A1:Z100`;
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId: fileId,
-        range,
-      });
+    sheetNames.forEach((sheetName) => {
+      const worksheet = workbook.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
-      const values = response.data.values || [];
-      const updatedValues = values.map((row) =>
+      // Reemplazar marcadores
+      const updatedRows = rows.map((row) =>
         row.map((cell) =>
           typeof cell === 'string'
             ? Object.keys(data).reduce(
@@ -687,18 +688,42 @@ async function replaceMarkers(templateId, data, fileName) {
         )
       );
 
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: fileId,
-        range,
-        valueInputOption: 'USER_ENTERED',
-        resource: { values: updatedValues },
-      });
-    }
+      // Sobrescribir la hoja con los valores actualizados
+      workbook.Sheets[sheetName] = XLSX.utils.aoa_to_sheet(updatedRows);
+    });
 
-    return `https://drive.google.com/file/d/${fileId}/view`;
+    // Guardar el archivo modificado localmente
+    const updatedFilePath = path.resolve(__dirname, `Updated_${fileName}.xlsx`);
+    XLSX.writeFile(workbook, updatedFilePath);
+
+    // Subir el archivo modificado a Google Drive
+    const updatedFile = await drive.files.create({
+      requestBody: {
+        name: `Updated_${fileName}`,
+        parents: [folderId],
+      },
+      media: {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        body: fs.createReadStream(updatedFilePath),
+      },
+    });
+
+    const updatedFileId = updatedFile.data.id;
+
+    // Otorgar permisos públicos al archivo
+    await drive.permissions.create({
+      fileId: updatedFileId,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+    });
+
+    console.log(`Archivo actualizado y subido: ${updatedFileId}`);
+    return `https://drive.google.com/file/d/${updatedFileId}/view`;
   } catch (error) {
-    console.error('Error al reemplazar marcadores:', error.message);
-    throw new Error('Error al reemplazar marcadores en el archivo');
+    console.error('Error al reemplazar marcadores en el archivo XLSX:', error.message);
+    throw new Error('Error al reemplazar marcadores en el archivo XLSX');
   }
 }
 
@@ -856,122 +881,16 @@ app.post('/generateReport', async (req, res) => {
 
     const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
 
-    // Obtener datos desde Google Sheets
-    const fetchSheetData = async (spreadsheetId, ranges) => {
-      try {
-        const sheets = getSpreadsheet();
-        const response = await sheets.spreadsheets.values.batchGet({
-          spreadsheetId,
-          ranges,
-        });
-
-        const data = {};
-        response.data.valueRanges.forEach((valueRange, index) => {
-          data[ranges[index]] = valueRange.values || [];
-        });
-
-        console.log('Datos obtenidos desde Google Sheets:', data);
-        return data;
-      } catch (error) {
-        console.error('Error al obtener datos de Google Sheets:', error.message);
-        throw new Error('Error al obtener datos de Google Sheets');
-      }
-    };
-
-    let data;
-    try {
-      data = await fetchSheetData(SPREADSHEET_ID, ranges);
-    } catch (error) {
-      console.error('Error al consultar Google Sheets:', error.message);
-      return res.status(500).json({ error: 'Error al consultar datos de Google Sheets' });
+    // Obtener datos de Google Sheets
+    const data = await fetchSheetData(SPREADSHEET_ID, ranges);
+    if (!data) {
+      return res.status(500).json({ error: 'No se pudieron obtener datos de Google Sheets' });
     }
 
-    const resultados = {};
-    ranges.forEach((range, index) => {
-      const rows = data[range];
-      const solicitudData = rows.find((row) => row[0] === solicitudId);
-
-      if (solicitudData) {
-        const fields =
-          index === 0
-            ? ['id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 'certificacion', 'recursos']
-            : ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'];
-
-        resultados[range.split('!')[0]] = fields.reduce((acc, field, idx) => {
-          acc[field] = solicitudData[idx] || '';
-          return acc;
-        }, {});
-      }
-    });
-
-    if (!Object.keys(resultados).length) {
-      console.error('Error: No se encontraron datos para la solicitud:', solicitudId);
-      return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
+    const resultados = procesarDatos(data, ranges, solicitudId);
+    if (!resultados) {
+      return res.status(404).json({ error: 'No se encontraron datos para la solicitud' });
     }
-
-    // Reemplazo de marcadores en las plantillas
-    const replaceMarkers = async (templateId, data, fileName) => {
-      try {
-        console.log(`Generando archivo desde la plantilla: ${templateId}`);
-        const copiedFile = await drive.files.copy({
-          fileId: templateId,
-          requestBody: {
-            name: fileName,
-            parents: [folderId],
-          },
-        });
-
-        const fileId = copiedFile.data.id;
-
-        // Otorgar permisos públicos
-        await drive.permissions.create({
-          fileId,
-          requestBody: {
-            role: 'reader',
-            type: 'anyone',
-          },
-        });
-
-        console.log(`Archivo generado: ${fileId}`);
-
-        // Actualizar datos en el archivo generado
-        const sheets = google.sheets({ version: 'v4', auth: jwtClient });
-        const sheetInfo = await sheets.spreadsheets.get({ spreadsheetId: fileId });
-        const sheetNames = sheetInfo.data.sheets.map((sheet) => sheet.properties.title);
-
-        for (const sheetName of sheetNames) {
-          const range = `${sheetName}!A1:Z100`;
-          const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: fileId,
-            range,
-          });
-
-          const values = response.data.values || [];
-          const updatedValues = values.map((row) =>
-            row.map((cell) =>
-              typeof cell === 'string'
-                ? Object.keys(data).reduce(
-                    (updatedCell, marker) => updatedCell.replace(`{{${marker}}}`, data[marker] || ''),
-                    cell
-                  )
-                : cell
-            )
-          );
-
-          await sheets.spreadsheets.values.update({
-            spreadsheetId: fileId,
-            range,
-            valueInputOption: 'USER_ENTERED',
-            resource: { values: updatedValues },
-          });
-        }
-
-        return `https://drive.google.com/file/d/${fileId}/view`;
-      } catch (error) {
-        console.error('Error al reemplazar marcadores:', error.message);
-        throw new Error('Error al reemplazar marcadores en el archivo');
-      }
-    };
 
     let form1Link, form2Link;
     try {
