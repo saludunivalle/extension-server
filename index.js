@@ -638,7 +638,6 @@ async function fetchSheetData(spreadsheetId, ranges) {
   }
 }
  
-
 app.post('/generateReport', async (req, res) => {
   try {
     const { solicitudId } = req.body;
@@ -647,11 +646,33 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
+    // Función interna para obtener datos desde Google Sheets
+    async function fetchSheetData(spreadsheetId, ranges) {
+      const sheets = getSpreadsheet();
+      try {
+        const response = await sheets.spreadsheets.values.batchGet({
+          spreadsheetId: spreadsheetId,
+          ranges: ranges,
+        });
+
+        // Mapear datos de cada rango
+        const data = {};
+        response.data.valueRanges.forEach((valueRange, index) => {
+          data[ranges[index]] = valueRange.values || [];
+        });
+
+        return data;
+      } catch (error) {
+        console.error('Error al obtener datos de Google Sheets:', error.message);
+        throw new Error('Error al obtener datos de Google Sheets');
+      }
+    }
+
     const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
     let data;
 
     try {
-      // Llama a fetchSheetData para obtener los datos de los rangos
+      // Obtener datos de los rangos especificados
       data = await fetchSheetData(SPREADSHEET_ID, ranges);
     } catch (error) {
       console.error('Error al consultar Google Sheets:', error.message);
@@ -682,17 +703,23 @@ app.post('/generateReport', async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
     }
 
-    // Aquí continuas con la lógica de generación de informes como antes
-    // ...
+    // Aquí continuas con la lógica de generación de informes en Google Drive
+    const generatedLinks = []; // Simular la generación de enlaces por ahora
+
+    if (!generatedLinks.length) {
+      return res.status(500).json({ error: 'No se generaron enlaces de informes' });
+    }
+
     res.status(200).json({
       message: 'Informes generados exitosamente',
-      links: [], // Aquí irían los enlaces generados
+      links: generatedLinks,
     });
   } catch (error) {
     console.error('Error al generar los informes:', error.message);
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
