@@ -885,22 +885,34 @@ app.post('/generateReport', async (req, res) => {
       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
     }
 
-    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // Carpeta en Google Drive
-    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla del Formulario 1
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3'; // ID de la plantilla del Formulario 2
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
+    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe';
+    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
 
     const hojas = {
       SOLICITUDES: {
         range: 'SOLICITUDES!A2:M',
-        fields: ['id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 'certificacion', 'recursos'],
+        fields: [
+          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 
+          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 
+          'certificacion', 'recursos'
+        ],
       },
       SOLICITUDES2: {
         range: 'SOLICITUDES2!A2:AL',
-        fields: ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act'],
+        fields: [
+          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 
+          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
+          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
+          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
+          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 
+          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 
+          'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
+        ],
       },
     };
 
-    // Inicializar Google Sheets API
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
     console.log(`Obteniendo datos para la solicitud: ${solicitudId}`);
@@ -910,31 +922,23 @@ app.post('/generateReport', async (req, res) => {
     const fechaPartes = formatDateParts(solicitudData['SOLICITUDES2']['fecha_solicitud']);
     solicitudData['SOLICITUDES2'] = { ...solicitudData['SOLICITUDES2'], ...fechaPartes };
 
-    // Combinar datos de las hojas en un único objeto
-    const combinedData = { ...solicitudData['SOLICITUDES'], ...solicitudData['SOLICITUDES2'] };
-
-    // Transformar datos para manejar las casillas de selección
-    const transformedData = transformDataForTemplate(combinedData);
+    const combinedData = transformDataForTemplate({ ...solicitudData['SOLICITUDES'], ...solicitudData['SOLICITUDES2'] });
 
     console.log('Generando reportes...');
-
-    // Generar el Formulario 1
     const form1Link = await processXLSXWithStyles(
       form1TemplateId,
-      transformedData,
+      combinedData,
       `Formulario1_${solicitudId}`,
       folderId
     );
 
-    // Generar el Formulario 2
     const form2Link = await processXLSXWithStyles(
       form2TemplateId,
-      transformedData,
+      combinedData,
       `Formulario2_${solicitudId}`,
       folderId
     );
 
-    // Respuesta exitosa con los links generados
     res.status(200).json({
       message: 'Informes generados exitosamente',
       links: [form1Link, form2Link],
