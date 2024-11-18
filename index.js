@@ -619,165 +619,6 @@ app.get('/getSolicitud', async (req, res) => {
   }
 });
 
-// Función para obtener datos desde Google Sheets
-// async function fetchSheetData(spreadsheetId, ranges) {
-//   const sheets = getSpreadsheet(); // Asegúrate de que `getSpreadsheet` esté definido en tu archivo
-//   try {
-//     const response = await sheets.spreadsheets.values.batchGet({
-//       spreadsheetId: spreadsheetId,
-//       ranges: ranges,
-//     });
-
-//     // Mapeamos los datos de cada rango
-//     const data = {};
-//     response.data.valueRanges.forEach((valueRange, index) => {
-//       data[ranges[index]] = valueRange.values || []; // Si no hay valores, devolvemos un arreglo vacío
-//     });
-
-//     return data;
-//   } catch (error) {
-//     console.error('Error al obtener datos de Google Sheets:', error.message);
-//     throw new Error('Error al obtener datos de Google Sheets');
-//   }
-// }
- 
-// app.post('/generateReport', async (req, res) => {
-//   try {
-//     const { solicitudId } = req.body;
-
-//     if (!solicitudId) {
-//       console.error('Error: El parámetro solicitudId es requerido');
-//       return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
-//     }
-
-//     console.log(`Procesando solicitud con ID: ${solicitudId}`);
-
-//     // Función para obtener datos desde Google Sheets
-//     async function fetchSheetData(spreadsheetId, ranges) {
-//       const sheets = getSpreadsheet();
-//       try {
-//         console.log('Obteniendo datos de Google Sheets...');
-//         const response = await sheets.spreadsheets.values.batchGet({
-//           spreadsheetId: spreadsheetId,
-//           ranges: ranges,
-//         });
-
-//         const data = {};
-//         response.data.valueRanges.forEach((valueRange, index) => {
-//           data[ranges[index]] = valueRange.values || [];
-//         });
-
-//         console.log('Datos obtenidos de Google Sheets:', data);
-//         return data;
-//       } catch (error) {
-//         console.error('Error al obtener datos de Google Sheets:', error.message);
-//         throw new Error('Error al obtener datos de Google Sheets');
-//       }
-//     }
-
-//     const ranges = ['SOLICITUDES!A2:M', 'SOLICITUDES2!A2:AL'];
-//     let data;
-
-//     try {
-//       data = await fetchSheetData(SPREADSHEET_ID, ranges);
-//     } catch (error) {
-//       console.error('Error al consultar Google Sheets:', error.message);
-//       return res.status(500).json({ error: 'Error al consultar datos de Google Sheets' });
-//     }
-
-//     const resultados = {};
-
-//     // Procesar datos obtenidos
-//     ranges.forEach((range, index) => {
-//       const rows = data[range];
-//       if (!rows || rows.length === 0) {
-//         console.warn(`No se encontraron datos en el rango: ${range}`);
-//         return;
-//       }
-
-//       const solicitudData = rows.find((row) => row[0] === solicitudId);
-//       if (solicitudData) {
-//         const fields =
-//           index === 0
-//             ? ['id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 'certificacion', 'recursos']
-//             : ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'];
-
-//         resultados[range.split('!')[0]] = fields.reduce((acc, field, idx) => {
-//           acc[field] = solicitudData[idx] || '';
-//           return acc;
-//         }, {});
-//       }
-//     });
-
-//     if (!Object.keys(resultados).length) {
-//       console.warn('No se encontraron datos para la solicitud proporcionada');
-//       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
-//     }
-
-//     console.log('Datos procesados:', resultados);
-
-//     // Generar informe en Google Drive
-//     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; // ID de la carpeta de destino
-//     const templateFileId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe'; // ID de la plantilla
-
-//     async function generateReportInDrive(templateFileId, folderId, fileName) {
-//       try {
-//         console.log('Generando informe en Google Drive...');
-//         const copiedFile = await drive.files.copy({
-//           fileId: templateFileId,
-//           requestBody: {
-//             name: fileName,
-//             parents: [folderId],
-//           },
-//         });
-
-//         const fileId = copiedFile.data.id;
-
-//         console.log(`Archivo generado con ID: ${fileId}`);
-
-//         // Compartir el archivo generado
-//         await drive.permissions.create({
-//           fileId: fileId,
-//           requestBody: {
-//             role: 'reader',
-//             type: 'anyone',
-//           },
-//         });
-
-//         console.log(`Archivo compartido públicamente: ${fileId}`);
-//         return `https://drive.google.com/file/d/${fileId}/view`;
-//       } catch (error) {
-//         console.error('Error al generar informe en Google Drive:', error.message);
-//         throw new Error('Error al generar informe en Google Drive');
-//       }
-//     }
-
-//     const fileName = `Reporte_Solicitud_${solicitudId}`;
-//     let generatedLink;
-
-//     try {
-//       generatedLink = await generateReportInDrive(templateFileId, folderId, fileName);
-//     } catch (error) {
-//       console.error('Error al generar el informe:', error.message);
-//       return res.status(500).json({ error: 'Error al generar el informe' });
-//     }
-
-//     if (!generatedLink) {
-//       console.error('No se generaron enlaces de informes');
-//       return res.status(500).json({ error: 'No se generaron enlaces de informes' });
-//     }
-
-//     console.log('Informe generado exitosamente:', generatedLink);
-
-//     res.status(200).json({
-//       message: 'Informe generado exitosamente',
-//       link: generatedLink,
-//     });
-//   } catch (error) {
-//     console.error('Error al generar los informes:', error.message);
-//     res.status(500).json({ error: 'Error al generar los informes' });
-//   }
-// });
 
 async function replaceMarkers(templateId, data, fileName) {
   try {
@@ -901,7 +742,12 @@ const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
       throw new Error('No se encontraron datos para esta solicitud');
     }
 
-    return resultados;
+    // Consolidar todos los datos en un solo objeto
+    const consolidatedData = Object.values(resultados).reduce((acc, hojaData) => {
+      return { ...acc, ...hojaData };
+    }, {});
+
+    return consolidatedData;
   } catch (error) {
     console.error('Error al obtener los datos de la solicitud:', error.message);
     throw new Error('Error al obtener los datos de la solicitud');
@@ -1013,21 +859,21 @@ app.post('/generateReport', async (req, res) => {
 
     const sheets = google.sheets({ version: 'v4', auth: jwtClient });
 
-    // Obtener los datos de la solicitud
+    // Obtener y consolidar los datos de la solicitud
     console.log(`Obteniendo datos para la solicitud: ${solicitudId}`);
-    const solicitudData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
+    const consolidatedData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
 
     // Generar archivos
     console.log('Generando reportes...');
     const form1Link = await processXLSXWithStyles(
       form1TemplateId,
-      solicitudData['SOLICITUDES'] || {},
+      consolidatedData,
       `Formulario1_${solicitudId}`,
       folderId
     );
     const form2Link = await processXLSXWithStyles(
       form2TemplateId,
-      solicitudData['SOLICITUDES2'] || {},
+      consolidatedData,
       `Formulario2_${solicitudId}`,
       folderId
     );
