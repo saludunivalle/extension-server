@@ -18,11 +18,8 @@ const upload = multer({ dest: '/tmp/uploads/' });
 const PORT = process.env.PORT || 3001;
 const axios = require('axios');
 
-
 app.use(bodyParser.json());
 app.use(cors());
-
-
 
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
@@ -127,61 +124,50 @@ app.post('/guardarProgreso', async (req, res) => {
     // Identificar la hoja y las columnas según el formulario
     switch (hoja) {
         case 1:
-          sheetName = 'SOLICITUDES';
+          sheetName = 'SOLICITUDES2';
           columnas = {
-            1: ['B', 'C', 'D'], // Columnas para los datos del paso 1
-            2: ['E', 'F'], // Columnas para los datos del paso 2
-            3: ['G', 'H', 'I'], // Columnas para los datos del paso 3
-            4: ['J', 'K'],      // Columnas para los datos del paso 4
-            5: ['L', 'M'],      // Columnas para los datos del paso 5
+            1: ['A','B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'], // Columnas para los datos del paso 1
+            2: ['J', 'K', 'L','M', 'N',], // Columnas para los datos del paso 2
+            3: [ 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'], // Columnas para los datos del paso 3
+            4: [ 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH',],      // Columnas para los datos del paso 4
+            5: [ 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ'],      // Columnas para los datos del paso 5
           };
-          break;
-          case 2:
-            sheetName = 'SOLICITUDES2';
-            columnas = {
-              1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'], // Columnas para los datos del paso 1
-              2: ['J', 'K', 'L'], // Columnas para los datos del paso 2
-              3: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // Columnas para los datos del paso 3
-              4: ['U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC'],      // Columnas para los datos del paso 4
-              5: ['AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL'],      // Columnas para los datos del paso 5
-            };
-            break;
-          case 3:
-            sheetName = 'SOLICITUDES3';
-            columnas = {
-              1: ['B', 'C'], // Columnas para los datos del paso 1 (B a C)
-              2: [
-                'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 
-                'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 
-                'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 
-                'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 
-                'BP', 'BQ', 'BR', 'BS', 'BT', 'BU', 'BV', 'BW', 'BX', 'BY', 'BZ', 'CA', 'CB', 'CC', 'CD', 
-                'CE', 'CF', 'CG', 'CH', 'CI'
-              ], // Columnas para los datos del paso 2 (D a CI)
-              3: ['CJ', 'CK', 'CL'], // Columnas para los datos del paso 3 (CJ a CL)
-            };
-            break;
-
-            case 4:
-              sheetName = 'SOLICITUDES4';
-              columnas = {
-                1: ['B', 'C'], // Paso 1 va de B a C
-                2: ['D', 'E', 'F', 'G', 'H', 'I'], // Paso 2 va de D a I
-                3: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'], // Paso 3 va de J a X
-                4: ['Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO'], // Paso 4 va de Y a AO
-                5: ['AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK'], // Paso 5 va de AP a BK
-              };            
-            break;
-            case 5:
-              sheetName = 'SOLICITUDES5';
-              columnas = {
-                1: ['B', 'C', 'D', 'E', 'F'], // Paso 1 va de B a F
-                2: ['G', 'H', 'I', 'J'], // Paso 2 va de G a J
-                3: ['K', 'L', 'M', 'N', 'O'], // Paso 3 va de K a O
-                4: ['P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // Paso 4 va de P a Z
-                5: ['AA', 'AB', 'AC'] // Paso 5 va de AA a AC
-              };            
-            break;
+        break;
+        case 2:
+          sheetName = 'SOLICITUDES3';
+          columnas = {
+            1: ['B', 'C'], // Columnas para los datos del paso 1 (B a C)
+            2: [
+              'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 
+              'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 
+              'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 
+              'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 
+              'BP', 'BQ', 'BR', 'BS', 'BT', 'BU', 'BV', 'BW', 'BX', 'BY', 'BZ', 'CA', 'CB', 'CC', 'CD', 
+              'CE', 'CF', 'CG', 'CH', 'CI'
+            ], // Columnas para los datos del paso 2 (D a CI)
+            3: ['CJ', 'CK', 'CL'], // Columnas para los datos del paso 3 (CJ a CL)
+          };
+        break;
+        case 3:
+          sheetName = 'SOLICITUDES4';
+          columnas = {
+            1: ['B', 'C'], // Paso 1 va de B a C
+            2: ['D', 'E', 'F', 'G', 'H', 'I'], // Paso 2 va de D a I
+            3: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'], // Paso 3 va de J a X
+            4: ['Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO'], // Paso 4 va de Y a AO
+            5: ['AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK'], // Paso 5 va de AP a BK
+          };            
+        break;
+        case 4:
+          sheetName = 'SOLICITUDES5';
+          columnas = {
+            1: ['B', 'C', 'D', 'E', 'F'], // Paso 1 va de B a F
+            2: ['G', 'H', 'I', 'J'], // Paso 2 va de G a J
+            3: ['K', 'L', 'M', 'N', 'O'], // Paso 3 va de K a O
+            4: ['P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // Paso 4 va de P a Z
+            5: ['AA', 'AB', 'AC'] // Paso 5 va de AA a AC
+          };            
+        break;
       default:
         return res.status(400).json({ error: 'Hoja no válida' });
     }
@@ -233,7 +219,7 @@ app.post('/guardarProgreso', async (req, res) => {
     });
 
     // Definir el estado global de la solicitud
-    const estadoGlobal = (hoja === 5 && paso === 5) ? 'Completado' : 'En progreso';
+    const estadoGlobal = (hoja === 4 && paso === 5) ? 'Completado' : 'En progreso';
     const etapaActual = hoja; // Guardar solo el número del formulario; // Actualizamos para que sea "Formulario" en lugar de "Paso"
 
     // Buscar el id_solicitud en la hoja ETAPAS
@@ -253,7 +239,7 @@ app.post('/guardarProgreso', async (req, res) => {
         range: `ETAPAS!A${filaEtapas}`,
         valueInputOption: 'RAW',
         resource: {
-          values: [[id_solicitud, userData.id, fechaActual, userData.name, etapaActual, estadoGlobal, formData.nombre_actividad || '', paso]]
+          values: [[id_solicitud, userData.id_usuario, fechaActual, userData.name, etapaActual, estadoGlobal, formData.nombre_actividad || '', paso]]
         },
       });
     } else {
@@ -277,14 +263,9 @@ app.post('/guardarProgreso', async (req, res) => {
   }
 });
 
-
-
 // ==========================================================================
 // Otras rutas auxiliares
 // ==========================================================================
-
-
-
 
 // Ruta para obtener el último ID
 app.get('/getLastId', async (req, res) => {
@@ -303,7 +284,6 @@ app.get('/getLastId', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener el último ID' });
   }
 });
-
 
 app.get('/getRequests', async (req, res) => {
   try {
@@ -342,6 +322,7 @@ app.get('/getRequests', async (req, res) => {
 app.get('/getActiveRequests', async (req, res) => {
   try {
     const { userId } = req.query;
+    console.log('Obteniendo solicitudes activas para el usuario:', userId);
     const sheets = getSpreadsheet();
 
     const etapasResponse = await sheets.spreadsheets.values.get({
@@ -361,6 +342,8 @@ app.get('/getActiveRequests', async (req, res) => {
         paso: parseInt(row[7]), // columna para el paso
         nombre_actividad: row[6] // nombre de la actividad
       }));
+
+      console.log('Solicitudes activas:', activeRequests);
 
     res.status(200).json(activeRequests);
   } catch (error) {
@@ -396,7 +379,6 @@ app.get('/getCompletedRequests', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener solicitudes terminadas' });
   }
 });
-
 
 app.get('/getProgramasYOficinas', async (req, res) => {
   try {
@@ -445,53 +427,6 @@ app.get('/getProgramasYOficinas', async (req, res) => {
   }
 });
 
-// app.get('/getSolicitud', async (req, res) => {
-//   try {
-//     const { id_solicitud } = req.query;
-//     const sheets = getSpreadsheet();
-
-//     // Definir las hojas que queremos consultar
-//     const hojas = ['SOLICITUDES', 'SOLICITUDES2', 'SOLICITUDES3', 'SOLICITUDES4', 'SOLICITUDES5'];
-
-//     // Variable para almacenar los datos de todas las hojas
-//     const resultados = {};
-
-//     // Recorremos cada hoja y buscamos los datos asociados al id_solicitud
-//     for (let hoja of hojas) {
-//       const response = await sheets.spreadsheets.values.get({
-//         spreadsheetId: SPREADSHEET_ID,
-//         range: `${hoja}!A2:CL`, // Ajusta el rango según el número de columnas de cada hoja
-//       });
-
-//       const rows = response.data.values || [];
-      
-//       // Buscar la fila que coincida con el id_solicitud
-//       const solicitudData = rows.find(row => row[0] === id_solicitud);
-
-//       if (solicitudData) {
-//         // Almacenar los datos de esta hoja dentro del objeto `resultados`
-//         resultados[hoja] = solicitudData;
-//       }
-//     }
-
-//     // Verificar si se encontraron datos en al menos una hoja
-//     if (Object.keys(resultados).length === 0) {
-//       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
-//     }
-
-//     // Devolver todos los datos encontrados
-//     res.status(200).json(resultados);
-//   } catch (error) {
-//     console.error('Error al obtener los datos de la solicitud:', error);
-//     res.status(500).json({ error: 'Error al obtener los datos de la solicitud' });
-//   }
-// });
-
-
-// ==========================================================================
-// Inicializar el servidor
-// ==========================================================================
-
 app.get('/getSolicitud', async (req, res) => {
   try {
     const { id_solicitud } = req.query;
@@ -499,19 +434,12 @@ app.get('/getSolicitud', async (req, res) => {
 
     // Definir las hojas y el mapeo de columnas a campos
     const hojas = {
-      SOLICITUDES: {
-        range: 'SOLICITUDES!A2:M',
-        fields: [
-          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 
-          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 
-          'certificacion', 'recursos'
-        ]
-      },
       SOLICITUDES2: {
-        range: 'SOLICITUDES2!A2:AL',
+        range: 'SOLICITUDES2!A2:AQ',
         fields: [
           'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
-          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 
+          'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 
           'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
           'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
           'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
@@ -618,7 +546,6 @@ app.get('/getSolicitud', async (req, res) => {
     res.status(500).json({ error: 'Error al obtener los datos de la solicitud' });
   }
 });
-
 
 async function replaceMarkers(templateId, data, fileName) {
   try {
@@ -899,10 +826,10 @@ app.post('/generateReport', async (req, res) => {
         ],
       },
       SOLICITUDES2: {
-        range: 'SOLICITUDES2!A2:AL',
+        range: 'SOLICITUDES2!A2:AQ',
         fields: [
           'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
-          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'tipo', 
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia','introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 
           'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
           'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
           'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
@@ -948,7 +875,6 @@ app.post('/generateReport', async (req, res) => {
     res.status(500).json({ error: 'Error al generar los informes' });
   }
 });
-
 
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
