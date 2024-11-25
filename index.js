@@ -752,6 +752,7 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(tempFilePath);
 
+    console.log('Procesando celdas para reemplazo...');
     workbook.eachSheet((sheet) => {
       sheet.eachRow((row) => {
         row.eachCell((cell) => {
@@ -759,7 +760,7 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
             Object.keys(data).forEach((key) => {
               const marker = `{{${key}}}`;
               if (cell.value.includes(marker)) {
-                cell.value = cell.value.replace(marker, data[key]);
+                cell.value = cell.value.replace(marker, data[key] || '');
               }
             });
           }
@@ -802,79 +803,103 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
   }
 };
 
-// Endpoint para generar reportes
 app.post('/generateReport', async (req, res) => {
   try {
-    const { solicitudId } = req.body;
+    const { solicitudId, formNumber } = req.body;
 
-    if (!solicitudId) {
-      console.error('Error: El parámetro solicitudId es requerido');
-      return res.status(400).json({ error: 'El parámetro solicitudId es requerido' });
+    if (!solicitudId || !formNumber) {
+      console.error('Error: Los parámetros solicitudId y formNumber son requeridos');
+      return res.status(400).json({ error: 'Los parámetros solicitudId y formNumber son requeridos' });
     }
 
     const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
-    const form1TemplateId = '13N7SjXZwokVcan2tMF2JAPRh-Jt6YaIe';
-    const form2TemplateId = '1XZDXyMf4TC9PthBal0LPrgLMawHGeFM3';
+    const templateIds = {
+      1: '1xsz9YSnYEOng56eNKGV9it9EgTn0mZw1',
+      2: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF',
+      3: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0',
+      4: '1WoPUZYusNl2u3FpmZ1qiO5URBUqHIwKF',
+    };
+
+    const templateId = templateIds[formNumber];
+    if (!templateId) {
+      console.error(`Formulario no válido: ${formNumber}`);
+      return res.status(400).json({ error: 'Número de formulario no válido' });
+    }
 
     const hojas = {
-      SOLICITUDES: {
-        range: 'SOLICITUDES!A2:M',
-        fields: [
-          'id_solicitud', 'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 
-          'descripcion', 'alcance', 'metodologia', 'dirigido_a', 'programa_contenidos', 'duracion', 
-          'certificacion', 'recursos'
-        ],
-      },
       SOLICITUDES2: {
         range: 'SOLICITUDES2!A2:AQ',
         fields: [
-          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
-          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia','introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 
-          'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
-          'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
-          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
-          'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 
-          'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 
-          'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
+          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
+          'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 'otro_tipo',
+          'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont',
+          'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador',
+          'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado',
+          'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio',
+          'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros',
+          'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act',
+        ],
+      },
+      SOLICITUDES3: {
+        range: 'SOLICITUDES3!A2:CL',
+        fields: [
+          'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
+          'costos_personal_cantidad', 'costos_personal_vr_unit', 'total_costos_personal',
+        ],
+      },
+      SOLICITUDES4: {
+        range: 'SOLICITUDES4!A2:BK',
+        fields: [
+          'id_solicitud', 'descripcionPrograma', 'identificacionNecesidades', 'atributosBasicos',
+          'atributosDiferenciadores', 'competencia', 'programa', 'programasSimilares',
+          'estrategiasCompetencia', 'personasInteres', 'personasMatriculadas', 'otroInteres',
+          'innovacion', 'solicitudExterno', 'interesSondeo', 'llamadas', 'encuestas', 'webinar',
+          'preregistro', 'mesasTrabajo', 'focusGroup', 'desayunosTrabajo', 'almuerzosTrabajo', 'openHouse',
+          'valorEconomico', 'modalidadPresencial', 'modalidadVirtual', 'modalidadSemipresencial',
+          'otraModalidad', 'beneficiosTangibles', 'beneficiosIntangibles', 'particulares', 'colegios',
+          'empresas', 'egresados', 'colaboradores', 'otros_publicos_potenciales', 'tendenciasActuales',
+          'dofaDebilidades', 'dofaOportunidades', 'dofaFortalezas', 'dofaAmenazas', 'paginaWeb',
+          'facebook', 'instagram', 'linkedin', 'correo', 'prensa', 'boletin', 'llamadas_redes', 'otro_canal',
+        ],
+      },
+      SOLICITUDES5: {
+        range: 'SOLICITUDES5!A2:AC',
+        fields: [
+          'id_solicitud', 'proposito', 'comentario', 'fecha', 'elaboradoPor', 'aplicaDiseno1', 'aplicaDiseno2',
+          'aplicaDiseno3', 'aplicaLocacion1', 'aplicaLocacion2', 'aplicaLocacion3', 'aplicaDesarrollo1',
+          'aplicaDesarrollo2', 'aplicaDesarrollo3', 'aplicaDesarrollo4', 'aplicaCierre1', 'aplicaCierre2',
+          'aplicaOtros1', 'aplicaOtros2',
         ],
       },
     };
 
-    const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+    const sheets = getSpreadsheet();
 
-    console.log(`Obteniendo datos para la solicitud: ${solicitudId}`);
+    // Usar getSolicitudData para obtener los datos
     const solicitudData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
 
-    // Formatear la fecha de solicitud
-    const fechaPartes = formatDateParts(solicitudData['SOLICITUDES2']['fecha_solicitud']);
-    solicitudData['SOLICITUDES2'] = { ...solicitudData['SOLICITUDES2'], ...fechaPartes };
+    console.log('Transformando datos para la plantilla...');
+    const transformedData = transformDataForTemplate(solicitudData.SOLICITUDES2);
 
-    const combinedData = transformDataForTemplate({ ...solicitudData['SOLICITUDES'], ...solicitudData['SOLICITUDES2'] });
-
-    console.log('Generando reportes...');
-    const form1Link = await processXLSXWithStyles(
-      form1TemplateId,
-      combinedData,
-      `Formulario1_${solicitudId}`,
-      folderId
-    );
-
-    const form2Link = await processXLSXWithStyles(
-      form2TemplateId,
-      combinedData,
-      `Formulario2_${solicitudId}`,
+    console.log(`Generando reporte para el formulario ${formNumber}...`);
+    const reportLink = await processXLSXWithStyles(
+      templateId,
+      transformedData,
+      `Formulario${formNumber}_${solicitudId}`,
       folderId
     );
 
     res.status(200).json({
-      message: 'Informes generados exitosamente',
-      links: [form1Link, form2Link],
+      message: `Informe generado exitosamente para el formulario ${formNumber}`,
+      link: reportLink,
     });
   } catch (error) {
-    console.error('Error general al generar los informes:', error.message);
-    res.status(500).json({ error: 'Error al generar los informes' });
+    console.error('Error al generar el informe:', error.message);
+    res.status(500).json({ error: 'Error al generar el informe' });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
