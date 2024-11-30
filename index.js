@@ -292,7 +292,7 @@ app.get('/getRequests', async (req, res) => {
 
     const activeResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `ETAPAS!A2:F`,
+      range: `ETAPAS!A2:H`,
     });
 
     const rows = activeResponse.data.values;
