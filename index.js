@@ -115,6 +115,13 @@ app.post('/saveUser', async (req, res) => {
 app.post('/guardarProgreso', async (req, res) => {
   const { id_solicitud, formData, paso, hoja, userData } = req.body;
 
+  console.log('Recibiendo datos para guardar progreso:');
+  console.log('ID de Solicitud:', id_solicitud);
+  console.log('Paso:', paso);
+  console.log('Hoja:', hoja);
+  console.log('Datos del Formulario:', formData);
+  console.log('Datos del Usuario:', userData);
+
   try {
     const sheets = getSpreadsheet();
     let sheetName = '';
@@ -149,16 +156,6 @@ app.post('/guardarProgreso', async (req, res) => {
           };
         break;
         case 3:
-          sheetName = 'SOLICITUDES4';
-          columnas = {
-            1: ['B', 'C'], // Paso 1 va de B a C
-            2: ['D', 'E', 'F', 'G', 'H', 'I'], // Paso 2 va de D a I
-            3: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'], // Paso 3 va de J a X
-            4: ['Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO'], // Paso 4 va de Y a AO
-            5: ['AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK'], // Paso 5 va de AP a BK
-          };            
-        break;
-        case 4:
           sheetName = 'SOLICITUDES5';
           columnas = {
             1: ['B', 'C', 'D', 'E', 'F'], // Paso 1 va de B a F
@@ -166,6 +163,16 @@ app.post('/guardarProgreso', async (req, res) => {
             3: ['K', 'L', 'M', 'N', 'O'], // Paso 3 va de K a O
             4: ['P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // Paso 4 va de P a Z
             5: ['AA', 'AB', 'AC'] // Paso 5 va de AA a AC
+          };            
+        break;
+        case 4:
+          sheetName = 'SOLICITUDES4';
+          columnas = {
+            1: ['B', 'C'], // Paso 1 va de B a C
+            2: ['D', 'E', 'F', 'G', 'H', 'I'], // Paso 2 va de D a I
+            3: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X'], // Paso 3 va de J a X
+            4: ['Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO'], // Paso 4 va de Y a AO
+            5: ['AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK'], // Paso 5 va de AP a BK
           };            
         break;
       default:
@@ -178,11 +185,16 @@ app.post('/guardarProgreso', async (req, res) => {
       range: `${sheetName}!A:A`,
     });
 
+    console.log('Filas obtenidas de Google Sheets:', response.data.values);
+
     const rows = response.data.values || [];
     let fila = rows.findIndex((row) => row[0] === id_solicitud.toString());
 
+    console.log('Índice de la fila para la solicitud:', fila);
+
     // Si no existe, agrega una nueva fila
     if (fila === -1) {
+      console.log('Solicitud no encontrada, agregando nueva fila...');
       fila = rows.length + 1;
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
@@ -190,6 +202,7 @@ app.post('/guardarProgreso', async (req, res) => {
         valueInputOption: 'RAW',
         resource: { values: [[id_solicitud]] }, // Inserta el id_solicitud en la primera columna
       });
+      console.log('Nueva fila añadida en la posición:', fila);
     } else {
       fila += 1; // Ajustar el índice de la fila para trabajar con la API (basada en 1)
     }
@@ -217,7 +230,7 @@ app.post('/guardarProgreso', async (req, res) => {
       valueInputOption: 'RAW',
       resource: { values: [valores] }, // Actualiza los valores del paso
     });
-
+    console.log('Hoja ETAPAS actualizada para la solicitud:', id_solicitud);
     // Definir el estado global de la solicitud
     const estadoGlobal = (hoja === 4 && paso === 5) ? 'Completado' : 'En progreso';
     const etapaActual = hoja; // Guardar solo el número del formulario; // Actualizamos para que sea "Formulario" en lugar de "Paso"
