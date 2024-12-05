@@ -356,7 +356,7 @@ app.get('/getRequests', async (req, res) => {
     );
 
     const completedRequests = rows.filter(
-      (row) => row[1] === userId && row[5] === 'Terminado'
+      (row) => row[1] === userId && row[5] === 'Completado'
     );
 
     res.status(200).json({
@@ -403,33 +403,39 @@ app.get('/getActiveRequests', async (req, res) => {
   }
 });
 
-
-// Extraer solicitudes terminadas
 app.get('/getCompletedRequests', async (req, res) => {
   try {
-    const { userId } = req.query; // Asegúrate de recibir el id del usuario
+    const { userId } = req.query;
+    console.log('Obteniendo solicitudes activas para el usuario:', userId);
     const sheets = getSpreadsheet();
 
-    // Obtener la hoja de ETAPAS
     const etapasResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `ETAPAS!A2:H`, // Ajustar el rango según tu estructura
+      range: `ETAPAS!A2:I`, // Asegúrate de incluir la columna de formulario y paso
     });
 
     const rows = etapasResponse.data.values;
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ error: 'No se encontraron solicitudes terminadas' });
+      return res.status(404).json({ error: 'No se encontraron solicitudes activas' });
     }
 
-    // Filtrar las solicitudes que están terminadas (completadas)
-    const completedRequests = rows.filter((row) => row[1] === userId && row[5] === 'Completado');
+    const activeRequests = rows.filter((row) => row[1] === userId && row[5] === 'Completado')
+      .map((row) => ({
+        idSolicitud: row[0], // id_solicitud
+        formulario: parseInt(row[4]), // columna para el formulario
+        paso: parseInt(row[7]), // columna para el paso
+        nombre_actividad: row[6] // nombre de la actividad
+      }));
 
-    res.status(200).json(completedRequests);
+      console.log('Solicitudes activas:', activeRequests);
+
+    res.status(200).json(activeRequests);
   } catch (error) {
-    console.error('Error al obtener solicitudes terminadas:', error);
-    res.status(500).json({ error: 'Error al obtener solicitudes terminadas' });
+    console.error('Error al obtener solicitudes activas:', error);
+    res.status(500).json({ error: 'Error al obtener solicitudes activas' });
   }
 });
+
 
 app.get('/getProgramasYOficinas', async (req, res) => {
   try {
@@ -685,6 +691,16 @@ async function replaceMarkers(templateId, data, fileName) {
   }
 }
 
+// Función para formatear partes de una fecha
+const formatDateParts = (date) => {
+  const fecha = new Date(date);
+  return {
+    dia: fecha.getDate().toString().padStart(2, '0'),
+    mes: (fecha.getMonth() + 1).toString().padStart(2, '0'),
+    anio: fecha.getFullYear().toString(),
+  };
+};
+
 
 // Función para obtener datos desde Google Sheets
 const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
@@ -720,16 +736,6 @@ const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
     console.error('Error al obtener los datos de la solicitud:', error.message);
     throw new Error('Error al obtener los datos de la solicitud');
   }
-};
-
-// Función para formatear partes de una fecha
-const formatDateParts = (date) => {
-  const fecha = new Date(date);
-  return {
-    dia: fecha.getDate().toString().padStart(2, '0'),
-    mes: (fecha.getMonth() + 1).toString().padStart(2, '0'),
-    anio: fecha.getFullYear().toString(),
-  };
 };
 
 // Función para transformar datos de la solicitud para casillas de selección
@@ -857,6 +863,10 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
 app.post('/generateReport', async (req, res) => {
   try {
     const { solicitudId, formNumber } = req.body;
+    console.log("Datos recibidos en generateReport:");
+    console.log("solicitudId:", solicitudId);
+    console.log("formNumber:", formNumber);
+  
 
     if (!solicitudId || !formNumber) {
       console.error('Error: Los parámetros solicitudId y formNumber son requeridos');
