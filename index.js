@@ -376,32 +376,54 @@ app.get('/getActiveRequests', async (req, res) => {
     console.log('Obteniendo solicitudes activas para el usuario:', userId);
     const sheets = getSpreadsheet();
 
+    // Obtener datos de ETAPAS
     const etapasResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `ETAPAS!A2:I`, // Asegúrate de incluir la columna de formulario y paso
+      range: `ETAPAS!A2:I`,
     });
 
     const rows = etapasResponse.data.values;
+
     if (!rows || rows.length === 0) {
       return res.status(404).json({ error: 'No se encontraron solicitudes activas' });
     }
 
-    const activeRequests = rows.filter((row) => row[1] === userId && row[5] === 'En progreso')
+    // Filtrar solicitudes activas
+    const activeRequests = rows
+      .filter((row) => row[1] === userId && row[5] === 'En progreso')
       .map((row) => ({
-        idSolicitud: row[0], // id_solicitud
-        formulario: parseInt(row[4]), // columna para el formulario
-        paso: parseInt(row[7]), // columna para el paso
-        nombre_actividad: row[6] // nombre de la actividad
+        idSolicitud: row[0],
+        formulario: parseInt(row[4]),
+        paso: parseInt(row[7]),
+        nombre_actividad: '', // Inicialmente vacío
       }));
 
-      console.log('Solicitudes activas:', activeRequests);
+    // Obtener datos de SOLICITUDES2 para buscar nombre_actividad
+    const solicitudesResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `SOLICITUDES2!A2:D`, // Ajusta la columna de nombre_actividad
+    });
 
-    res.status(200).json(activeRequests);
+    const solicitudesRows = solicitudesResponse.data.values;
+
+    // Combinar datos de ETAPAS y SOLICITUDES2
+    const combinedRequests = activeRequests.map((request) => {
+      const solicitud = solicitudesRows.find((row) => row[0] === request.idSolicitud); // Comparar por idSolicitud
+      return {
+        ...request,
+        nombre_actividad: solicitud ? solicitud[2] : 'Sin nombre', // Ajusta el índice de nombre_actividad
+      };
+    });
+
+    console.log('Solicitudes activas combinadas:', combinedRequests);
+
+    res.status(200).json(combinedRequests);
   } catch (error) {
     console.error('Error al obtener solicitudes activas:', error);
     res.status(500).json({ error: 'Error al obtener solicitudes activas' });
   }
 });
+
 
 app.get('/getCompletedRequests', async (req, res) => {
   try {
