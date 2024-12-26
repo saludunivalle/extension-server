@@ -136,7 +136,7 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
     // Identificar la hoja y las columnas según el formulario
     switch (parsedHoja) {
       case 1:
-        sheetName = 'SOLICITUDES2';
+        sheetName = 'SOLICITUDES';
         columnas = {
           1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
           2: ['J', 'K', 'L', 'M', 'N'],
@@ -146,7 +146,7 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
         };
         break;
       case 2:
-        sheetName = 'SOLICITUDES3';
+        sheetName = 'SOLICITUDES2';
         columnas = {
           1: ['B', 'C'],
           2: ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 'BP', 'BQ', 'BR', 'BS', 'BT', 'BU', 'BV', 'BW', 'BX', 'BY', 'BZ', 'CA', 'CB', 'CC', 'CD', 'CE', 'CF', 'CG', 'CH', 'CI'],
@@ -154,7 +154,7 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
         };
         break;
       case 3:
-        sheetName = 'SOLICITUDES5';
+        sheetName = 'SOLICITUDES3';
         columnas = {
           1: ['B', 'C', 'D', 'E', 'F'],
           2: ['G', 'H', 'I', 'J'],
@@ -398,15 +398,15 @@ app.get('/getActiveRequests', async (req, res) => {
         nombre_actividad: '', // Inicialmente vacío
       }));
 
-    // Obtener datos de SOLICITUDES2 para buscar nombre_actividad
+    // Obtener datos de SOLICITUDES para buscar nombre_actividad
     const solicitudesResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `SOLICITUDES2!A2:D`, // Ajusta la columna de nombre_actividad
+      range: `SOLICITUDES!A2:D`, // Ajusta la columna de nombre_actividad
     });
 
     const solicitudesRows = solicitudesResponse.data.values;
 
-    // Combinar datos de ETAPAS y SOLICITUDES2
+    // Combinar datos de ETAPAS y SOLICITUDES
     const combinedRequests = activeRequests.map((request) => {
       const solicitud = solicitudesRows.find((row) => row[0] === request.idSolicitud); // Comparar por idSolicitud
       return {
@@ -513,8 +513,8 @@ app.get('/getSolicitud', async (req, res) => {
 
     // Definir las hojas y el mapeo de columnas a campos
     const hojas = {
-      SOLICITUDES2: {
-        range: 'SOLICITUDES2!A2:AQ',
+      SOLICITUDES: {
+        range: 'SOLICITUDES!A2:AQ',
         fields: [
           'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
           'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 
@@ -527,8 +527,8 @@ app.get('/getSolicitud', async (req, res) => {
           'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
         ]
       },
-      SOLICITUDES3: {
-        range: 'SOLICITUDES3!A2:CL',
+      SOLICITUDES2: {
+        range: 'SOLICITUDES2!A2:CL',
         fields: [
           'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
           'costos_personal_cantidad', 'costos_personal_vr_unit', 'total_costos_personal', 
@@ -576,8 +576,8 @@ app.get('/getSolicitud', async (req, res) => {
           'facebook', 'instagram', 'linkedin', 'correo', 'prensa', 'boletin', 'llamadas_redes', 'otro_canal'
         ]
       },
-      SOLICITUDES5: {
-        range: 'SOLICITUDES5!A2:AC',
+      SOLICITUDES3: {
+        range: 'SOLICITUDES3!A2:AC',
         fields: [
           'id_solicitud', 'proposito', 'comentario', 'fecha', 'elaboradoPor', 'aplicaDiseno1', 'aplicaDiseno2', 
           'aplicaDiseno3', 'aplicaLocacion1', 'aplicaLocacion2', 'aplicaLocacion3', 'aplicaDesarrollo1', 
@@ -910,8 +910,8 @@ app.post('/generateReport', async (req, res) => {
     }
 
     const hojas = {
-      SOLICITUDES2: {
-        range: 'SOLICITUDES2!A2:AQ',
+      SOLICITUDES: {
+        range: 'SOLICITUDES!A2:AQ',
         fields: [
           'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
           'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
@@ -924,8 +924,8 @@ app.post('/generateReport', async (req, res) => {
           'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act',
         ],
       },
-      SOLICITUDES3: {
-        range: 'SOLICITUDES3!A2:CL',
+      SOLICITUDES2: {
+        range: 'SOLICITUDES2!A2:CL',
         fields: [
           'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
           'costos_personal_cantidad', 'costos_personal_vr_unit', 'total_costos_personal',
@@ -946,8 +946,8 @@ app.post('/generateReport', async (req, res) => {
           'facebook', 'instagram', 'linkedin', 'correo', 'prensa', 'boletin', 'llamadas_redes', 'otro_canal',
         ],
       },
-      SOLICITUDES5: {
-        range: 'SOLICITUDES5!A2:AC',
+      SOLICITUDES3: {
+        range: 'SOLICITUDES3!A2:AC',
         fields: [
           'id_solicitud', 'proposito', 'comentario', 'fecha', 'elaboradoPor', 'aplicaDiseno1', 'aplicaDiseno2',
           'aplicaDiseno3', 'aplicaLocacion1', 'aplicaLocacion2', 'aplicaLocacion3', 'aplicaDesarrollo1',
@@ -963,7 +963,7 @@ app.post('/generateReport', async (req, res) => {
     const solicitudData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
 
     console.log('Transformando datos para la plantilla...');
-    const transformedData = transformDataForTemplate(solicitudData.SOLICITUDES2);
+    const transformedData = transformDataForTemplate(solicitudData.SOLICITUDES);
 
     console.log(`Generando reporte para el formulario ${formNumber}...`);
     const reportLink = await processXLSXWithStyles(
