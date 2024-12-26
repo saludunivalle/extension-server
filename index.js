@@ -118,9 +118,9 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
 
   console.log('Recibiendo datos para guardar progreso:');
   console.log('Body completo:', req.body);
-  console.log('Archivo:', req.file); // Asegúrate de que el archivo no sea undefined
+  console.log('Archivo:', req.file);
 
-  // Convertir hoja a número para asegurarnos de que sea válido
+  // Convertir hoja a número 
   const parsedHoja = parseInt(hoja, 10);
   if (isNaN(parsedHoja)) {
     console.error('Hoja no válida: no es un número');
