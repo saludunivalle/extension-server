@@ -325,16 +325,49 @@ app.get('/getLastId', async (req, res) => {
     const sheets = getSpreadsheet();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `${sheetName}!A:A`, // Columna A contiene el id_solicitud
+      range: `${sheetName}!A2:A`, // Columna A contiene los id_solicitud
     });
-    const lastRow = response.data.values ? response.data.values.length : 0;
-    const lastId = lastRow > 1 ? parseInt(response.data.values[lastRow - 1][0], 10) : 0;
+
+    const rows = response.data.values || [];
+    
+    // Buscar el ID más alto en lugar de contar filas
+    const lastId = rows
+      .map(row => parseInt(row[0], 10)) // Convertir a número
+      .filter(id => !isNaN(id)) // Eliminar valores no numéricos
+      .reduce((max, id) => Math.max(max, id), 0); // Encontrar el máximo
+
     res.status(200).json({ lastId });
   } catch (error) {
     console.error('Error al obtener el último ID:', error);
     res.status(500).json({ error: 'Error al obtener el último ID' });
   }
 });
+
+app.post('/createNewRequest', async (req, res) => {
+  try {
+    const { id_solicitud, fecha_solicitud, nombre_actividad, nombre_solicitante, dependencia_tipo, nombre_dependencia } = req.body;
+
+    const sheets = getSpreadsheet();
+    const range = 'SOLICITUDES!A2:F2'; // Rango donde se insertarán los datos
+    const values = [[id_solicitud, fecha_solicitud, nombre_actividad, nombre_solicitante, dependencia_tipo, nombre_dependencia]];
+
+    // Insertar nueva fila en Google Sheets
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values },
+    });
+
+    console.log(`✅ Nueva solicitud guardada en Sheets con ID: ${id_solicitud}`);
+    res.status(200).json({ success: true, id_solicitud });
+  } catch (error) {
+    console.error('🚨 Error al crear la nueva solicitud en Sheets:', error);
+    res.status(500).json({ error: 'Error al crear la nueva solicitud' });
+  }
+});
+
 
 app.get('/getRequests', async (req, res) => {
   try {
