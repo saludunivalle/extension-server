@@ -19,19 +19,36 @@ const PORT = process.env.PORT || 3001;
 const axios = require('axios');
 
 app.use(bodyParser.json());
+
+const allowedOrigins = [
+  "https://siac-extension-form.vercel.app",
+  "http://localhost:5173"
+];
+
 const corsOptions = {
-  origin: "https://siac-extension-form.vercel.app",
+  origin: (origin, callback) => {
+    // Permite solicitudes sin origen (como en pruebas o curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error("Origen no permitido por CORS"));
+    }
+  },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
   credentials: true,
+  optionsSuccessStatus: 200,
 };
+
 app.use(cors(corsOptions));
 
 app.use((req, res, next) => {
-  res.setHeader("Access-Control-Allow-Origin", "https://siac-extension-form.vercel.app");
+  res.setHeader("Access-Control-Allow-Origin", allowedOrigins.join(", "));
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   next();
 });
+
 
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
