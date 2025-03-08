@@ -186,7 +186,8 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
     console.log('Filas obtenidas de Google Sheets:', response.data.values);
 
     const rows = response.data.values || [];
-    let fila = rows.findIndex((row) => row[0] === id_solicitud.toString());
+    const fila = rows.findIndex((row) => String(row[0]) === String(id_solicitud));
+    //let fila = rows.findIndex((row) => row[0] === id_solicitud.toString());
 
     console.log('Índice de la fila para la solicitud:', fila);
 
@@ -509,7 +510,21 @@ app.get('/getProgramasYOficinas', async (req, res) => {
 app.get('/getSolicitud', async (req, res) => {
   try {
     const { id_solicitud } = req.query;
+
+    // Asegurarse de tratar el id de solicitud como string
+    //const solicitudId = id_solicitud.toString();
     const sheets = getSpreadsheet();
+
+    if (isUUID(id_solicitud)) {
+      // Crear registros iniciales en todas las hojas necesarias
+      await createInitialRecords(id_solicitud);
+      return res.status(200).json({ 
+        SOLICITUDES: { id_solicitud },
+        SOLICITUDES2: { id_solicitud },
+        SOLICITUDES3: { id_solicitud },
+        SOLICITUDES4: { id_solicitud }
+      });
+    }
 
     // Definir las hojas y el mapeo de columnas a campos
     const hojas = {
@@ -588,6 +603,8 @@ app.get('/getSolicitud', async (req, res) => {
     };
 
     const resultados = {};
+    console.log("id_solicitud recibido:", id_solicitud);
+    console.log("¿Es UUID?", isUUID(id_solicitud));
 
     // Recorremos cada hoja y buscamos los datos asociados al id_solicitud
     for (let [hoja, { range, fields }] of Object.entries(hojas)) {
@@ -600,14 +617,12 @@ app.get('/getSolicitud', async (req, res) => {
 
       // Buscar la fila que coincida con el id_solicitud
       const solicitudData = rows.find(row => row[0] === id_solicitud);
-
       if (solicitudData) {
         // Crear un objeto donde las claves son los nombres de los campos
         const mappedData = fields.reduce((acc, field, index) => {
           acc[field] = solicitudData[index] || ''; // Asigna el valor correspondiente o vacío si no existe
           return acc;
         }, {});
-
         // Almacenar los datos mapeados de esta hoja dentro del objeto `resultados`
         resultados[hoja] = mappedData;
       }
@@ -617,14 +632,33 @@ app.get('/getSolicitud', async (req, res) => {
     if (Object.keys(resultados).length === 0) {
       return res.status(404).json({ error: 'No se encontraron datos para esta solicitud' });
     }
-
-    // Devolver todos los datos encontrados
     res.status(200).json(resultados);
+    // Devolver todos los datos encontrados
+ 
   } catch (error) {
     console.error('Error al obtener los datos de la solicitud:', error);
     res.status(500).json({ error: 'Error al obtener los datos de la solicitud' });
   }
 });
+
+const isUUID = (id) => {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+};
+
+// Función para crear registros iniciales en las hojas indicadas
+const createInitialRecords = async (uuid) => {
+  const sheets = getSpreadsheet();
+  const sheetsToInit = ['SOLICITUDES', 'SOLICITUDES2', 'SOLICITUDES3', 'SOLICITUDES4'];
+  for (const sheetName of sheetsToInit) {
+    console.log(`Insertando ${uuid} en la hoja ${sheetName}`);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${sheetName}!A:A`,
+      valueInputOption: 'RAW',
+      resource: { values: [[uuid]] }
+    });
+  }
+};
 
 async function replaceMarkers(templateId, data, fileName) {
   try {
