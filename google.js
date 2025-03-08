@@ -17,10 +17,10 @@ const oAuth2Client = new google.auth.OAuth2(
 );
 
 const jwtClient = new google.auth.JWT(
-  process.env.GOOGLE_CLIENT_EMAIL, // Debe coincidir con .env
+  client_email,
   null,
-  process.env.PRIVATE_KEY.replace(/\\n/g, '\n'), // Corrige los saltos de línea
-  ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+  private_key.replace(/\\n/g, '\n'),
+  SCOPES
 );
 
 jwtClient.authorize((err, tokens) => {
