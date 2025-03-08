@@ -19,7 +19,12 @@ const PORT = process.env.PORT || 3001;
 const axios = require('axios');
 
 app.use(bodyParser.json());
-app.use(cors());
+const corsOptions = {
+  origin: "https://siac-extension-form.vercel.app",
+  methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
+  credentials: true,
+};
+app.use(cors(corsOptions));
 
 // Función para conectarse a Google Sheets
 const getSpreadsheet = () => google.sheets({ version: 'v4', auth: jwtClient });
