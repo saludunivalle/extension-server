@@ -27,12 +27,12 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Permite solicitudes sin origen (como en pruebas o curl)
+    // Permite peticiones sin origen (como curl o herramientas de test)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
+      return callback(null, true);
     } else {
-      callback(new Error("Origen no permitido por CORS"));
+      return callback(new Error("Origen no permitido por CORS"));
     }
   },
   methods: "GET,HEAD,PUT,PATCH,POST,DELETE",
@@ -42,12 +42,14 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
+// Forzar cabeceras en todas las respuestas (opcional)
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", allowedOrigins.join(", "));
   res.setHeader("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE");
   res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   next();
 });
+
 
 
 // Función para conectarse a Google Sheets
