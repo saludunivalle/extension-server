@@ -312,8 +312,6 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
   }
 });
 
-
-
 // ==========================================================================
 // Otras rutas auxiliares
 // ==========================================================================
@@ -427,9 +425,11 @@ app.get('/getActiveRequests', async (req, res) => {
       .map((row) => ({
         idSolicitud: row[0],
         formulario: parseInt(row[4]),
+        etapa_actual: parseInt(row[4]),
         paso: parseInt(row[7]),
         nombre_actividad: '', // Inicialmente vacío
       }));
+
 
     // Obtener datos de SOLICITUDES para buscar nombre_actividad
     const solicitudesResponse = await sheets.spreadsheets.values.get({
@@ -478,6 +478,7 @@ app.get('/getCompletedRequests', async (req, res) => {
       .map((row) => ({
         idSolicitud: row[0], // id_solicitud
         formulario: parseInt(row[4]), // columna para el formulario
+        etapa_actual: parseInt(row[4]), // Etapa actual
         paso: parseInt(row[7]), // columna para el paso
         nombre_actividad: row[6] // nombre de la actividad
       }));
@@ -543,6 +544,10 @@ app.get('/getSolicitud', async (req, res) => {
   try {
     const { id_solicitud } = req.query;
     const sheets = getSpreadsheet();
+
+    if (!id_solicitud) {
+      return res.status(400).json({ error: 'El ID de la solicitud es requerido' });
+    }
 
     // Definir las hojas y el mapeo de columnas a campos
     const hojas = {
@@ -619,7 +624,7 @@ app.get('/getSolicitud', async (req, res) => {
         ]
       }
     };
-
+    let solicitudEncontrada = false;
     const resultados = {};
 
     // Recorremos cada hoja y buscamos los datos asociados al id_solicitud
@@ -636,14 +641,21 @@ app.get('/getSolicitud', async (req, res) => {
 
       if (solicitudData) {
         // Crear un objeto donde las claves son los nombres de los campos
-        const mappedData = fields.reduce((acc, field, index) => {
+        solicitudEncontrada = true;
+        resultados[hoja] = fields.reduce((acc, field, index) => {
+        //const mappedData = fields.reduce((acc, field, index) => {
           acc[field] = solicitudData[index] || ''; // Asigna el valor correspondiente o vacío si no existe
           return acc;
         }, {});
 
         // Almacenar los datos mapeados de esta hoja dentro del objeto `resultados`
-        resultados[hoja] = mappedData;
+        //resultados[hoja] = mappedData;
       }
+    }
+
+    // Si no encontramos la solicitud, devolvemos un objeto vacío en lugar de un error 404
+    if (!solicitudEncontrada) {
+      return res.status(200).json({ message: 'La solicitud no existe aún en Google Sheets', data: {} });
     }
 
     // Verificar si se encontraron datos en al menos una hoja
