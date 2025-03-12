@@ -279,43 +279,61 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
 
     // Actualizar hoja de ETAPAS
     const estadoGlobal = (parsedHoja === 4 && paso === 5) ? 'Completado' : 'En progreso';
-    const etapaActual = parsedHoja;
+    const etapaActual = paso === 5 ? parsedHoja + 1 : parsedHoja;
 
+    // Obtener los datos actuales de ETAPAS (columnas A hasta H)
     const etapasResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: `ETAPAS!A:A`
+      range: 'ETAPAS!A:H'
     });
-
     const etapasRows = etapasResponse.data.values || [];
-    let filaEtapas = etapasRows.findIndex((row) => row[0] === id_solicitud.toString());
+
+    // Buscar la fila que corresponde al id_solicitud en la columna A de ETAPAS
+    let filaEtapas = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
 
     if (filaEtapas === -1) {
-      filaEtapas = etapasRows.length + 1;
+      // Si no se encuentra, usar append para agregar una nueva fila
+      filaEtapas = etapasRows.length + 1; // La API es 1-based
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
-        range: `ETAPAS!A${filaEtapas}`,
+        range: `ETAPAS!A${filaEtapas}:H${filaEtapas}`,
         valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
         resource: {
-          values: [[id_solicitud, id_usuario, fechaActual, name, etapaActual, estadoGlobal, formData.nombre_actividad || '', paso]]
+          values: [[
+            id_solicitud,
+            id_usuario,
+            fechaActual,
+            name,
+            etapaActual,
+            estadoGlobal,
+            formData.nombre_actividad || 'N/A',
+            paso  // Columna H con el paso actual
+          ]]
         }
       });
     } else {
+      // Si existe, findIndex devuelve un índice 0-based; se suma 1 para obtener la fila real
       filaEtapas += 1;
-
+      // Actualizar la columna E y F (etapa_actual y estado_global)
       await sheets.spreadsheets.values.update({
         spreadsheetId: SPREADSHEET_ID,
-        range: `ETAPAS!B${filaEtapas}:H${filaEtapas}`,
+        range: `ETAPAS!H${filaEtapas}`,
         valueInputOption: 'RAW',
-        resource: {
-          values: [[id_usuario, fechaActual, name, etapaActual, estadoGlobal, formData.nombre_actividad || '', paso]]
-        }
+        resource: { values: [[paso]] }
       });
     }
 
+    // Enviar respuesta final al cliente para indicar éxito
     res.status(200).json({ success: true });
+    
   } catch (error) {
-    console.error('Error al guardar el progreso:', error);
-    res.status(500).json({ error: 'Error al guardar el progreso' });
+    console.error("Error en guardarProgreso:", error);
+    res.status(500).json({
+      success: false,
+      error: 'Error de conexión con Google Sheets',
+      details: error.message
+    });
   }
 });
 
@@ -428,14 +446,20 @@ app.get('/getActiveRequests', async (req, res) => {
 
     // Filtrar solicitudes activas
     const activeRequests = rows
-      .filter((row) => row[1] === userId && row[5] === 'En progreso')
-      .map((row) => ({
-        idSolicitud: row[0],
-        formulario: parseInt(row[4]),
-        etapa_actual: parseInt(row[4]),
-        paso: parseInt(row[7]),
-        nombre_actividad: '', // Inicialmente vacío
-      }));
+  .filter((row) => row[1] === userId && row[5] === 'En progreso')
+  .map((row) => ({
+    idSolicitud: row[0],
+    formulario: parseInt(row[4]),
+    paso: parseInt(row[7]),
+    nombre_actividad: row[6],
+    // Nuevo campo: estado por formulario
+    formulariosCompletados: {
+      1: parseInt(row[7]) >= 5,  // 5 pasos para formulario 1
+      2: parseInt(row[7]) >= 3,  // 3 pasos para formulario 2
+      3: parseInt(row[7]) >= 5,
+      4: parseInt(row[7]) >= 5
+    }
+  }));
 
 
     // Obtener datos de SOLICITUDES para buscar nombre_actividad
