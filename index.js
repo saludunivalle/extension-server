@@ -173,6 +173,13 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
           5: ['AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK']
         };
         break;
+        case 5:
+          sheetName = 'GASTOS';
+          columnas = {
+            1: ['B', 'C', 'D', 'E', 'F', 'G'],
+            2: ['H', 'I', 'J', 'K'],
+          };
+          break;
       default:
         return res.status(400).json({ error: 'Hoja no válida' });
     }
@@ -622,7 +629,13 @@ app.get('/getSolicitud', async (req, res) => {
           'aplicaDesarrollo2', 'aplicaDesarrollo3', 'aplicaDesarrollo4', 'aplicaCierre1', 'aplicaCierre2', 
           'aplicaOtros1', 'aplicaOtros2'
         ]
-      }
+      },
+      GASTOS: {
+        range: 'GASTOS!A2:E',
+        fields: [
+          'id_conceptos', 'id_solicitud', 'id_gastos', 'cantidad', 'valor_unitario', 'valor_total'
+        ]
+      },
     };
     let solicitudEncontrada = false;
     const resultados = {};
@@ -926,6 +939,90 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
     throw new Error('Error al procesar archivo XLSX con estilos');
   }
 };
+
+app.post('/guardarGastos', async (req, res) => {
+  try {
+    const sheets = getSpreadsheet();
+    const { id_solicitud, gastos } = req.body;
+
+    // Validación más flexible
+    if (!id_solicitud || !gastos?.length) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere id_solicitud y al menos un concepto'
+      });
+    }
+
+    // Convertir a string para evitar errores de tipo
+    const idSolicitudStr = id_solicitud.toString();
+
+    // Obtener conceptos válidos (desde tu hoja CONCEPTO$)
+    const conceptosResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'CONCEPTO$!A2:A' // Solo columna de ids
+    });
+
+    const conceptosValidos = new Set(
+      (conceptosResponse.data.values || []).flat().map(String)
+    );
+
+    console.log("Datos recibidos:", JSON.stringify(gastos, null, 2));
+    console.log("Conceptos válidos:", [...conceptosValidos]);
+
+    // Preparar filas válidas
+    const rows = [];
+    for (const gasto of gastos) {
+      // Validar existencia del concepto
+      if (!gasto.id_conceptos) {
+        console.log('Falta id_conceptos en', gasto);
+        continue;
+      }
+
+      if (!conceptosValidos.has(String(gasto.id_conceptos))) {
+        console.log(`Concepto ${gasto.id_conceptos} no encontrado`);
+        continue;
+      }
+
+      const cantidad = parseFloat(gasto.cantidad) || 0;
+      const valor_unit = parseFloat(gasto.valor_unit) || 0;
+      const valor_total = cantidad * valor_unit;
+
+      rows.push([
+        gasto.id_conceptos.toString(), // Columna A (CONCEPTO)
+        idSolicitudStr, // Columna B (ID_SOLICITUD)
+        gasto.cantidad || 0, // Columna C (CANTIDAD)
+        gasto.valor_unit || 0, // Columna D (VALOR_UNIT)
+        (gasto.cantidad || 0) * (gasto.valor_unit || 0) // Columna E (VALOR_TOTAL)
+      ]);
+    }
+
+    if (rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Ningún concepto válido para guardar'
+      });
+    }
+
+    // Insertar en GASTOS
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: 'GASTOS!A2:E',
+      valueInputOption: 'USER_ENTERED',
+      resource: { values: rows }
+    });
+
+    res.json({ success: true });
+
+  } catch (error) {
+    console.error("Error en guardarGastos:", error);
+    res.status(500).json({
+      success: false,
+      error: 'Error de conexión con Google Sheets',
+      details: error.message
+    });
+  }
+});
+
 
 app.post('/generateReport', async (req, res) => {
   try {
