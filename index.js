@@ -278,8 +278,18 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
     });
 
     // Actualizar hoja de ETAPAS
-    const estadoGlobal = (parsedHoja === 4 && paso === 5) ? 'Completado' : 'En progreso';
-    const etapaActual = paso === 5 ? parsedHoja + 1 : parsedHoja;
+    const estadoGlobal = (parsedHoja === 4 && paso === maxPasos[3]) ? 'Completado' : 'En progreso';
+
+    const maxPasos = {
+      1: 5,
+      2: 2,
+      3: 5,
+      4: 5
+    };
+
+    const etapaActual = (paso === maxPasos[parsedHoja]) ? parsedHoja + 1 : parsedHoja;
+
+    if (etapaActual > 4) etapaActual = 4;
 
     // Obtener los datos actuales de ETAPAS (columnas A hasta H)
     const etapasResponse = await sheets.spreadsheets.values.get({
@@ -313,16 +323,36 @@ app.post('/guardarProgreso', upload.single('pieza_grafica'), async (req, res) =>
         }
       });
     } else {
-      // Si existe, findIndex devuelve un índice 0-based; se suma 1 para obtener la fila real
-      filaEtapas += 1;
-      // Actualizar la columna E y F (etapa_actual y estado_global)
-      await sheets.spreadsheets.values.update({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `ETAPAS!H${filaEtapas}`,
-        valueInputOption: 'RAW',
-        resource: { values: [[paso]] }
-      });
+      filaEtapas += 1; // Ajustar índice a 1-based
+  
+  // Calcular valores actualizados
+  const estadoGlobal = (parsedHoja === 4 && paso === 5) ? 'Completado' : 'En progreso';
+  const etapaActual = paso === 5 ? parsedHoja + 1 : parsedHoja;
+
+  // Actualizar múltiples columnas usando batchUpdate
+  const updateRequests = [
+    {
+      range: `ETAPAS!E${filaEtapas}`, // Columna E: etapa_actual
+      values: [[etapaActual]]
+    },
+    {
+      range: `ETAPAS!F${filaEtapas}`, // Columna F: estado
+      values: [[estadoGlobal]]
+    },
+    {
+      range: `ETAPAS!H${filaEtapas}`, // Columna H: paso
+      values: [[paso]]
     }
+  ];
+
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    resource: {
+      valueInputOption: 'RAW',
+      data: updateRequests
+    }
+  });
+}
 
     // Enviar respuesta final al cliente para indicar éxito
     res.status(200).json({ success: true });
