@@ -613,16 +613,17 @@ app.get('/getSolicitud', async (req, res) => {
     // Definir las hojas y el mapeo de columnas a campos
     const hojas = {
       SOLICITUDES: {
-        range: 'SOLICITUDES!A2:AQ',
+        range: 'SOLICITUDES!A2:AU',
         fields: [
           'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo', 
           'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 
           'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 
           'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 
           'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 
-          'correo_coordinador', 'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 
+          'correo_coordinador', 'tel_coordinador', 'pefil_competencia', 'formas_evaluacion', 
           'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 
           'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 
+          'becas_total',
           'becas_otros', 'becas_total', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
         ]
       },
@@ -874,6 +875,28 @@ const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
 
 // Función para transformar datos de la solicitud para casillas de selección
 const transformDataForTemplate = (formData) => {
+  // Si se proporcionó la fecha, extraer día, mes y año
+  if (formData.fecha_solicitud) {
+    const { dia, mes, anio } = formatDateParts(formData.fecha_solicitud);
+    formData.dia = dia;
+    formData.mes = mes;
+    formData.anio = anio;
+  } else {
+    // Valores por defecto
+    formData.dia = '';
+    formData.mes = '';
+    formData.anio = '';
+  }
+
+  const becasTotal = 
+    Number(formData.becas_convenio || 0) +
+    Number(formData.becas_estudiantes || 0) +
+    Number(formData.becas_docentes || 0) +
+    Number(formData.becas_egresados || 0) +
+    Number(formData.becas_funcionarios || 0) +
+    Number(formData.becas_otros || 0);
+  formData.becas_total = becasTotal;
+
   // Procesar "tipo"
   const tipo = formData.tipo || '';
   const tipoData = {
@@ -889,7 +912,8 @@ const transformDataForTemplate = (formData) => {
   const modalidad = formData.modalidad || '';
   const modalidadData = {
     modalidad_presencial: modalidad === 'Presencial' ? 'X' : '',
-    modalidad_tecnologia: modalidad === 'Presencialidad asistida por Tecnología' ? 'X' : '',
+    modalidad_tecnologia:
+      modalidad === 'Presencialidad asistida por Tecnología' ? 'X' : '',
     modalidad_virtual: modalidad === 'Virtual' ? 'X' : '',
     modalidad_mixta: modalidad === 'Mixta' ? 'X' : '',
     modalidad_todas: modalidad === 'Todas las anteriores' ? 'X' : '',
@@ -912,7 +936,6 @@ const transformDataForTemplate = (formData) => {
     cual_otro: organizacion === 'Otro' ? formData.otro_tipo_act || '' : '',
   };
 
-  // Combinar todos los datos transformados
   return {
     ...formData,
     ...tipoData,
@@ -1107,16 +1130,17 @@ app.post('/generateReport', async (req, res) => {
 
     const hojas = {
       SOLICITUDES: {
-        range: 'SOLICITUDES!A2:AQ',
+        range: 'SOLICITUDES!A2:AU',
         fields: [
           'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
           'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
           'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 'otro_tipo',
           'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont',
           'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador',
-          'tel_coordinador', 'perfil_competencia', 'formas_evaluacion', 'certificado_solicitado',
+          'tel_coordinador', 'pefil_competencia', 'formas_evaluacion', 'certificado_solicitado',
           'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio',
           'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros',
+          'becas_total',
           'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act',
         ],
       },
