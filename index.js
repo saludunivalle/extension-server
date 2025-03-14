@@ -875,74 +875,85 @@ const getSolicitudData = async (solicitudId, sheets, spreadsheetId, hojas) => {
 
 // Función para transformar datos de la solicitud para casillas de selección
 const transformDataForTemplate = (formData) => {
-  // Si se proporcionó la fecha, extraer día, mes y año
-  if (formData.fecha_solicitud) {
-    const { dia, mes, anio } = formatDateParts(formData.fecha_solicitud);
-    formData.dia = dia;
-    formData.mes = mes;
-    formData.anio = anio;
-  } else {
-    // Valores por defecto
-    formData.dia = '';
-    formData.mes = '';
-    formData.anio = '';
+  try {
+    console.log("Datos brutos recibidos para transformación:", formData);
+
+    const safeFormData = formData || {};
+    // Si se proporcionó la fecha, extraer día, mes y año
+    if (formData.fecha_solicitud) {
+      const { dia, mes, anio } = formatDateParts(formData.fecha_solicitud);
+      formData.dia = dia;
+      formData.mes = mes;
+      formData.anio = anio;
+    } else {
+      // Valores por defecto
+      formData.dia = '';
+      formData.mes = '';
+      formData.anio = '';
+    }
+
+    const becasTotal = 
+      Number(formData.becas_convenio || 0) +
+      Number(formData.becas_estudiantes || 0) +
+      Number(formData.becas_docentes || 0) +
+      Number(formData.becas_egresados || 0) +
+      Number(formData.becas_funcionarios || 0) +
+      Number(formData.becas_otros || 0);
+    formData.becas_total = becasTotal;
+
+    // Procesar "tipo"
+    const tipo = formData.tipo || '';
+    const tipoData = {
+      tipo_curso: tipo === 'Curso' ? 'X' : '',
+      tipo_taller: tipo === 'Taller' ? 'X' : '',
+      tipo_seminario: tipo === 'Seminario' ? 'X' : '',
+      tipo_diplomado: tipo === 'Diplomado' ? 'X' : '',
+      tipo_programa: tipo === 'Programa' ? 'X' : '',
+      otro_cual: tipo === 'Otro' ? formData.otro_tipo || '' : '',
+    };
+
+    // Procesar "modalidad"
+    const modalidad = formData.modalidad || '';
+    const modalidadData = {
+      modalidad_presencial: modalidad === 'Presencial' ? 'X' : '',
+      modalidad_tecnologia:
+        modalidad === 'Presencialidad asistida por Tecnología' ? 'X' : '',
+      modalidad_virtual: modalidad === 'Virtual' ? 'X' : '',
+      modalidad_mixta: modalidad === 'Mixta' ? 'X' : '',
+      modalidad_todas: modalidad === 'Todas las anteriores' ? 'X' : '',
+    };
+
+    // Procesar periodicidad
+    const periodicidad = formData.periodicidad_oferta || '';
+    const periodicidadData = {
+      per_anual: periodicidad === 'Anual' ? 'X' : '',
+      per_semestral: periodicidad === 'Semestral' ? 'X' : '',
+      per_permanente: periodicidad === 'Permanente' ? 'X' : '',
+    };
+
+    // Procesar organización de la actividad
+    const organizacion = formData.organizacion_actividad || '';
+    const organizacionData = {
+      oficina_extension: organizacion === 'Oficina de Extensión' ? 'X' : '',
+      unidad_acad: organizacion === 'Unidad Académica' ? 'X' : '',
+      otro_organizacion: organizacion === 'Otro' ? 'X' : '',
+      cual_otro: organizacion === 'Otro' ? formData.otro_tipo_act || '' : '',
+    };
+
+    return {
+      ...formData,
+      ...tipoData,
+      ...modalidadData,
+      ...periodicidadData,
+      ...organizacionData,
+    };
+    
+    console.log("Datos transformados finales:", transformedData);
+    return transformedData;
+  } catch (error) {
+    console.error("Error en transformDataForTemplate:", error);
+    throw new Error("Error transformando datos para plantilla");
   }
-
-  const becasTotal = 
-    Number(formData.becas_convenio || 0) +
-    Number(formData.becas_estudiantes || 0) +
-    Number(formData.becas_docentes || 0) +
-    Number(formData.becas_egresados || 0) +
-    Number(formData.becas_funcionarios || 0) +
-    Number(formData.becas_otros || 0);
-  formData.becas_total = becasTotal;
-
-  // Procesar "tipo"
-  const tipo = formData.tipo || '';
-  const tipoData = {
-    tipo_curso: tipo === 'Curso' ? 'X' : '',
-    tipo_taller: tipo === 'Taller' ? 'X' : '',
-    tipo_seminario: tipo === 'Seminario' ? 'X' : '',
-    tipo_diplomado: tipo === 'Diplomado' ? 'X' : '',
-    tipo_programa: tipo === 'Programa' ? 'X' : '',
-    otro_cual: tipo === 'Otro' ? formData.otro_tipo || '' : '',
-  };
-
-  // Procesar "modalidad"
-  const modalidad = formData.modalidad || '';
-  const modalidadData = {
-    modalidad_presencial: modalidad === 'Presencial' ? 'X' : '',
-    modalidad_tecnologia:
-      modalidad === 'Presencialidad asistida por Tecnología' ? 'X' : '',
-    modalidad_virtual: modalidad === 'Virtual' ? 'X' : '',
-    modalidad_mixta: modalidad === 'Mixta' ? 'X' : '',
-    modalidad_todas: modalidad === 'Todas las anteriores' ? 'X' : '',
-  };
-
-  // Procesar periodicidad
-  const periodicidad = formData.periodicidad_oferta || '';
-  const periodicidadData = {
-    per_anual: periodicidad === 'Anual' ? 'X' : '',
-    per_semestral: periodicidad === 'Semestral' ? 'X' : '',
-    per_permanente: periodicidad === 'Permanente' ? 'X' : '',
-  };
-
-  // Procesar organización de la actividad
-  const organizacion = formData.organizacion_actividad || '';
-  const organizacionData = {
-    oficina_extension: organizacion === 'Oficina de Extensión' ? 'X' : '',
-    unidad_acad: organizacion === 'Unidad Académica' ? 'X' : '',
-    otro_organizacion: organizacion === 'Otro' ? 'X' : '',
-    cual_otro: organizacion === 'Otro' ? formData.otro_tipo_act || '' : '',
-  };
-
-  return {
-    ...formData,
-    ...tipoData,
-    ...modalidadData,
-    ...periodicidadData,
-    ...organizacionData,
-  };
 };
 
 // Función para procesar y reemplazar marcadores en archivos XLSX
@@ -1010,6 +1021,7 @@ const processXLSXWithStyles = async (templateId, data, fileName, folderId) => {
 
     const link = `https://drive.google.com/file/d/${fileId}/view`;
     console.log(`Archivo subido y disponible en: ${link}`);
+
     return link;
   } catch (error) {
     console.error('Error al procesar archivo XLSX con estilos:', error.message);
