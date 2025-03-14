@@ -1215,6 +1215,101 @@ app.post('/generateReport', async (req, res) => {
   }
 });
 
+app.post('/downloadReport', async (req, res) => {
+  try {
+    const { solicitudId, formNumber, mode } = req.body;
+    if (!solicitudId || !formNumber) {
+      return res.status(400).json({ error: 'Los parámetros solicitudId y formNumber son requeridos' });
+    }
+
+    const folderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE';
+    const templateIds = {
+      1: '1xsz9YSnYEOng56eNKGV9it9EgTn0mZw1',
+      2: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF',
+      3: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0',
+      4: '1WoPUZYusNl2u3FpmZ1qiO5URBUqHIwKF',
+    };
+    const templateId = templateIds[formNumber];
+    if (!templateId) {
+      console.error(`Formulario no válido: ${formNumber}`);
+      return res.status(400).json({ error: 'Número de formulario no válido' });
+    }
+
+    // Definición de hojas (mismo mapeo que en generateReport)
+    const hojas = {
+      SOLICITUDES: {
+        range: 'SOLICITUDES!A2:AU',
+        fields: [
+          'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
+          'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
+          'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 'otro_tipo',
+          'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont',
+          'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador',
+          'tel_coordinador', 'pefil_competencia', 'formas_evaluacion', 'certificado_solicitado',
+          'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio',
+          'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros',
+          'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act',
+        ],
+      },
+      SOLICITUDES2: {
+        range: 'SOLICITUDES2!A2:CL',
+        fields: [
+          'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
+          'costos_personal_cantidad', 'costos_personal_vr_unit', 'total_costos_personal',
+        ],
+      },
+      SOLICITUDES4: {
+        range: 'SOLICITUDES4!A2:BK',
+        fields: [
+          'id_solicitud', 'descripcionPrograma', 'identificacionNecesidades', 'atributosBasicos',
+          'atributosDiferenciadores', 'competencia', 'programa', 'programasSimilares',
+          'estrategiasCompetencia', 'personasInteres', 'personasMatriculadas', 'otroInteres',
+          'innovacion', 'solicitudExterno', 'interesSondeo', 'llamadas', 'encuestas', 'webinar',
+          'preregistro', 'mesasTrabajo', 'focusGroup', 'desayunosTrabajo', 'almuerzosTrabajo', 'openHouse',
+          'valorEconomico', 'modalidadPresencial', 'modalidadVirtual', 'modalidadSemipresencial',
+          'otraModalidad', 'beneficiosTangibles', 'beneficiosIntangibles', 'particulares', 'colegios',
+          'empresas', 'egresados', 'colaboradores', 'otros_publicos_potenciales', 'tendenciasActuales',
+          'dofaDebilidades', 'dofaOportunidades', 'dofaFortalezas', 'dofaAmenazas', 'paginaWeb',
+          'facebook', 'instagram', 'linkedin', 'correo', 'prensa', 'boletin', 'llamadas_redes', 'otro_canal',
+        ],
+      },
+      SOLICITUDES3: {
+        range: 'SOLICITUDES3!A2:AC',
+        fields: [
+          'id_solicitud', 'proposito', 'comentario', 'fecha', 'elaboradoPor', 'aplicaDiseno1', 'aplicaDiseno2',
+          'aplicaDesarrollo1', 'aplicaDesarrollo2', 'aplicaDesarrollo3', 'aplicaDesarrollo4', 'aplicaCierre1',
+          'aplicaCierre2', 'aplicaOtros1', 'aplicaOtros2',
+        ],
+      },
+    };
+
+    const sheets = getSpreadsheet();
+    const solicitudData = await getSolicitudData(solicitudId, sheets, SPREADSHEET_ID, hojas);
+    // Transformar los datos para ajustarse a los marcadores de la plantilla
+    const transformedData = transformDataForTemplate(solicitudData.SOLICITUDES);
+
+    console.log(`Generando reporte para el formulario ${formNumber}...`);
+    const reportLink = await processXLSXWithStyles(
+      templateId,
+      transformedData,
+      `Formulario${formNumber}_${solicitudId}.xls`,
+      folderId
+    );
+
+    // Si se solicita el modo "edit", modificamos el enlace para permitir edición en Drive
+    const finalLink = mode === 'edit'
+      ? reportLink.replace('/view', '/view?usp=drivesdk&edit=true')
+      : reportLink;
+
+    res.status(200).json({
+      message: `Informe generado exitosamente para el formulario ${formNumber}`,
+      link: finalLink,
+    });
+  } catch (error) {
+    console.error('Error al generar el informe para descarga/edición:', error.message);
+    res.status(500).json({ error: 'Error al generar el informe para descarga/edición' });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`Servidor de extensión escuchando en el puerto ${PORT}`);
