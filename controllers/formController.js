@@ -84,20 +84,52 @@ const guardarProgreso = async (req, res) => {
       3: 5,
       4: 5
     };
+  
 
     const estadoGlobal = (parsedHoja === 4 && paso === maxPasos[3]) ? 'Completado' : 'En progreso';
-    const etapaActual = (paso === maxPasos[parsedHoja]) ? parsedHoja + 1 : parsedHoja;
-    const etapaActualAjustada = etapaActual > 4 ? 4 : etapaActual;
+    let estadoFormularios = {};
+  
 
     // Obtener los datos actuales de ETAPAS
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:H'
+      range: 'ETAPAS!A:I'
     });
     const etapasRows = etapasResponse.data.values || [];
 
     // Buscar la fila que corresponde al id_solicitud
+    const filaExistente = etapasRows.find(row => row[0] === id_solicitud.toString());
+
+    if (filaExistente && filaExistente[8]) {
+      try {
+        estadoFormularios = JSON.parse(filaExistente[8]);
+      } catch (e) {
+        // Si no es JSON válido, crear objeto vacío
+        estadoFormularios = {
+          "1": "En progreso",
+          "2": "En progreso",
+          "3": "En progreso",
+          "4": "En progreso"
+        };
+      }
+    } else {
+      // Inicializar todos los formularios en "En progreso"
+      estadoFormularios = {
+        "1": "En progreso",
+        "2": "En progreso",
+        "3": "En progreso",
+        "4": "En progreso"
+      };
+    }
+
+    estadoFormularios[parsedHoja] = (paso >= maxPasos[parsedHoja]) ? 'Completado' : 'En progreso';
+    
+    const estadoFormulariosJSON = JSON.stringify(estadoFormularios);
+
+    const etapaActual = (paso === maxPasos[parsedHoja]) ? parsedHoja + 1 : parsedHoja;
+    const etapaActualAjustada = etapaActual > 4 ? 4 : etapaActual;
+
     let filaEtapas = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
 
     if (filaEtapas === -1) {
@@ -137,6 +169,10 @@ const guardarProgreso = async (req, res) => {
         {
           range: `ETAPAS!H${filaEtapas}`, // Columna H: paso
           values: [[paso]]
+        },
+        {
+          range: `ETAPAS!I${filaEtapas}`, 
+          values: [[estadoFormulariosJSON]]
         }
       ];
 
@@ -197,7 +233,7 @@ const getRequests = async (req, res) => {
 
     const activeResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!A2:H`,
+      range: `ETAPAS!A2:I`,
     });
 
     const rows = activeResponse.data.values;

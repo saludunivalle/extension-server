@@ -102,13 +102,19 @@ class SpreadsheetModel {
         'infraestructura_fisica_cantidad', 'infraestructura_fisica_vr_unit', 'total_infraestructura_fisica',
         'gastos_generales_cantidad', 'gastos_generales_vr_unit', 'total_gastos_generales',
         'infraestructura_universitaria_cantidad', 'infraestructura_universitaria_vr_unit', 
-        'total_infraestructura_universitaria', 'imprevistos',
-        'escuela_departamento_porcentaje', 'total_aportes_univalle'
+        'total_infraestructura_universitaria', 
+        'imprevistos_cantidad', 'imprevistos_vr_unit', 'total_imprevistos',
+        'costos_administrativos_cantidad', 'costos_administrativos_vr_unit', 'total_costos_administrativos',
+        'gastos_extras_cantidad', 'gastos_extras_vr_unit', 'total_gastos_extras',
+        'subtotal_gastos',
+        'imprevistos_3%',
+        'total_gastos_imprevistos',
+        'fondo_comun_porcentaje','facultadad_instituto_porcentaje','escuela_departamento_porcentaje', 'total_recursos'
     ],
     {
       1: ['B', 'C'],
-      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 'BP', 'BQ', 'BR', 'BS', 'BT', 'BU', 'BV', 'BW', 'BX', 'BY', 'BZ', 'CA', 'CB', 'CC', 'CD', 'CE', 'CF', 'CG', 'CH', 'CI'],
-      3: ['CJ', 'CK', 'CL']
+      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 'BP', 'BQ', 'BR', 'BS', 'BT', 'BU', 'BV', 'BW', 'BX', 'BY', 'BZ', 'CA', 'CB', 'CC', 'CD', 'CE', 'CF', 'CG', 'CH', 'CI','CJ', 'CK', 'CL', 'CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS','CT', 'CU', 'CV'],
+      3: ['CS', 'CT', 'CU','CV']
     }
   );
   
@@ -158,7 +164,7 @@ class SpreadsheetModel {
   const GASTOS = new SpreadsheetModel(
     'GASTOS',
     [
-      'id_conceptos', 'id_solicitud', 'cantidad', 'valor_unit', 'valor_total'
+      'id_conceptos', 'id_solicitud', 'cantidad', 'valor_unit', 'valor_total', 'concepto_padre'
     ],
     {
       1: ['B', 'C', 'D', 'E', 'F', 'G'],
@@ -170,7 +176,7 @@ class SpreadsheetModel {
   const ETAPAS = new SpreadsheetModel(
     'ETAPAS',
     [
-      'id_solicitud', 'id_usuario', 'fecha', 'name', 'etapa_actual', 'estado', 'nombre_actividad', 'paso'
+      'id_solicitud', 'id_usuario', 'fecha', 'name', 'etapa_actual', 'estado', 'nombre_actividad', 'paso', 'estado_formularios'
     ]
   );
   

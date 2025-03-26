@@ -164,7 +164,7 @@ class SheetsService {
           fields: this.fieldDefinitions.SOLICITUDES4
         },
         GASTOS: {
-          range: 'GASTOS!A2:E',
+          range: 'GASTOS!A2:F',
           fields: this.fieldDefinitions.GASTOS
         }
       };
@@ -203,15 +203,69 @@ class SheetsService {
 
   async saveGastos(idSolicitud, gastos) {
     try {
+      const conceptosValidos = new Set();
+      const conceptosSolicitudValidos = new Set();
+      const conceptosPadre = new Map();
       // Validar conceptos
       const conceptosResponse = await this.client.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: 'CONCEPTO$!A2:A'
+        range: 'CONCEPTO$!A2:F' // Incluir las columnas adicionales
+      });
+
+      (conceptosResponse.data.values || []).forEach(row => {
+        const concepto = String(row[0]);
+        const descripcion = row[1] || '';
+        const esPadre = row[2] === 'true' || row[2] === 'TRUE';
+        const idSolicitudConcepto = row[5] || '';
+        
+        conceptosValidos.add(concepto);
+        conceptosSolicitudValidos.add(`${concepto}:${idSolicitudConcepto}`);
+        conceptosPadre.set(concepto, {descripcion, esPadre});
+        
+        // Si es concepto padre, agregar subconceptos
+        if (esPadre) {
+          for (let i = 1; i <= 10; i++) {
+            conceptosValidos.add(`${concepto}.${i}`);
+          }
+        }
       });
   
-      const conceptosValidos = new Set(
-        (conceptosResponse.data.values || []).flat().map(String)
-      );
+      // 3. Identificar TODOS los nuevos conceptos (tanto regulares como sub)
+      const nuevosConceptos = gastos
+        .filter(gasto => {
+          // Verificar si ya existe, sin filtrar por tipo
+          return !conceptosSolicitudValidos.has(`${gasto.id_conceptos}:${idSolicitud}`);
+        })
+        .map(gasto => {
+          const esSubconcepto = gasto.id_conceptos.includes('.');
+          const conceptoPadre = esSubconcepto ? gasto.id_conceptos.split('.')[0] : '';
+          
+          return [
+            gasto.id_conceptos.toString(),
+            gasto.concepto || (esSubconcepto ? `Subconcepto de ${conceptoPadre}` : gasto.id_conceptos),
+            esSubconcepto ? 'false' : 'true',
+            conceptoPadre,  // nombre_conceptos 
+            "gasto_dinamico", // tipo
+            idSolicitud  // id_solicitud
+          ];
+        });
+  
+      // 4. Guardar nuevos conceptos en CONCEPTO$
+      if (nuevosConceptos.length > 0) {
+        await this.client.spreadsheets.values.append({
+          spreadsheetId: this.spreadsheetId,
+          range: 'CONCEPTO$!A2:F',
+          valueInputOption: 'RAW',
+          resource: { values: nuevosConceptos }
+        });
+  
+        // 5. Actualizar conceptosValidos con los nuevos
+        nuevosConceptos.forEach(concepto => {
+          const idConcepto = concepto[0];
+          conceptosValidos.add(idConcepto);
+          conceptosSolicitudValidos.add(`${idConcepto}:${idSolicitud}`);
+        });
+      }
   
       // Preparar filas válidas
       const rows = gastos
@@ -219,21 +273,25 @@ class SheetsService {
         .map(gasto => {
           const cantidad = parseFloat(gasto.cantidad) || 0;
           const valor_unit = parseFloat(gasto.valor_unit) || 0;
+          const conceptoPadre = gasto.id_conceptos.includes('.') ? 
+            gasto.id_conceptos.split('.')[0] : gasto.id_conceptos;
+          
           return [
             gasto.id_conceptos.toString(),
             idSolicitud.toString(),
             cantidad,
             valor_unit,
-            cantidad * valor_unit
+            cantidad * valor_unit,
+            conceptoPadre 
           ];
-        });
+        })
   
       if (rows.length === 0) return false;
   
       // Insertar en GASTOS
       await this.client.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
-        range: 'GASTOS!A2:E',
+        range: 'GASTOS!A2:F',
         valueInputOption: 'USER_ENTERED',
         resource: { values: rows }
       });

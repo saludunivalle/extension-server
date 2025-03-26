@@ -20,8 +20,8 @@ class DriveService {
     this.templateIds = {
       1: '1xsz9YSnYEOng56eNKGV9it9EgTn0mZw1', //Plantilla de formulario 1
       2: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF', //Plantilla de formulario 2
-      3: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0', //Plantilla de formulario 3
-      4: '1WoPUZYusNl2u3FpmZ1qiO5URBUqHIwKF', //Plantilla de formulario 4
+      3: '1WoPUZYusNl2u3FpmZ1qiO5URBUqHIwKF', //Plantilla de formulario 3
+      4: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0', //Plantilla de formulario 4
     };
   }
 
@@ -153,6 +153,7 @@ class DriveService {
 
   async generateReport(formNumber, solicitudId, data, mode = 'view') {
     try {
+      
       const templateId = this.templateIds[formNumber];
       
       if (!templateId) {

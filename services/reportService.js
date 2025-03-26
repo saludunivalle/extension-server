@@ -29,6 +29,15 @@ class ReportService {
   
       const safeFormData = formData || {};
       let transformedData = {...safeFormData};
+
+      // Combinar con datos de SOLICITUDES3 siempre que estén disponibles
+    if (allSheetData.SOLICITUDES3) {
+      console.log("Combinando datos con SOLICITUDES3");
+      transformedData = {
+        ...transformedData,
+        ...allSheetData.SOLICITUDES3
+      };
+    }
   
       // Caso especial para formulario 2
       if (formNumber === 2 && allSheetData.SOLICITUDES2) {
