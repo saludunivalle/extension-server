@@ -7,6 +7,9 @@ const {
   getCompletedRequests, 
   getFormDataForm2,
   guardarGastos,
+  actualizarPasoMaximo,
+  validarProgresion,       
+  actualizarProgresoGlobal 
 } = require('../controllers/formController');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const router = express.Router();
@@ -20,6 +23,10 @@ router.get('/getRequests', getRequests);
 router.get('/getActiveRequests', getActiveRequests);
 router.get('/getCompletedRequests', getCompletedRequests);
 router.get('/getFormDataForm2', getFormDataForm2);
+router.post('/actualizarPasoMaximo', actualizarPasoMaximo);
+router.post('/progreso-actual', validarProgresion);
+router.post('/actualizacion-progreso', actualizarProgresoGlobal);
+
 
 
 module.exports = router;

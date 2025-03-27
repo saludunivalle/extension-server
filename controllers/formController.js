@@ -429,6 +429,498 @@ const guardarGastos = async (req, res) => {
   }
 };
 
+/**
+ * Actualiza el paso máximo para una solicitud
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const actualizarPasoMaximo = async (req, res) => {
+  try {
+    const { id_solicitud, etapa_actual, paso } = req.body;
+    
+    // Validación más estricta de parámetros
+    if (!id_solicitud) {
+      return res.status(400).json({
+        success: false,
+        error: 'El ID de solicitud es requerido'
+      });
+    }
+    
+    // Validar cada campo individualmente para mensajes de error más específicos
+    if (etapa_actual === undefined || etapa_actual === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'El campo etapa_actual es requerido'
+      });
+    }
+    
+    if (paso === undefined || paso === null) {
+      return res.status(400).json({
+        success: false,
+        error: 'El campo paso es requerido'
+      });
+    }
+    
+    // Convertir y validar tipos
+    const parsedEtapa = parseInt(etapa_actual);
+    const parsedPaso = parseInt(paso);
+    
+    if (isNaN(parsedEtapa)) {
+      return res.status(400).json({
+        success: false,
+        error: 'etapa_actual debe ser un valor numérico'
+      });
+    }
+    
+    if (isNaN(parsedPaso)) {
+      return res.status(400).json({
+        success: false,
+        error: 'paso debe ser un valor numérico'
+      });
+    }
+    
+    // Validación de rango
+    if (parsedEtapa < 1 || parsedEtapa > 4) {
+      return res.status(400).json({
+        success: false,
+        error: 'etapa_actual debe estar entre 1 y 4'
+      });
+    }
+    
+    if (parsedPaso < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'paso debe ser mayor o igual a 1'
+      });
+    }
+    
+    // Obtener los datos actuales de ETAPAS
+    const client = sheetsService.getClient();
+    const etapasResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A:I'
+    });
+    const etapasRows = etapasResponse.data.values || [];
+    
+    // Buscar la fila que corresponde al id_solicitud
+    let filaEtapas = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
+    
+    if (filaEtapas === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+    
+    filaEtapas += 1; // Ajustar índice a 1-based para Google Sheets
+    
+    // Leer el estado actual de formularios
+    let estadoFormularios = {};
+    if (etapasRows[filaEtapas - 1][8]) {
+      try {
+        estadoFormularios = JSON.parse(etapasRows[filaEtapas - 1][8]);
+      } catch (e) {
+        // Si no es JSON válido, inicializar estructura
+        estadoFormularios = {
+          "1": "En progreso",
+          "2": "En progreso",
+          "3": "En progreso",
+          "4": "En progreso"
+        };
+      }
+    } else {
+      // Inicializar todos los formularios en "En progreso"
+      estadoFormularios = {
+        "1": "En progreso",
+        "2": "En progreso",
+        "3": "En progreso",
+        "4": "En progreso"
+      };
+    }
+    
+    // Actualizar estados según etapa_actual
+    // Si el formulario es menor que etapa_actual, se considera completado
+    for (let i = 1; i <= 4; i++) {
+      if (i < parsedEtapa) {
+        estadoFormularios[i.toString()] = "Completado";
+      }
+    }
+    
+    // Actualizar la hoja con la nueva información
+    await client.spreadsheets.values.update({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: `ETAPAS!E${filaEtapas}:I${filaEtapas}`,
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[
+          parsedEtapa,
+          etapasRows[filaEtapas - 1][5] || 'En progreso', // Mantener el estado global
+          etapasRows[filaEtapas - 1][6] || 'N/A', // Mantener el nombre_actividad
+          parsedPaso,
+          JSON.stringify(estadoFormularios)
+        ]]
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'Paso máximo actualizado correctamente'
+    });
+  } catch (error) {
+    // Log más detallado para depuración
+    console.error('Error detallado en actualizarPasoMaximo:', {
+      mensaje: error.message,
+      stack: error.stack,
+      cuerpoSolicitud: req.body
+    });
+    
+    res.status(500).json({
+      success: false,
+      error: 'Error al actualizar paso máximo',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Valida si un usuario puede avanzar a un paso/etapa específico
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const validarProgresion = async (req, res) => {
+  try {
+    const { id_solicitud, etapa_destino, paso_destino } = req.body;
+    
+    // Validaciones de parámetros
+    if (!id_solicitud || etapa_destino === undefined || paso_destino === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud, etapa_destino y paso_destino'
+      });
+    }
+    
+    // Convertir parámetros a números
+    const etapaDestino = parseInt(etapa_destino);
+    const pasoDestino = parseInt(paso_destino);
+    
+    if (isNaN(etapaDestino) || isNaN(pasoDestino)) {
+      return res.status(400).json({
+        success: false, 
+        error: 'etapa_destino y paso_destino deben ser valores numéricos'
+      });
+    }
+    
+    // Validar rangos
+    if (etapaDestino < 1 || etapaDestino > 4) {
+      return res.status(400).json({
+        success: false,
+        error: 'etapa_destino debe estar entre 1 y 4'
+      });
+    }
+    
+    if (pasoDestino < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'paso_destino debe ser mayor o igual a 1'
+      });
+    }
+    
+    // Obtener datos actuales de la solicitud
+    const client = sheetsService.getClient();
+    const etapasResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:I'
+    });
+    
+    const etapasRows = etapasResponse.data.values || [];
+    const filaActual = etapasRows.find(row => row[0] === id_solicitud.toString());
+    
+    if (!filaActual) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+    
+    // Obtener la etapa actual y estado de formularios
+    const etapaActual = parseInt(filaActual[4]) || 1;
+    const pasoActual = parseInt(filaActual[7]) || 1;
+    
+    let estadoFormularios = {};
+    if (filaActual[8]) {
+      try {
+        estadoFormularios = JSON.parse(filaActual[8]);
+      } catch (e) {
+        estadoFormularios = {
+          "1": "En progreso",
+          "2": "En progreso",
+          "3": "En progreso",
+          "4": "En progreso"
+        };
+      }
+    } else {
+      estadoFormularios = {
+        "1": "En progreso",
+        "2": "En progreso",
+        "3": "En progreso",
+        "4": "En progreso"
+      };
+    }
+    
+    // Definir pasos máximos para cada formulario
+    const maxPasos = {
+      1: 5,
+      2: 3,
+      3: 5,
+      4: 5
+    };
+    
+    // Lógica de validación
+    let puedeAvanzar = false;
+    let mensaje = '';
+    
+    // Si intenta acceder a un formulario anterior
+    if (etapaDestino < etapaActual) {
+      puedeAvanzar = true;
+      mensaje = 'Puede volver a un formulario anterior';
+    }
+    // Si intenta acceder al formulario actual
+    else if (etapaDestino === etapaActual) {
+      // Validar si el paso es válido
+      if (pasoDestino <= pasoActual || pasoDestino === pasoActual + 1) {
+        puedeAvanzar = true;
+        mensaje = 'Puede avanzar al siguiente paso o volver a uno anterior';
+      } else {
+        puedeAvanzar = false;
+        mensaje = `No puede saltar pasos. Paso actual: ${pasoActual}, paso destino: ${pasoDestino}`;
+      }
+    }
+    // Si intenta acceder al siguiente formulario
+    else if (etapaDestino === etapaActual + 1) {
+      // Verificar si el formulario actual está completo
+      if (estadoFormularios[etapaActual.toString()] === 'Completado') {
+        puedeAvanzar = true;
+        mensaje = 'Puede avanzar al siguiente formulario ya que el actual está completo';
+      } else {
+        // Verificar si está en el último paso del formulario actual
+        if (etapaActual < 4 && pasoActual >= maxPasos[etapaActual]) {
+          puedeAvanzar = true;
+          mensaje = 'Puede avanzar al próximo formulario al completar el último paso';
+        } else {
+          puedeAvanzar = false;
+          mensaje = `Debe completar el formulario ${etapaActual} antes de avanzar`;
+        }
+      }
+    }
+    // Si intenta saltar más de un formulario
+    else {
+      puedeAvanzar = false;
+      mensaje = 'No puede saltar más de un formulario a la vez';
+      
+      // Verificar si todos los formularios anteriores están completos
+      const todosAnterioresCompletos = Array.from(
+        {length: etapaDestino - 1}, 
+        (_, i) => i + 1
+      ).every(e => estadoFormularios[e.toString()] === 'Completado');
+      
+      if (todosAnterioresCompletos) {
+        puedeAvanzar = true;
+        mensaje = 'Puede avanzar porque todos los formularios anteriores están completos';
+      }
+    }
+    
+    res.status(200).json({
+      success: true,
+      puedeAvanzar,
+      mensaje,
+      estado: {
+        etapaActual,
+        pasoActual,
+        estadoFormularios,
+        etapaDestino,
+        pasoDestino
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error en validarProgresion:', {
+      mensaje: error.message,
+      stack: error.stack
+    });
+    
+    res.status(500).json({
+      success: false,
+      error: 'Error al validar la progresión',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Actualiza de manera centralizada el progreso de una solicitud
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const actualizarProgresoGlobal = async (req, res) => {
+  try {
+    const { 
+      id_solicitud, 
+      etapa_actual, 
+      paso_actual,
+      estadoFormularios,
+      estadoGlobal,
+      actualizar_formularios_previos = true
+    } = req.body;
+    
+    // Validación básica
+    if (!id_solicitud || etapa_actual === undefined || paso_actual === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud, etapa_actual y paso_actual'
+      });
+    }
+    
+    // Convertir a enteros
+    const parsedEtapa = parseInt(etapa_actual);
+    const parsedPaso = parseInt(paso_actual);
+    
+    if (isNaN(parsedEtapa) || isNaN(parsedPaso)) {
+      return res.status(400).json({
+        success: false,
+        error: 'etapa_actual y paso_actual deben ser valores numéricos'
+      });
+    }
+    
+    // Validar rangos
+    if (parsedEtapa < 1 || parsedEtapa > 4) {
+      return res.status(400).json({
+        success: false,
+        error: 'etapa_actual debe estar entre 1 y 4'
+      });
+    }
+    
+    if (parsedPaso < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'paso_actual debe ser mayor o igual a 1'
+      });
+    }
+    
+    // Pasos máximos por formulario
+    const maxPasos = {
+      1: 5,
+      2: 3,
+      3: 5,
+      4: 5
+    };
+    
+    // Obtener datos actuales
+    const client = sheetsService.getClient();
+    const etapasResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A:I'
+    });
+    
+    const etapasRows = etapasResponse.data.values || [];
+    let filaEtapas = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
+    
+    if (filaEtapas === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+    
+    filaEtapas += 1; // Ajustar a 1-based para Google Sheets
+    
+    // Recuperar el estado de formularios existente o usar el proporcionado
+    let nuevoEstadoFormularios = {};
+    
+    if (estadoFormularios) {
+      // Usar el estado proporcionado
+      nuevoEstadoFormularios = typeof estadoFormularios === 'string' 
+        ? JSON.parse(estadoFormularios) 
+        : estadoFormularios;
+    } else {
+      // Recuperar estado existente o crear uno nuevo
+      if (etapasRows[filaEtapas - 1][8]) {
+        try {
+          nuevoEstadoFormularios = JSON.parse(etapasRows[filaEtapas - 1][8]);
+        } catch (e) {
+          nuevoEstadoFormularios = {
+            "1": "En progreso",
+            "2": "En progreso",
+            "3": "En progreso",
+            "4": "En progreso"
+          };
+        }
+      } else {
+        nuevoEstadoFormularios = {
+          "1": "En progreso",
+          "2": "En progreso",
+          "3": "En progreso",
+          "4": "En progreso"
+        };
+      }
+      
+      // Actualizar el estado del formulario actual
+      nuevoEstadoFormularios[parsedEtapa.toString()] = 
+        (parsedPaso >= maxPasos[parsedEtapa]) ? 'Completado' : 'En progreso';
+      
+      // Marcar formularios anteriores como completados si se solicita
+      if (actualizar_formularios_previos) {
+        for (let i = 1; i < parsedEtapa; i++) {
+          nuevoEstadoFormularios[i.toString()] = 'Completado';
+        }
+      }
+    }
+    
+    // Determinar el estado global
+    const nuevoEstadoGlobal = estadoGlobal || 
+      ((parsedEtapa === 4 && parsedPaso >= maxPasos[4]) ? 'Completado' : 'En progreso');
+    
+    // Actualizar la hoja
+    await client.spreadsheets.values.update({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: `ETAPAS!E${filaEtapas}:I${filaEtapas}`,
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[
+          parsedEtapa,
+          nuevoEstadoGlobal,
+          etapasRows[filaEtapas - 1][6] || 'N/A', // Mantener nombre_actividad
+          parsedPaso,
+          JSON.stringify(nuevoEstadoFormularios)
+        ]]
+      }
+    });
+    
+    res.status(200).json({
+      success: true,
+      message: 'Progreso actualizado correctamente',
+      data: {
+        etapa_actual: parsedEtapa,
+        paso_actual: parsedPaso,
+        estado_global: nuevoEstadoGlobal,
+        estado_formularios: nuevoEstadoFormularios
+      }
+    });
+    
+  } catch (error) {
+    console.error('Error en actualizarProgresoGlobal:', {
+      mensaje: error.message,
+      stack: error.stack,
+      cuerpoSolicitud: req.body
+    });
+    
+    res.status(500).json({
+      success: false,
+      error: 'Error al actualizar el progreso global',
+      details: error.message
+    });
+  }
+};
+
 // Función auxiliar para obtener el nombre de la hoja según el ID
 function getSheetName(hojaId) {
   switch (hojaId) {
@@ -448,5 +940,8 @@ module.exports = {
   getActiveRequests,
   getCompletedRequests,
   getFormDataForm2,
-  guardarGastos
+  guardarGastos,
+  actualizarPasoMaximo,  
+  validarProgresion,  
+  actualizarProgresoGlobal  
 };
