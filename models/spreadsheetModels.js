@@ -171,6 +171,17 @@ class SpreadsheetModel {
       2: ['H', 'I', 'J', 'K']
     }
   );
+
+  // Definición del modelo RIESGOS
+  const RIESGOS = new SpreadsheetModel(
+    'RIESGOS',
+    [
+      'id_riesgo', 'nombre_riesgo', 'aplica', 'mitigacion', 'id_solicitud', 'categoria'
+    ],
+    {
+      1: ['A', 'B', 'C', 'D', 'E', 'F']
+    }
+  );
   
   // Definición del modelo ETAPAS
   const ETAPAS = new SpreadsheetModel(
@@ -195,6 +206,7 @@ class SpreadsheetModel {
     SOLICITUDES3,
     SOLICITUDES4,
     GASTOS,
+    RIESGOS,
     ETAPAS,
     USUARIOS,
     // Método auxiliar para obtener todos los modelos como objeto
@@ -205,6 +217,7 @@ class SpreadsheetModel {
         SOLICITUDES3: this.SOLICITUDES3,
         SOLICITUDES4: this.SOLICITUDES4,
         GASTOS: this.GASTOS,
+        RIESGOS: this.RIESGOS,
         ETAPAS: this.ETAPAS,
         USUARIOS: this.USUARIOS,
       };

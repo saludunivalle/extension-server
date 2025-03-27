@@ -302,6 +302,223 @@ class SheetsService {
       throw new Error('Error guardando gastos');
     }
   }
+  
+  /**
+   * Obtiene todos los riesgos asociados a una solicitud
+   * @param {string} solicitudId - ID de la solicitud 
+   * @returns {Promise<Array>} - Lista de riesgos
+   */
+  async getRisksBySolicitud(solicitudId) {
+    try {
+      const response = await this.client.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: 'RIESGOS!A2:F'
+      });
+  
+      const rows = response.data.values || [];
+      const riesgos = rows
+        .filter(row => row[4] === solicitudId.toString())
+        .map(row => {
+          return {
+            id_riesgo: row[0],
+            nombre_riesgo: row[1],
+            aplica: row[2] || 'No',
+            mitigacion: row[3] || '',
+            id_solicitud: row[4],
+            categoria: row[5] || 'General'
+          };
+        });
+  
+      return riesgos;
+    } catch (error) {
+      console.error('Error al obtener riesgos por solicitud:', error);
+      throw new Error('Error al obtener riesgos por solicitud');
+    }
+  }
+  
+  /**
+   * Guarda un nuevo riesgo
+   * @param {Object} riskData - Datos del riesgo a guardar
+   * @returns {Promise<boolean>} - Resultado de la operación
+   */
+  async saveRisk(riskData) {
+    try {
+      await this.client.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: 'RIESGOS!A2:F',
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        resource: {
+          values: [[
+            riskData.id_riesgo,
+            riskData.nombre_riesgo,
+            riskData.aplica,
+            riskData.mitigacion,
+            riskData.id_solicitud,
+            riskData.categoria
+          ]]
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Error al guardar riesgo:', error);
+      throw new Error('Error al guardar riesgo');
+    }
+  }
+  
+  /**
+   * Guarda múltiples riesgos de una vez
+   * @param {Array<Object>} risksData - Lista de riesgos a guardar
+   * @returns {Promise<boolean>} - Resultado de la operación
+   */
+  async saveBulkRisks(risksData) {
+    try {
+      const values = risksData.map(risk => [
+        risk.id_riesgo,
+        risk.nombre_riesgo,
+        risk.aplica,
+        risk.mitigacion,
+        risk.id_solicitud,
+        risk.categoria
+      ]);
+      
+      await this.client.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range: 'RIESGOS!A2:F',
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        resource: { values }
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Error al guardar riesgos en bloque:', error);
+      throw new Error('Error al guardar riesgos en bloque');
+    }
+  }
+  
+  /**
+   * Obtiene un riesgo por su ID
+   * @param {string} riskId - ID del riesgo a buscar
+   * @returns {Promise<Object|null>} - Datos del riesgo o null si no existe
+   */
+  async getRiskById(riskId) {
+    try {
+      const response = await this.client.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: 'RIESGOS!A2:F'
+      });
+  
+      const rows = response.data.values || [];
+      const riskRow = rows.find(row => row[0] === riskId.toString());
+      
+      if (!riskRow) return null;
+      
+      return {
+        id_riesgo: riskRow[0],
+        nombre_riesgo: riskRow[1],
+        aplica: riskRow[2] || 'No',
+        mitigacion: riskRow[3] || '',
+        id_solicitud: riskRow[4],
+        categoria: riskRow[5] || 'General'
+      };
+    } catch (error) {
+      console.error(`Error al obtener riesgo con ID ${riskId}:`, error);
+      throw new Error(`Error al obtener riesgo con ID ${riskId}`);
+    }
+  }
+  
+  /**
+   * Actualiza un riesgo existente
+   * @param {Object} riskData - Datos actualizados del riesgo
+   * @returns {Promise<boolean>} - Resultado de la operación
+   */
+  async updateRisk(riskData) {
+    try {
+      // Obtener todos los riesgos para encontrar la fila a actualizar
+      const response = await this.client.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: 'RIESGOS!A2:F'
+      });
+  
+      const rows = response.data.values || [];
+      const rowIndex = rows.findIndex(row => row[0] === riskData.id_riesgo.toString());
+      
+      if (rowIndex === -1) {
+        throw new Error(`Riesgo con ID ${riskData.id_riesgo} no encontrado`);
+      }
+      
+      // Calcular la fila en Sheets (índice base 0 + 2 para tener en cuenta el encabezado)
+      const sheetRowIndex = rowIndex + 2;
+      
+      // Actualizar la fila
+      await this.client.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: `RIESGOS!A${sheetRowIndex}:F${sheetRowIndex}`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: [[
+            riskData.id_riesgo,
+            riskData.nombre_riesgo,
+            riskData.aplica,
+            riskData.mitigacion,
+            riskData.id_solicitud,
+            riskData.categoria
+          ]]
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      console.error('Error al actualizar riesgo:', error);
+      throw new Error('Error al actualizar riesgo');
+    }
+  }
+  
+  /**
+   * Elimina un riesgo por su ID
+   * @param {string} riskId - ID del riesgo a eliminar
+   * @returns {Promise<boolean>} - Resultado de la operación
+   */
+  async deleteRisk(riskId) {
+    try {
+      // Obtener todos los riesgos
+      const response = await this.client.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: 'RIESGOS!A2:F'
+      });
+  
+      const rows = response.data.values || [];
+      const newRows = rows.filter(row => row[0] !== riskId.toString());
+      
+      // Si las filas son iguales, no se encontró el riesgo
+      if (rows.length === newRows.length) {
+        throw new Error(`Riesgo con ID ${riskId} no encontrado`);
+      }
+      
+      // Limpiar la hoja y volver a escribir todas las filas menos la eliminada
+      await this.client.spreadsheets.values.clear({
+        spreadsheetId: this.spreadsheetId,
+        range: 'RIESGOS!A2:F'
+      });
+      
+      if (newRows.length > 0) {
+        await this.client.spreadsheets.values.append({
+          spreadsheetId: this.spreadsheetId,
+          range: 'RIESGOS!A2',
+          valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS',
+          resource: { values: newRows }
+        });
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error al eliminar riesgo:', error);
+      throw new Error('Error al eliminar riesgo');
+    }
+  }
 
 }
 
