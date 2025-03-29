@@ -1,6 +1,7 @@
 const sheetsService = require('../services/sheetsService');
 const driveService = require('../services/driveService');
 const dateUtils = require('../utils/dateUtils');
+const progressService = require('../services/progressStateService');
 
 /**
  * Guarda el progreso de un formulario
@@ -182,6 +183,24 @@ const guardarProgreso = async (req, res) => {
           valueInputOption: 'RAW',
           data: updateRequests
         }
+      });
+    }
+
+    // Actualizar el estado en Redis y Google Sheets
+    const progressData = {
+      etapa_actual: etapaActualAjustada,
+      paso: paso,
+      estado: estadoGlobal,
+      estado_formularios: estadoFormularios
+    };
+    try {
+      await progressService.setProgress(id_solicitud, progressData);
+    } catch (error) {
+      console.error("Error al guardar el progreso:", error);
+      return res.status(500).json({
+        success: false,
+        error: 'Error al guardar el progreso',
+        details: error.message
       });
     }
 
@@ -561,6 +580,14 @@ const actualizarPasoMaximo = async (req, res) => {
         ]]
       }
     });
+
+    // Actualizar el estado en Redis
+    const progressData = {
+      etapa_actual: parsedEtapa,
+      paso: parsedPaso,
+      estadoFormularios: estadoFormularios
+    };
+    await progressService.setProgress(id_solicitud, progressData);
     
     res.status(200).json({
       success: true,

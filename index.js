@@ -29,11 +29,13 @@ app.use(cors({
 const driveService = require('./services/driveService');
 const reportService = require('./services/reportService');
 const sheetsService = require('./services/sheetsService');
+const progressRoutes = require('./routes/progress');
 
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 // Usar el enrutador principal para todas las rutas
 app.use('/', routes);
+app.use('/progress', progressRoutes);
 
 // Middleware para rutas no encontradas
 app.use(notFoundHandler);
