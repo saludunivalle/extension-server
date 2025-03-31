@@ -19,6 +19,7 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.19.2",
+    "express-session": "^1.18.1",
     "extension-server": "file:",
     "google-auth-library": "^9.13.0",
     "googleapis": "^140.0.1",

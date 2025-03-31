@@ -1,20 +1,13 @@
-const progressService = require('../services/progressStateService');
-
-const loadProgressMiddleware = async (req, res, next) => {
-  const id_solicitud = req.body.id_solicitud || req.query.id_solicitud;
-
-  if (id_solicitud) {
-    try {
-      const progressState = await progressService.getProgress(id_solicitud);
-      req.progressState = progressState;
-    } catch (error) {
-      console.error(`Error loading progress for ${id_solicitud}:`, error);
-      // Manejar el error apropiadamente, tal vez enviando un mensaje al cliente
-      return res.status(500).json({ success: false, error: 'Failed to load progress' });
+const loadProgressMiddleware = (req, res, next) => {
+  req.progressState = req.session.progressState || {
+    etapa_actual: 1,
+    paso: 1,
+    estado: 'En progreso',
+    estado_formularios: {
+      "1": "En progreso", "2": "En progreso",
+      "3": "En progreso", "4": "En progreso"
     }
-  } else {
-    req.progressState = null;
-  }
+  };
   next();
 };
 

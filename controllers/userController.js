@@ -8,6 +8,7 @@ const sheetsService = require('../services/sheetsService');
 
 const saveUser = async (req, res) => {
   try {
+    console.log('Datos recibidos en saveUser:', req.body);
     const { id, email, name } = req.body;
     
     // Validación de datos
@@ -20,6 +21,8 @@ const saveUser = async (req, res) => {
 
     // Usar el servicio de sheets
     const client = sheetsService.getClient();
+    
+    // Verificar si el usuario ya existe
     const userCheckRange = 'USUARIOS!A2:A';
     const userCheckResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
@@ -28,7 +31,7 @@ const saveUser = async (req, res) => {
 
     const existingUsers = userCheckResponse.data.values ? userCheckResponse.data.values.flat() : [];
     
-    // Verificar si el usuario ya existe
+    // Si el usuario no existe, guardarlo
     if (!existingUsers.includes(id)) {
       const userRange = 'USUARIOS!A2:C2';
       const userValues = [[id, email, name]];
@@ -42,10 +45,18 @@ const saveUser = async (req, res) => {
       });
     }
 
-    res.status(200).json({ success: true });
+    res.status(200).json({ 
+      success: true,
+      message: 'Usuario guardado correctamente',
+      userInfo: { id, email, name }
+    });
   } catch (error) {
-    console.error('Error al guardar usuario:', error);
-    res.status(500).json({ error: 'Error al guardar usuario', success: false });
+    console.error('Error al guardar el usuario:', error);
+    res.status(500).json({ 
+      success: false,
+      error: 'Error al guardar el usuario',
+      details: error.message
+    });
   }
 };
 

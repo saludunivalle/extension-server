@@ -1,7 +1,7 @@
 const sheetsService = require('../services/sheetsService');
 const driveService = require('../services/driveService');
 const dateUtils = require('../utils/dateUtils');
-const progressService = require('../services/progressStateService');
+const progressService = require('../services/progressStateService'); // Añadir esta línea
 
 /**
  * Guarda el progreso de un formulario
@@ -102,30 +102,33 @@ const guardarProgreso = async (req, res) => {
     // Buscar la fila que corresponde al id_solicitud
     const filaExistente = etapasRows.find(row => row[0] === id_solicitud.toString());
 
+    // Inicializar con todos los formularios
+    estadoFormularios = {
+      "1": "En progreso",
+      "2": "En progreso",
+      "3": "En progreso",
+      "4": "En progreso"
+    };
+    
+    // Si hay datos existentes, sobrescribir con ellos
     if (filaExistente && filaExistente[8]) {
       try {
-        estadoFormularios = JSON.parse(filaExistente[8]);
+        const estadoExistente = JSON.parse(filaExistente[8]);
+        Object.assign(estadoFormularios, estadoExistente);
       } catch (e) {
-        // Si no es JSON válido, crear objeto vacío
-        estadoFormularios = {
-          "1": "En progreso",
-          "2": "En progreso",
-          "3": "En progreso",
-          "4": "En progreso"
-        };
+        console.error('Error al parsear estado_formularios en guardarProgreso:', e);
+        // Mantener el estado inicial
       }
-    } else {
-      // Inicializar todos los formularios en "En progreso"
-      estadoFormularios = {
-        "1": "En progreso",
-        "2": "En progreso",
-        "3": "En progreso",
-        "4": "En progreso"
-      };
+    }
+    
+    // Marcar formularios anteriores como completados
+    for (let i = 1; i < parsedHoja; i++) {
+      estadoFormularios[i.toString()] = "Completado";
     }
 
+    // Actualizar estado del formulario actual
     estadoFormularios[parsedHoja] = (paso >= maxPasos[parsedHoja]) ? 'Completado' : 'En progreso';
-    
+
     const estadoFormulariosJSON = JSON.stringify(estadoFormularios);
 
     const etapaActual = (paso === maxPasos[parsedHoja]) ? parsedHoja + 1 : parsedHoja;
@@ -186,23 +189,13 @@ const guardarProgreso = async (req, res) => {
       });
     }
 
-    // Actualizar el estado en Redis y Google Sheets
-    const progressData = {
+    // Actualizar el estado en la sesión
+    req.session.progressState = {
       etapa_actual: etapaActualAjustada,
       paso: paso,
       estado: estadoGlobal,
       estado_formularios: estadoFormularios
     };
-    try {
-      await progressService.setProgress(id_solicitud, progressData);
-    } catch (error) {
-      console.error("Error al guardar el progreso:", error);
-      return res.status(500).json({
-        success: false,
-        error: 'Error al guardar el progreso',
-        details: error.message
-      });
-    }
 
     res.status(200).json({ success: true });
   } catch (error) {
@@ -294,7 +287,6 @@ const getActiveRequests = async (req, res) => {
     });
 
     const rows = etapasResponse.data.values;
-
     if (!rows || rows.length === 0) {
       return res.status(404).json({ error: 'No se encontraron solicitudes activas' });
     }
@@ -337,7 +329,9 @@ const getActiveRequests = async (req, res) => {
     res.status(200).json(combinedRequests);
   } catch (error) {
     console.error('Error al obtener solicitudes activas:', error);
-    res.status(500).json({ error: 'Error al obtener solicitudes activas' });
+    console.error('Detalles del error:', error.message);
+    console.error('Stack trace:', error.stack);
+    res.status(500).json({ error: 'Error al obtener solicitudes activas', details: error.message });
   }
 };
 
@@ -588,6 +582,13 @@ const actualizarPasoMaximo = async (req, res) => {
       estadoFormularios: estadoFormularios
     };
     await progressService.setProgress(id_solicitud, progressData);
+
+    // Actualizar el estado en la sesión
+    req.session.progressState = {
+      etapa_actual: parsedEtapa,
+      paso: parsedPaso,
+      estadoFormularios: estadoFormularios
+    };
     
     res.status(200).json({
       success: true,
@@ -617,7 +618,7 @@ const actualizarPasoMaximo = async (req, res) => {
 const validarProgresion = async (req, res) => {
   try {
     const { id_solicitud, etapa_destino, paso_destino } = req.body;
-    
+
     // Validaciones de parámetros
     if (!id_solicitud || etapa_destino === undefined || paso_destino === undefined) {
       return res.status(400).json({
@@ -625,18 +626,18 @@ const validarProgresion = async (req, res) => {
         error: 'Se requieren id_solicitud, etapa_destino y paso_destino'
       });
     }
-    
+
     // Convertir parámetros a números
     const etapaDestino = parseInt(etapa_destino);
     const pasoDestino = parseInt(paso_destino);
-    
+
     if (isNaN(etapaDestino) || isNaN(pasoDestino)) {
       return res.status(400).json({
-        success: false, 
+        success: false,
         error: 'etapa_destino y paso_destino deben ser valores numéricos'
       });
     }
-    
+
     // Validar rangos
     if (etapaDestino < 1 || etapaDestino > 4) {
       return res.status(400).json({
@@ -644,35 +645,35 @@ const validarProgresion = async (req, res) => {
         error: 'etapa_destino debe estar entre 1 y 4'
       });
     }
-    
+
     if (pasoDestino < 1) {
       return res.status(400).json({
         success: false,
         error: 'paso_destino debe ser mayor o igual a 1'
       });
     }
-    
+
     // Obtener datos actuales de la solicitud
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
       range: 'ETAPAS!A2:I'
     });
-    
+
     const etapasRows = etapasResponse.data.values || [];
     const filaActual = etapasRows.find(row => row[0] === id_solicitud.toString());
-    
+
     if (!filaActual) {
       return res.status(404).json({
         success: false,
         error: `No se encontró la solicitud con ID ${id_solicitud}`
       });
     }
-    
+
     // Obtener la etapa actual y estado de formularios
     const etapaActual = parseInt(filaActual[4]) || 1;
     const pasoActual = parseInt(filaActual[7]) || 1;
-    
+
     let estadoFormularios = {};
     if (filaActual[8]) {
       try {
@@ -693,7 +694,7 @@ const validarProgresion = async (req, res) => {
         "4": "En progreso"
       };
     }
-    
+
     // Definir pasos máximos para cada formulario
     const maxPasos = {
       1: 5,
@@ -701,61 +702,42 @@ const validarProgresion = async (req, res) => {
       3: 5,
       4: 5
     };
-    
-    // Lógica de validación
-    let puedeAvanzar = false;
+
+    // Lógica de validación SIMPLIFICADA
+    let puedeAvanzar = true; // Por defecto permitimos la navegación
     let mensaje = '';
-    
-    // Si intenta acceder a un formulario anterior
-    if (etapaDestino < etapaActual) {
-      puedeAvanzar = true;
-      mensaje = 'Puede volver a un formulario anterior';
-    }
-    // Si intenta acceder al formulario actual
-    else if (etapaDestino === etapaActual) {
-      // Validar si el paso es válido
-      if (pasoDestino <= pasoActual || pasoDestino === pasoActual + 1) {
-        puedeAvanzar = true;
-        mensaje = 'Puede avanzar al siguiente paso o volver a uno anterior';
-      } else {
-        puedeAvanzar = false;
-        mensaje = `No puede saltar pasos. Paso actual: ${pasoActual}, paso destino: ${pasoDestino}`;
+
+    // Verificar el estado de todos los formularios hasta el destino
+    const formulariosIniciados = [];
+    for (let i = 1; i <= 4; i++) {
+      if (estadoFormularios[i.toString()] === 'Completado' || 
+          estadoFormularios[i.toString()] === 'En progreso') {
+        formulariosIniciados.push(i);
       }
     }
-    // Si intenta acceder al siguiente formulario
-    else if (etapaDestino === etapaActual + 1) {
-      // Verificar si el formulario actual está completo
-      if (estadoFormularios[etapaActual.toString()] === 'Completado') {
-        puedeAvanzar = true;
-        mensaje = 'Puede avanzar al siguiente formulario ya que el actual está completo';
-      } else {
-        // Verificar si está en el último paso del formulario actual
-        if (etapaActual < 4 && pasoActual >= maxPasos[etapaActual]) {
-          puedeAvanzar = true;
-          mensaje = 'Puede avanzar al próximo formulario al completar el último paso';
-        } else {
-          puedeAvanzar = false;
-          mensaje = `Debe completar el formulario ${etapaActual} antes de avanzar`;
-        }
-      }
-    }
-    // Si intenta saltar más de un formulario
-    else {
+
+    // ÚNICA RESTRICCIÓN: No permitir saltar a formularios futuros no iniciados
+    if (etapaDestino > etapaActual && 
+        !formulariosIniciados.includes(etapaDestino)) {
       puedeAvanzar = false;
-      mensaje = 'No puede saltar más de un formulario a la vez';
+      mensaje = 'No puede acceder a formularios futuros sin completar los anteriores';
+    } else {
+      // Permitir navegar a cualquier formulario ya iniciado o completado
+      puedeAvanzar = true;
       
-      // Verificar si todos los formularios anteriores están completos
-      const todosAnterioresCompletos = Array.from(
-        {length: etapaDestino - 1}, 
-        (_, i) => i + 1
-      ).every(e => estadoFormularios[e.toString()] === 'Completado');
-      
-      if (todosAnterioresCompletos) {
-        puedeAvanzar = true;
-        mensaje = 'Puede avanzar porque todos los formularios anteriores están completos';
+      // Mensaje más descriptivo según el caso
+      if (etapaDestino < etapaActual) {
+        mensaje = 'Navegando a un formulario anterior';
+      } else if (etapaDestino === etapaActual) {
+        mensaje = 'Continuando en el formulario actual';
+      } else {
+        mensaje = 'Avanzando al siguiente formulario';
       }
+      
+      // Log para depuración
+      console.log(`Permitiendo navegación: ID=${id_solicitud}, De=${etapaActual} a=${etapaDestino}, formulariosIniciados=${formulariosIniciados.join(',')}`);
     }
-    
+
     res.status(200).json({
       success: true,
       puedeAvanzar,
@@ -765,16 +747,17 @@ const validarProgresion = async (req, res) => {
         pasoActual,
         estadoFormularios,
         etapaDestino,
-        pasoDestino
+        pasoDestino,
+        formulariosIniciados
       }
     });
-    
+
   } catch (error) {
     console.error('Error en validarProgresion:', {
       mensaje: error.message,
       stack: error.stack
     });
-    
+
     res.status(500).json({
       success: false,
       error: 'Error al validar la progresión',
@@ -921,6 +904,13 @@ const actualizarProgresoGlobal = async (req, res) => {
         ]]
       }
     });
+
+    // Actualizar el estado en la sesión
+    req.session.progressState = {
+      etapa_actual: parsedEtapa,
+      paso: parsedPaso,
+      estadoFormularios: nuevoEstadoFormularios
+    };
     
     res.status(200).json({
       success: true,
@@ -948,6 +938,36 @@ const actualizarProgresoGlobal = async (req, res) => {
   }
 };
 
+/**
+ * Obtiene el último ID de una hoja de cálculo
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const getLastId = async (req, res) => {
+  try {
+    const { sheetName } = req.query;
+
+    if (!sheetName) {
+      return res.status(400).json({ error: 'El nombre de la hoja es requerido' });
+    }
+
+    const client = sheetsService.getClient();
+    const range = `${sheetName}!A:A`; // Obtener todos los valores de la columna A
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range,
+    });
+
+    const values = response.data.values || [];
+    const lastId = values.length > 0 ? values.length : 0; // El último ID es la cantidad de filas
+
+    res.status(200).json({ lastId });
+  } catch (error) {
+    console.error('Error al obtener el último ID:', error);
+    res.status(500).json({ error: 'Error al obtener el último ID', details: error.message });
+  }
+};
+
 // Función auxiliar para obtener el nombre de la hoja según el ID
 function getSheetName(hojaId) {
   switch (hojaId) {
@@ -970,5 +990,6 @@ module.exports = {
   guardarGastos,
   actualizarPasoMaximo,  
   validarProgresion,  
-  actualizarProgresoGlobal  
+  actualizarProgresoGlobal,
+  getLastId
 };
