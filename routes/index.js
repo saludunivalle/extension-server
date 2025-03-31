@@ -17,7 +17,11 @@ const { verifyToken } = require('../middleware/auth');
 router.use('/auth', authRoutes);
 router.post('/saveUser', require('../controllers/userController').saveUser);
 
-// Agregar rutas de acceso directo - sin prefijos
+// Agregar las rutas de reporte aquí, antes del middleware de autenticación
+router.post('/report/generateReport', require('../controllers/reportController').generateReport);
+router.post('/report/downloadReport', require('../controllers/reportController').downloadReport);
+
+// Otras rutas sin autenticación
 router.get('/getActiveRequests', formController.getActiveRequests);
 router.get('/getCompletedRequests', formController.getCompletedRequests);
 router.get('/getFormDataForm2', formController.getFormDataForm2);
@@ -39,7 +43,8 @@ router.use(verifyToken);
 // Rutas de formulario (para mantener compatibilidad)
 router.use('/form', formRoutes);
 
-// Rutas de reporte
+// Para mantener compatibilidad, deja las rutas de reporte también después
+// del middleware, para usuarios autenticados
 router.use('/report', reportRoutes);
 
 // Rutas de usuario
