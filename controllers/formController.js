@@ -443,6 +443,63 @@ const guardarGastos = async (req, res) => {
 };
 
 /**
+ * Obtiene los gastos asociados a una solicitud
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const getGastos = async (req, res) => {
+  try {
+    const { id_solicitud } = req.query;
+    
+    if (!id_solicitud) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere id_solicitud'
+      });
+    }
+    
+    console.log(`Obteniendo gastos para solicitud ${id_solicitud}`);
+    
+    // Obtener cliente sheets
+    const client = sheetsService.getClient();
+    
+    // Buscar todos los gastos para esta solicitud
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'GASTOS!A2:F'
+    });
+    
+    const rows = response.data.values || [];
+    const solicitudGastos = rows.filter(row => row[1] === id_solicitud);
+    
+    console.log(`Se encontraron ${solicitudGastos.length} gastos para la solicitud ${id_solicitud}`);
+    
+    // Formatear los resultados
+    const gastos = solicitudGastos.map(row => ({
+      id_conceptos: row[0] || '',
+      id_solicitud: row[1] || '',
+      cantidad: parseFloat(row[2]) || 0,
+      valor_unit: parseFloat(row[3]) || 0,
+      valor_total: parseFloat(row[4]) || 0,
+      concepto_padre: row[5] || ''
+    }));
+    
+    res.status(200).json({
+      success: true,
+      data: gastos
+    });
+    
+  } catch (error) {
+    console.error('Error al obtener gastos:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al obtener gastos',
+      details: error.message
+    });
+  }
+};
+
+/**
  * Actualiza el paso máximo para una solicitud
  * @param {Object} req - Objeto de solicitud Express
  * @param {Object} res - Objeto de respuesta Express
@@ -980,6 +1037,165 @@ function getSheetName(hojaId) {
   }
 }
 
+/**
+ * Guarda datos específicos del Formulario 2 Paso 2 en SOLICITUDES2
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const guardarForm2Paso2 = async (req, res) => {
+  try {
+    // Extraer los datos relevantes
+    const { id_solicitud, formData } = req.body;
+
+    if (!id_solicitud) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere id_solicitud'
+      });
+    }
+
+    // Obtener cliente sheets
+    const client = sheetsService.getClient();
+    
+    console.log('👉 DATOS RECIBIDOS DEL FRONTEND:', formData);
+    console.log('🔍 Verificando campos críticos:');
+    console.log('- nombre_actividad:', formData.nombre_actividad || 'NO ENCONTRADO');
+    console.log('- fecha_solicitud:', formData.fecha_solicitud || 'NO ENCONTRADO');
+    
+    // SOLUCIÓN: Verificar si faltan campos críticos y obtenerlos de SOLICITUDES
+    if (!formData.nombre_actividad || !formData.fecha_solicitud) {
+      console.log("⚠️ ALERTA: Faltan campos críticos, intentando recuperarlos de SOLICITUDES");
+      
+      try {
+        const solicitudesResponse = await client.spreadsheets.values.get({
+          spreadsheetId: sheetsService.spreadsheetId,
+          range: 'SOLICITUDES!A2:D100'
+        });
+        
+        const solicitudesRows = solicitudesResponse.data.values || [];
+        const solicitudRow = solicitudesRows.find(row => row[0] === id_solicitud);
+        
+        if (solicitudRow) {
+          console.log("✅ Datos encontrados en SOLICITUDES:", solicitudRow);
+          
+          // Actualizar formData con los campos de SOLICITUDES
+          if (!formData.nombre_actividad && solicitudRow[2]) {
+            formData.nombre_actividad = solicitudRow[2];
+            console.log(`Campo nombre_actividad recuperado: ${formData.nombre_actividad}`);
+          }
+          
+          if (!formData.fecha_solicitud && solicitudRow[1]) {
+            formData.fecha_solicitud = solicitudRow[1];
+            console.log(`Campo fecha_solicitud recuperado: ${formData.fecha_solicitud}`);
+          }
+        } else {
+          console.log("❌ No se encontró la solicitud en SOLICITUDES, generando valores por defecto");
+          if (!formData.nombre_actividad) {
+            formData.nombre_actividad = `Actividad para solicitud ${id_solicitud}`;
+          }
+          if (!formData.fecha_solicitud) {
+            const hoy = new Date();
+            formData.fecha_solicitud = `${hoy.getDate()}/${hoy.getMonth()+1}/${hoy.getFullYear()}`;
+          }
+        }
+      } catch (error) {
+        console.error("❌ Error al buscar datos en SOLICITUDES:", error);
+        // Generar valores por defecto en caso de error
+        if (!formData.nombre_actividad) {
+          formData.nombre_actividad = `Actividad para solicitud ${id_solicitud}`;
+        }
+        if (!formData.fecha_solicitud) {
+          const hoy = new Date();
+          formData.fecha_solicitud = `${hoy.getDate()}/${hoy.getMonth()+1}/${hoy.getFullYear()}`;
+        }
+      }
+    }
+    
+    // Encontrar o crear fila para la solicitud
+    const fila = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
+    
+    // Campos específicos para el paso 2 del formulario 2 - NO MODIFICAR ESTE ORDEN
+    const campos = [
+      'nombre_actividad',  // Columna B
+      'fecha_solicitud',   // Columna C 
+      'ingresos_cantidad', // Columna D
+      'ingresos_vr_unit',  // Columna E
+      'total_ingresos',    // Columna F
+      'subtotal_gastos',   // Columna G
+      'imprevistos_3%',    // Columna H
+      'total_gastos_imprevistos',       // Columna I
+      'fondo_comun_porcentaje',         // Columna J
+      'facultadad_instituto_porcentaje', // Columna K
+      'escuela_departamento_porcentaje', // Columna L
+      'total_recursos'                  // Columna M
+    ];
+    
+    // Preparar valores a guardar (extrayéndolos de formData)
+    const valores = campos.map(campo => {
+      let valor = formData[campo] || '';
+      if (campo === 'nombre_actividad' && !valor) {
+        valor = `Actividad para solicitud ${id_solicitud}`;
+      }
+      if (campo === 'fecha_solicitud' && !valor) {
+        const hoy = new Date();
+        valor = `${hoy.getDate()}/${hoy.getMonth()+1}/${hoy.getFullYear()}`;
+      }
+      console.log(`Campo: ${campo}, Valor: ${valor}`);
+      return valor;
+    });
+    
+    console.log(`Guardando datos en SOLICITUDES2 para solicitud ${id_solicitud}, fila ${fila}`);
+    console.log('Valores a guardar:', valores);
+    
+    // VERIFICACIÓN: Confirmar que los campos nombre_actividad y fecha_solicitud están presentes
+    if (!valores[0]) {
+      console.error("❌ CRÍTICO: nombre_actividad aún falta después de intentar recuperarlo");
+    }
+    if (!valores[1]) {
+      console.error("❌ CRÍTICO: fecha_solicitud aún falta después de intentar recuperarlo");
+    }
+    
+    // Actualizar datos en Google Sheets - REVISAR QUE EL RANGO SEA CORRECTO
+    await client.spreadsheets.values.update({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: `SOLICITUDES2!B${fila}:M${fila}`,
+      valueInputOption: 'USER_ENTERED', // USER_ENTERED para mejor formato
+      resource: {
+        values: [valores]
+      }
+    });
+    
+    // VERIFICACIÓN ADICIONAL: Leer de vuelta los datos guardados para confirmar
+    const verificacionResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: `SOLICITUDES2!B${fila}:C${fila}`
+    });
+    const datosSalvados = verificacionResponse.data.values?.[0] || [];
+    console.log("✅ VERIFICACIÓN DE DATOS GUARDADOS:");
+    console.log(`- nombre_actividad guardado: ${datosSalvados[0] || 'NO GUARDADO'}`);
+    console.log(`- fecha_solicitud guardado: ${datosSalvados[1] || 'NO GUARDADO'}`);
+    
+    console.log('✅ Operación completa: Datos del formulario 2 paso 2 guardados');
+    
+    res.status(200).json({ 
+      success: true, 
+      message: 'Datos del formulario 2 paso 2 guardados correctamente',
+      datosSalvados: {
+        nombre_actividad: datosSalvados[0] || '',
+        fecha_solicitud: datosSalvados[1] || '',
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en guardarForm2Paso2:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al guardar los datos del formulario 2',
+      details: error.message
+    });
+  }
+};
+
 module.exports = {
   guardarProgreso,
   createNewRequest,
@@ -988,8 +1204,10 @@ module.exports = {
   getCompletedRequests,
   getFormDataForm2,
   guardarGastos,
+  getGastos,
   actualizarPasoMaximo,  
   validarProgresion,  
   actualizarProgresoGlobal,
-  getLastId
+  getLastId,
+  guardarForm2Paso2
 };

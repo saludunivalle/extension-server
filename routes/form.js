@@ -10,7 +10,8 @@ const {
   actualizarPasoMaximo,
   validarProgresion,       
   actualizarProgresoGlobal,
-  getLastId // Agrega esta línea
+  getLastId,
+  guardarForm2Paso2  // Asegúrate de incluirlo aquí
 } = require('../controllers/formController');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { loadProgressMiddleware } = require('../middleware/progressMiddleware');
@@ -31,5 +32,6 @@ router.post('/actualizarPasoMaximo', actualizarPasoMaximo);
 router.post('/progreso-actual', validarProgresion);
 router.post('/actualizacion-progreso', actualizarProgresoGlobal);
 router.get('/getLastId', getLastId); // Agrega esta línea
+router.post('/guardarForm2Paso2', guardarForm2Paso2);
 
 module.exports = router;

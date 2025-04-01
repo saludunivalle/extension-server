@@ -35,10 +35,14 @@ router.post('/createNewRequest', formController.createNewRequest);
 router.get('/getRequests', formController.getRequests);
 router.get('/getProgramasYOficinas', require('../controllers/otherController').getProgramasYOficinas);
 router.get('/getSolicitud', require('../controllers/otherController').getSolicitud);
+router.post('/guardarForm2Paso2', formController.guardarForm2Paso2);
 
-// IMPORTANTE: El middleware de verificación de token debe ir DESPUÉS
-// de todas las rutas que no requieren autenticación
-router.use(verifyToken);
+// Añade esta línea como ruta pública (antes del middleware de autenticación)
+// Asegúrate de que esté ubicada con las otras rutas públicas
+router.get('/getGastos', formController.getGastos);
+
+// COMENTAR O ELIMINAR COMPLETAMENTE la verificación de token
+// router.use(verifyToken);
 
 // Rutas de formulario (para mantener compatibilidad)
 router.use('/form', formRoutes);

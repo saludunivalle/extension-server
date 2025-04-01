@@ -203,7 +203,7 @@ class ReportService {
   get reportSheetDefinitions() {
     return {
       SOLICITUDES: {
-        range: 'SOLICITUDES!A2:AU', // Ampliamos el rango para incluir todas las columnas
+        range: 'SOLICITUDES!A2:AU',
         fields: [
           'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
           'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
@@ -223,8 +223,14 @@ class ReportService {
       },
       // El resto de las hojas permanece igual
       SOLICITUDES2: {
-        range: 'SOLICITUDES2!A2:CL',
-        fields: sheetsService.fieldDefinitions.SOLICITUDES2
+        range: 'SOLICITUDES2!A2:N',
+        fields: [
+          'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 
+          'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
+          'subtotal_gastos', 'imprevistos_3%', 'total_gastos_imprevistos', 
+          'fondo_comun_porcentaje', 'facultadad_instituto_porcentaje', 
+          'escuela_departamento_porcentaje', 'total_recursos'
+        ]
       },
       SOLICITUDES3: {
         range: 'SOLICITUDES3!A2:AC',
@@ -233,6 +239,15 @@ class ReportService {
       SOLICITUDES4: {
         range: 'SOLICITUDES4!A2:BK',
         fields: sheetsService.fieldDefinitions.SOLICITUDES4
+      },
+      // Añadir definiciones para las hojas GASTOS y CONCEPTO$
+      GASTOS: {
+        range: 'GASTOS!A2:F',
+        fields: ['id_conceptos', 'id_solicitud', 'cantidad', 'valor_unit', 'valor_total', 'concepto_padre']
+      },
+      CONCEPTO$: {
+        range: 'CONCEPTO$!A2:F',
+        fields: ['id_concepto', 'descripcion', 'es_padre', 'concepto_padre', 'tipo', 'id_solicitud']
       }
     };
   }
@@ -241,7 +256,7 @@ class ReportService {
    * Genera un reporte basado en datos de una solicitud
    * @param {String} solicitudId - ID de la solicitud
    * @param {Number} formNumber - Número de formulario (1-4)
-   * @returns {Promise<String>} URL del reporte generado
+   * @returns {Promise<Object>} Resultado con link al reporte generado
    */
   async generateReport(solicitudId, formNumber) {
     try {
@@ -256,12 +271,18 @@ class ReportService {
       // Obtener datos de la solicitud de Google Sheets
       const solicitudData = await this.getSolicitudData(solicitudId, hojas);
 
+      // Procesar datos de gastos
+      const gastosData = await this.processGastosData(solicitudId);
+
+      // Combinar datos de la solicitud y gastos
+      const combinedData = { ...solicitudData, ...gastosData };
+
       // Transformar datos para la plantilla
       console.log('Transformando datos para la plantilla...');
-      const transformedData = this.transformDataForTemplate(
-        solicitudData.SOLICITUDES,
+      const transformedData = await this.transformDataForTemplate(
+        combinedData,
         parseInt(formNumber),
-        solicitudData
+        combinedData
       );
 
       // Generar el reporte usando el servicio de Drive
@@ -272,13 +293,10 @@ class ReportService {
         transformedData
       );
 
-      return {
-        message: `Informe generado exitosamente para el formulario ${formNumber}`,
-        link: reportLink
-      };
+      return { link: reportLink };
     } catch (error) {
-      console.error('Error al generar el informe:', error.message);
-      throw new Error(`Error al generar informe: ${error.message}`);
+      console.error('Error al generar el informe:', error);
+      throw error;
     }
   }
 
@@ -289,7 +307,6 @@ class ReportService {
    * @param {String} mode - Modo de visualización ('view' o 'edit')
    * @returns {Promise<String>} URL del reporte generado
    */
-
   async downloadReport(solicitudId, formNumber, mode = 'view') {
     try {
       // Validar parámetros
@@ -343,6 +360,136 @@ class ReportService {
       console.error('Error al obtener los datos de la solicitud:', error.message);
       throw new Error('Error al obtener los datos de la solicitud');
     }
+  }
+
+  /**
+   * Procesa datos de gastos desde la hoja GASTOS para incluirlos en el reporte
+   * @param {String} solicitudId - ID de la solicitud
+   * @returns {Object} Datos de gastos procesados para el reporte
+   */
+  async processGastosData(solicitudId) {
+    try {
+      const client = sheetsService.getClient();
+      
+      // Obtener los gastos de la solicitud
+      const gastosResponse = await client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'GASTOS!A2:F'
+      });
+      
+      // Obtener los conceptos disponibles
+      const conceptosResponse = await client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'CONCEPTO$!A2:F'
+      });
+      
+      const gastosRows = gastosResponse.data.values || [];
+      const conceptosRows = conceptosResponse.data.values || [];
+      
+      // Filtrar sólo los gastos de esta solicitud
+      const solicitudGastos = gastosRows.filter(row => row[1] === solicitudId);
+      console.log(`Encontrados ${solicitudGastos.length} gastos para la solicitud ${solicitudId}`);
+      
+      // Crear un mapa de conceptos para acceso rápido
+      const conceptosMap = {};
+      conceptosRows.forEach(row => {
+        conceptosMap[row[0]] = {
+          id: row[0],
+          descripcion: row[1],
+          esPadre: row[2] === 'true' || row[2] === 'TRUE',
+          padre: row[3] || null,
+          tipo: row[4] || 'gasto_dinamico'
+        };
+      });
+      
+      // Organizar gastos por concepto
+      const gastosPorConcepto = {};
+      const gastosPlanos = {};
+      
+      solicitudGastos.forEach(gasto => {
+        const idConcepto = gasto[0];
+        const cantidad = parseFloat(gasto[2]) || 0;
+        const valorUnit = parseFloat(gasto[3]) || 0;
+        const valorTotal = parseFloat(gasto[4]) || 0;
+        const conceptoPadre = gasto[5] || idConcepto;
+        
+        // Guardar en formato plano para referencia directa
+        gastosPlanos[idConcepto] = {
+          cantidad,
+          valorUnit,
+          valorTotal,
+          concepto: conceptosMap[idConcepto]?.descripcion || idConcepto
+        };
+        
+        // Organizar jerárquicamente
+        if (!gastosPorConcepto[conceptoPadre]) {
+          gastosPorConcepto[conceptoPadre] = {
+            principal: null,
+            subconceptos: []
+          };
+        }
+        
+        // Determinar si es concepto principal o subconcepto
+        if (idConcepto === conceptoPadre) {
+          gastosPorConcepto[conceptoPadre].principal = {
+            id: idConcepto,
+            cantidad,
+            valorUnit,
+            valorTotal
+          };
+        } else {
+          gastosPorConcepto[conceptoPadre].subconceptos.push({
+            id: idConcepto,
+            cantidad,
+            valorUnit,
+            valorTotal
+          });
+        }
+      });
+      
+      // Preparar datos para el reporte
+      const reportData = {
+        gastosPlanos, // Formato plano para acceso directo
+        gastosPorConcepto, // Formato jerárquico
+        // Lista de campos dinámicos generados (para plantillas que necesiten saberlo)
+        campos_dinamicos: Object.keys(gastosPlanos).map(id => [
+          `gasto_${id}_cantidad`,
+          `gasto_${id}_valor_unit`,
+          `gasto_${id}_valor_total`
+        ]).flat()
+      };
+      
+      // Crear variables específicas para cada gasto en el reporte
+      const gastoFields = {};
+      Object.entries(gastosPlanos).forEach(([id, datos]) => {
+        gastoFields[`gasto_${id}_cantidad`] = datos.cantidad.toString();
+        gastoFields[`gasto_${id}_valor_unit`] = this.formatCurrency(datos.valorUnit);
+        gastoFields[`gasto_${id}_valor_total`] = this.formatCurrency(datos.valorTotal);
+      });
+      
+      return {
+        ...reportData,
+        ...gastoFields
+      };
+    } catch (error) {
+      console.error('Error al procesar datos de gastos:', error);
+      return {}; // Devolver objeto vacío en caso de error
+    }
+  }
+
+  // Método auxiliar para formatear moneda
+  formatCurrency(value) {
+    if (!value && value !== 0) return '';
+    
+    const numValue = parseFloat(value);
+    if (isNaN(numValue)) return value;
+    
+    return new Intl.NumberFormat('es-CO', {
+      style: 'currency',
+      currency: 'COP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(numValue);
   }
 }
 

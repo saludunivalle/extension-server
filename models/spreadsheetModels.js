@@ -71,50 +71,28 @@ class SpreadsheetModel {
     }
   );
   
-  // Definición del modelo SOLICITUDES2
+  // Actualizar la definición del modelo SOLICITUDES2 para que coincida con las columnas reales
   const SOLICITUDES2 = new SpreadsheetModel(
     'SOLICITUDES2',
     [
-        'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
-        'costos_personal_cantidad', 'costos_personal_vr_unit', 'total_costos_personal', 
-        'personal_universidad_cantidad', 'personal_universidad_vr_unit', 'total_personal_universidad', 
-        'honorarios_docentes_cantidad', 'honorarios_docentes_vr_unit', 'total_honorarios_docentes',
-        'otro_personal_cantidad', 'otro_personal_vr_unit', 'total_otro_personal', 
-        'materiales_sumi_cantidad', 'materiales_sumi_vr_unit', 'total_materiales_sumi',
-        'gastos_alojamiento_cantidad', 'gastos_alojamiento_vr_unit', 'total_gastos_alojamiento',
-        'gastos_alimentacion_cantidad', 'gastos_alimentacion_vr_unit', 'total_gastos_alimentacion',
-        'gastos_transporte_cantidad', 'gastos_transporte_vr_unit', 'total_gastos_transporte',
-        'equipos_alquiler_compra_cantidad', 'equipos_alquiler_compra_vr_unit', 'total_equipos_alquiler_compra',
-        'dotacion_participantes_cantidad', 'dotacion_participantes_vr_unit', 'total_dotacion_participantes',
-        'carpetas_cantidad', 'carpetas_vr_unit', 'total_carpetas',
-        'libretas_cantidad', 'libretas_vr_unit', 'total_libretas',
-        'lapiceros_cantidad', 'lapiceros_vr_unit', 'total_lapiceros',
-        'memorias_cantidad', 'memorias_vr_unit', 'total_memorias',
-        'marcadores_papel_otros_cantidad', 'marcadores_papel_otros_vr_unit', 'total_marcadores_papel_otros',
-        'impresos_cantidad', 'impresos_vr_unit', 'total_impresos',
-        'labels_cantidad', 'labels_vr_unit', 'total_labels',
-        'certificados_cantidad', 'certificados_vr_unit', 'total_certificados',
-        'escarapelas_cantidad', 'escarapelas_vr_unit', 'total_escarapelas',
-        'fotocopias_cantidad', 'fotocopias_vr_unit', 'total_fotocopias',
-        'estacion_cafe_cantidad', 'estacion_cafe_vr_unit', 'total_estacion_cafe',
-        'transporte_mensaje_cantidad', 'transporte_mensaje_vr_unit', 'total_transporte_mensaje',
-        'refrigerios_cantidad', 'refrigerios_vr_unit', 'total_refrigerios',
-        'infraestructura_fisica_cantidad', 'infraestructura_fisica_vr_unit', 'total_infraestructura_fisica',
-        'gastos_generales_cantidad', 'gastos_generales_vr_unit', 'total_gastos_generales',
-        'infraestructura_universitaria_cantidad', 'infraestructura_universitaria_vr_unit', 
-        'total_infraestructura_universitaria', 
-        'imprevistos_cantidad', 'imprevistos_vr_unit', 'total_imprevistos',
-        'costos_administrativos_cantidad', 'costos_administrativos_vr_unit', 'total_costos_administrativos',
-        'gastos_extras_cantidad', 'gastos_extras_vr_unit', 'total_gastos_extras',
-        'subtotal_gastos',
-        'imprevistos_3%',
-        'total_gastos_imprevistos',
-        'fondo_comun_porcentaje','facultadad_instituto_porcentaje','escuela_departamento_porcentaje', 'total_recursos'
+      'id_solicitud',
+      'nombre_actividad', 
+      'fecha_solicitud', 
+      'ingresos_cantidad', 
+      'ingresos_vr_unit', 
+      'total_ingresos', 
+      'subtotal_gastos', 
+      'imprevistos_3%', 
+      'total_gastos_imprevistos', 
+      'fondo_comun_porcentaje', 
+      'facultadad_instituto_porcentaje', 
+      'escuela_departamento_porcentaje', 
+      'total_recursos'
     ],
     {
       1: ['B', 'C'],
-      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA', 'BB', 'BC', 'BD', 'BE', 'BF', 'BG', 'BH', 'BI', 'BJ', 'BK', 'BL', 'BM', 'BN', 'BO', 'BP', 'BQ', 'BR', 'BS', 'BT', 'BU', 'BV', 'BW', 'BX', 'BY', 'BZ', 'CA', 'CB', 'CC', 'CD', 'CE', 'CF', 'CG', 'CH', 'CI','CJ', 'CK', 'CL', 'CM', 'CN', 'CO', 'CP', 'CQ', 'CR', 'CS','CT', 'CU', 'CV'],
-      3: ['CS', 'CT', 'CU','CV']
+      2: ['D', 'E', 'F', 'G'],
+      3: ['H', 'I', 'J', 'K', 'L', 'M', 'N']
     }
   );
   
