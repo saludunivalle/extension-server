@@ -3,7 +3,8 @@
  * Implementación optimizada para marcado directo en Google Sheets y manejo de placeholders
  */
 export const report2Config = {
-  title: 'Formulario de Presupuesto - F-05-MP-05-01-02',
+  title: 'Formulario de Presupuesto - F-06-MP-05-01-01',
+  templateId: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF',
   showHeader: true,
   
   // Función para transformar los datos para Google Sheets
@@ -353,6 +354,57 @@ export const report2Config = {
       }
     });
     
+    // En la función transformData del archivo report2Config.js del servidor
+    // Después de procesar todos los datos, añadir esta verificación final
+    console.log("⚠️ Verificación final de campos críticos para la plantilla:");
+
+    // Lista de campos críticos que DEBEN existir en el formato exacto esperado por la plantilla
+    const camposCriticos = [
+      'gasto_1,1_cantidad', 'gasto_1,1_valor_unit', 'gasto_1,1_valor_total',
+      'gasto_1,2_cantidad', 'gasto_1,2_valor_unit', 'gasto_1,2_valor_total',
+      'gasto_1,3_cantidad', 'gasto_1,3_valor_unit', 'gasto_1,3_valor_total', 
+      'gasto_10_cantidad', 'gasto_10_valor_unit', 'gasto_10_valor_total',
+      'imprevistos_3%', 'fondo_comun_porcentaje', 'facultadad_instituto_porcentaje',
+      'escuela_departamento_porcentaje'
+    ];
+
+    // Verificación + creación de campos faltantes
+    camposCriticos.forEach(campo => {
+      // Para campos con coma, verificar si existe versión con punto
+      if (campo.includes(',')) {
+        const campoConPunto = campo.replace(',', '.');
+        const campoConGuion = campo.replace(',', '_');
+        
+        // Si existe con punto pero no con coma, copiarlo
+        if (transformedData[campoConPunto] !== undefined && transformedData[campo] === undefined) {
+          transformedData[campo] = transformedData[campoConPunto];
+          console.log(`✅ Creado ${campo} copiando desde ${campoConPunto}`);
+        }
+        // Si existe con guion pero no con coma, copiarlo
+        else if (transformedData[campoConGuion] !== undefined && transformedData[campo] === undefined) {
+          transformedData[campo] = transformedData[campoConGuion];
+          console.log(`✅ Creado ${campo} copiando desde ${campoConGuion}`);
+        }
+      }
+      
+      // Verificar si después de todo el campo existe
+      if (transformedData[campo] === undefined) {
+        // Si no existe, crear un valor predeterminado
+        if (campo.includes('_cantidad')) {
+          transformedData[campo] = '0';
+        } else if (campo.includes('_valor_unit') || campo.includes('_valor_total')) {
+          transformedData[campo] = '$0';
+        } else if (campo === 'imprevistos_3%') {
+          transformedData[campo] = '3';
+        } else {
+          transformedData[campo] = '';
+        }
+        console.log(`⚠️ Campo crítico ${campo} no encontrado, creado valor predeterminado: "${transformedData[campo]}"`);
+      } else {
+        console.log(`✅ Campo crítico ${campo} encontrado con valor: "${transformedData[campo]}"`);
+      }
+    });
+    
     // Imprimir datos finales transformados para depuración
     console.log("⭐ DATOS TRANSFORMADOS FINALES - FORM 2:", transformedData);
     return transformedData;
@@ -364,41 +416,65 @@ export const report2Config = {
     dataRange: 'A1:Z100'
   },
   footerText: 'Universidad del Valle - Extensión y Proyección Social - Presupuesto',
-  watermark: false
+  watermark: false,
+  
+  // Añadir método para procesar filas dinámicas que será llamado por driveService
+  processDynamicRows: async (spreadsheetId, data, sheetsApi) => {
+    try {
+      // Verificar si existen filas dinámicas para procesar
+      if (data['__FILAS_DINAMICAS__']) {
+        const filasDinamicas = data['__FILAS_DINAMICAS__'];
+        const insertarEn = filasDinamicas.insertarEn || 'E45:AK45'; // Cambiado a fila 45
+        const gastos = filasDinamicas.gastos || [];
+        
+        if (gastos.length > 0) {
+          console.log(`Insertando ${gastos.length} filas dinámicas en ${insertarEn}`);
+          
+          // Preparar los valores para todas las filas
+          const values = gastos.map(gasto => {
+            // Crear un array para la fila completa (columnas E a AK)
+            const rowData = new Array(37).fill(''); // 37 columnas
+            
+            // Colocar valores en las posiciones correctas
+            rowData[0] = gasto.id_concepto || '';           // Columna E - ID
+            rowData[1] = gasto.descripcion || '';           // Columna F - Descripción
+            rowData[23] = gasto.cantidad?.toString() || ''; // Columna X - Cantidad
+            rowData[25] = gasto.valor_unit_formatted || ''; // Columna Z - Valor unitario
+            rowData[28] = gasto.valor_total_formatted || ''; // Columna AC - Valor total
+            
+            return rowData;
+          });
+          
+          // Insertar las filas una a una, comenzando en fila 45
+          const match = /([A-Z]+)(\d+):([A-Z]+)(\d+)/.exec(insertarEn);
+          if (match) {
+            const startRow = parseInt(match[2]);
+            
+            for (let i = 0; i < values.length; i++) {
+              const rowNum = startRow + i;
+              const range = `E${rowNum}:AK${rowNum}`;
+              
+              await sheetsApi.spreadsheets.values.update({
+                spreadsheetId,
+                range,
+                valueInputOption: 'USER_ENTERED',
+                resource: { values: [values[i]] }
+              });
+            }
+            
+            console.log(`✅ Insertadas ${values.length} filas de gastos dinámicos`);
+          }
+        }
+        
+        // Limpiar la propiedad especial
+        delete data['__FILAS_DINAMICAS__'];
+      }
+    } catch (error) {
+      console.error('Error al procesar filas dinámicas:', error);
+    }
+    
+    return data;
+  }
 };
 
-// Ejemplo de código a implementar en el servicio que genera los reportes
-// Este código detectaría la propiedad __FILAS_DINAMICAS__ y procesaría las filas dinámicas
-
-// Si se detectan filas dinámicas, insertarlas en la posición especificada
-if (data['__FILAS_DINAMICAS__']) {
-  const filasDinamicas = data['__FILAS_DINAMICAS__'];
-  const insertarEn = filasDinamicas.insertarEn || 'E44:AK44';
-  const gastos = filasDinamicas.gastos || [];
-  
-  if (gastos.length > 0) {
-    console.log(`Insertando ${gastos.length} filas dinámicas en ${insertarEn}`);
-    
-    // Código para insertar las filas en la posición especificada
-    // Esto dependerá de si estás usando Google Sheets API, Excel.js u otra biblioteca
-    
-    // Por ejemplo, si estás usando Google Sheets API:
-    await sheetsApi.spreadsheets.values.update({
-      spreadsheetId: reporteId,
-      range: insertarEn,
-      valueInputOption: 'USER_ENTERED',
-      resource: {
-        values: gastos.map(gasto => [
-          gasto.descripcion,
-          gasto.cantidad.toString(),
-          gasto.valor_unit_formatted,
-          gasto.valor_total_formatted
-          // Agrega más columnas según sea necesario
-        ])
-      }
-    });
-  }
-  
-  // Eliminar la propiedad especial para que no cause problemas
-  delete data['__FILAS_DINAMICAS__'];
-}
+module.exports = report2Config;

@@ -99,6 +99,15 @@ class DriveService {
   async processXLSXWithStyles(templateId, data, fileName) {
     try {
       console.log(`Descargando la plantilla: ${templateId}`);
+      // Determinar el número de formulario basado en el templateId
+      let formNumber = null;
+      for (const [key, value] of Object.entries(this.templateIds)) {
+        if (value === templateId) {
+          formNumber = key;
+          break;
+        }
+      }
+      
       const fileResponse = await this.drive.files.get(
         { fileId: templateId, alt: 'media' },
         { responseType: 'stream' }
@@ -143,11 +152,10 @@ class DriveService {
       excelUtils.replaceMarkers(workbook, data);
       console.log('Marcadores reemplazados correctamente');
   
-      // Guardar a archivo temporal
+      // Subir a Google Drive primero para obtener el ID
       const tempFilePath = await excelUtils.saveToTempFile(workbook, fileName);
       console.log(`Archivo guardado temporalmente en ${tempFilePath}`);
   
-      // Subir a Google Drive
       const uploadResponse = await this.drive.files.create({
         requestBody: {
           name: fileName,
@@ -163,6 +171,32 @@ class DriveService {
       const fileId = uploadResponse.data.id;
       await this.makeFilePublic(fileId);
       
+      // Procesar filas dinámicas si existe el método y está configurado
+      if (formNumber) {
+        try {
+          // Usar import dinámico para evitar errores si el archivo no existe
+          const reportConfig = await import(`../reportConfigs/report${formNumber}Config.js`)
+            .catch(err => {
+              console.log(`Configuración no encontrada para formulario ${formNumber}`);
+              return null;
+            });
+            
+          if (reportConfig && typeof reportConfig.processDynamicRows === 'function') {
+            const sheets = google.sheets({version: 'v4', auth: this.jwtClient});
+            console.log(`Procesando filas dinámicas para formulario ${formNumber}...`);
+            await reportConfig.processDynamicRows(fileId, data, sheets);
+          } else {
+            // Usar el método genérico si no hay configuración específica
+            if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
+              await this.insertDynamicRowsInSheet(fileId, dynamicRowsData);
+            }
+          }
+        } catch (dynamicRowsError) {
+          console.error('Error al procesar filas dinámicas:', dynamicRowsError);
+          // Continuar con la generación aunque falle
+        }
+      }
+  
       // Insertar filas dinámicas si es necesario
       if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
         await this.insertDynamicRowsInSheet(fileId, dynamicRowsData);
@@ -583,3 +617,17 @@ class DriveService {
 }
 
 module.exports = new DriveService();
+
+// Agregar en services/sheetsService.js
+const cache = {};
+
+async function getDataWithCache(key, fetcher, ttlMinutes = 5) {
+  if (cache[key] && (Date.now() - cache[key].timestamp) < ttlMinutes * 60 * 1000) {
+    console.log(`Usando datos en caché para ${key}`);
+    return cache[key].data;
+  }
+  
+  const data = await fetcher();
+  cache[key] = { data, timestamp: Date.now() };
+  return data;
+}

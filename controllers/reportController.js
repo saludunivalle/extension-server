@@ -14,7 +14,6 @@ const generateReport = async (req, res) => {
     console.log("formNumber:", formNumber);
   
     if (!solicitudId || !formNumber) {
-      console.error('Error: Los parámetros solicitudId y formNumber son requeridos');
       return res.status(400).json({ error: 'Los parámetros solicitudId y formNumber son requeridos' });
     }
 
@@ -31,10 +30,24 @@ const generateReport = async (req, res) => {
       res.status(200).json(result);
     } catch (error) {
       console.error('Error al generar el reporte:', error);
+      
+      // Si es un error de cuota excedida, devolver un mensaje específico
+      if (error.message?.includes('Quota exceeded') || 
+          error.code === 429 || 
+          (error.response && error.response.status === 429)) {
+        return res.status(200).json({
+          success: false,
+          quotaExceeded: true,
+          message: 'No se pudo generar el reporte debido a límites de la API de Google. Por favor, intente más tarde.',
+          errorDetails: 'API Quota exceeded',
+          fallbackLink: null // Aquí podrías proporcionar un enlace a una plantilla genérica
+        });
+      }
+      
+      // Para otros errores, mantener el 500
       res.status(500).json({ 
         error: 'Error al generar el reporte', 
-        details: error.message,
-        stack: error.stack
+        details: error.message
       });
     }
   } catch (error) {
@@ -69,7 +82,56 @@ const downloadReport = async (req, res) => {
   }
 };
 
+// Añadir este nuevo método
+const previewReport = async (req, res) => {
+  try {
+    const { solicitudId, formNumber } = req.body;
+    
+    if (!solicitudId || !formNumber) {
+      return res.status(400).json({ error: 'Los parámetros solicitudId y formNumber son requeridos' });
+    }
+    
+    // Obtener los datos sin transformar
+    const reportConfig = require(`../reportConfigs/report${formNumber}Config.js`);
+    
+    // Obtener datos de la solicitud (usando caché para evitar problemas de cuota)
+    const { getDataWithCache } = require('../utils/cacheUtils');
+    const solicitudData = await getDataWithCache(
+      `preview_${solicitudId}`,
+      async () => {
+        // Simplificar para evitar múltiples llamadas a Sheets
+        return {
+          id_solicitud: solicitudId,
+          // Datos mínimos para prueba
+          nombre_actividad: "Actividad de ejemplo para previsualización",
+          fecha_solicitud: new Date().toISOString().slice(0, 10),
+          // Puedes añadir más datos de prueba aquí
+        };
+      }
+    );
+    
+    // Transformar datos usando la configuración del reporte
+    const transformedData = await reportConfig.transformData(solicitudData);
+    
+    // Devolver los datos para previsualización
+    res.status(200).json({
+      success: true,
+      message: 'Datos de previsualización del reporte',
+      reportData: transformedData,
+      config: {
+        title: reportConfig.title,
+        templateId: reportConfig.templateId,
+        // Otros detalles de configuración
+      }
+    });
+  } catch (error) {
+    console.error('Error al generar previsualización:', error);
+    res.status(500).json({ error: 'Error al generar previsualización', details: error.message });
+  }
+};
+
 module.exports = {
   generateReport,
-  downloadReport
+  downloadReport,
+  previewReport
 };

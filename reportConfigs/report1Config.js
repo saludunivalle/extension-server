@@ -6,7 +6,7 @@ const dateUtils = require('../utils/dateUtils');
 const report1Config = {
   title: 'Formulario de Aprobación - F-05-MP-05-01-01',
   templateId: '1xsz9YSnYEOng56eNKGV9it9EgTn0mZw1', // ID correcto de la plantilla del formulario 1
-  requiresAdditionalData: false, // El reporte 1 no requiere datos adicionales como gastos
+  requiresAdditionalData: false, 
   requiresGastos: false,
   
   // Definición de hojas necesarias para este reporte
