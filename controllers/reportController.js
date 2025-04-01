@@ -18,12 +18,31 @@ const generateReport = async (req, res) => {
       return res.status(400).json({ error: 'Los parámetros solicitudId y formNumber son requeridos' });
     }
 
-    // Usar el servicio de reportes para generar el informe
-    const result = await reportService.generateReport(solicitudId, formNumber);
-    res.status(200).json(result);
+    // Iniciar tiempo de ejecución para medir rendimiento
+    const startTime = Date.now();
+
+    try {
+      // Usar el servicio de reportes para generar el informe
+      const result = await reportService.generateReport(solicitudId, formNumber);
+      
+      const endTime = Date.now();
+      console.log(`✅ Reporte generado en ${(endTime - startTime)/1000} segundos`);
+      
+      res.status(200).json(result);
+    } catch (error) {
+      console.error('Error al generar el reporte:', error);
+      res.status(500).json({ 
+        error: 'Error al generar el reporte', 
+        details: error.message,
+        stack: error.stack
+      });
+    }
   } catch (error) {
-    console.error('Error al generar el informe:', error);
-    res.status(500).json({ error: 'Error al generar el informe' });
+    console.error('Error en el controlador generateReport:', error);
+    res.status(500).json({ 
+      error: 'Error en el controlador', 
+      details: error.message 
+    });
   }
 };
 

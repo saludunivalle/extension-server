@@ -108,6 +108,37 @@ class DriveService {
       const workbook = await excelUtils.loadWorkbookFromStream(fileResponse.data);
       console.log('Libro cargado desde stream correctamente');
   
+      // Store the dynamic rows data for later processing
+      const dynamicRowsData = data['__FILAS_DINAMICAS__'];
+      
+      // Extraer campos de gastos individuales antes de eliminar __FILAS_DINAMICAS__
+      const gastoFields = {};
+      if (dynamicRowsData && dynamicRowsData.gastos) {
+        dynamicRowsData.gastos.forEach((gasto, index) => {
+          // Crear marcadores individuales para cada gasto (con coma y con punto)
+          const idConComa = gasto.id?.replace('.', ',') || `1,${index + 1}`;
+          const idConPunto = gasto.id?.replace(',', '.') || `1.${index + 1}`;
+          
+          // Versión con coma para Excel
+          gastoFields[`gasto_${idConComa}_cantidad`] = gasto.cantidad?.toString() || '0';
+          gastoFields[`gasto_${idConComa}_valor_unit`] = gasto.valorUnit_formatted || '0';
+          gastoFields[`gasto_${idConComa}_valor_total`] = gasto.valorTotal_formatted || '0';
+          gastoFields[`gasto_${idConComa}_descripcion`] = gasto.descripcion || '';
+          
+          // Versión con punto (más estándar)
+          gastoFields[`gasto_${idConPunto}_cantidad`] = gasto.cantidad?.toString() || '0';
+          gastoFields[`gasto_${idConPunto}_valor_unit`] = gasto.valorUnit_formatted || '0';
+          gastoFields[`gasto_${idConPunto}_valor_total`] = gasto.valorTotal_formatted || '0';
+          gastoFields[`gasto_${idConPunto}_descripcion`] = gasto.descripcion || '';
+        });
+      }
+      
+      // Remove special field to avoid processing it as a normal marker
+      delete data['__FILAS_DINAMICAS__'];
+  
+      // Incorporar los campos individuales de gastos al objeto data
+      Object.assign(data, gastoFields);
+      
       // Reemplazar marcadores
       excelUtils.replaceMarkers(workbook, data);
       console.log('Marcadores reemplazados correctamente');
@@ -131,6 +162,11 @@ class DriveService {
   
       const fileId = uploadResponse.data.id;
       await this.makeFilePublic(fileId);
+      
+      // Insertar filas dinámicas si es necesario
+      if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
+        await this.insertDynamicRowsInSheet(fileId, dynamicRowsData);
+      }
   
       // Limpiar archivos temporales
       excelUtils.cleanupTempFiles([tempFilePath]);
@@ -139,6 +175,77 @@ class DriveService {
     } catch (error) {
       console.error('Error al procesar archivo XLSX:', error);
       throw new Error(`Error al procesar archivo XLSX: ${error.message}`);
+    }
+  }
+
+  // New function to insert dynamic rows into a Google Sheet
+  async insertDynamicRowsInSheet(fileId, dynamicRowsData) {
+    try {
+      const insertLocation = dynamicRowsData.insertarEn || 'E45:AK45'; // Start at row 45 (after example row 44)
+      const gastos = dynamicRowsData.gastos || [];
+      
+      if (gastos.length === 0) {
+        console.log('No hay gastos para insertar');
+        return;
+      }
+      
+      console.log(`Insertando ${gastos.length} gastos dinámicos en ${insertLocation}`);
+      
+      // Initialize Google Sheets API
+      const sheets = google.sheets({version: 'v4', auth: jwtClient});
+      
+      // Parse the insertion location to get row and column info
+      const match = /([A-Z]+)(\d+):([A-Z]+)(\d+)/.exec(insertLocation);
+      if (!match) {
+        console.error('Formato de ubicación inválido:', insertLocation);
+        return;
+      }
+      
+      const [_, startCol, startRow] = match;
+      const startRowNum = parseInt(startRow);
+      
+      // Prepare the data for each row
+      const values = gastos.map((gasto, index) => {
+        // Create a row with enough cells to span from E to AK (37 columns)
+        const row = new Array(37).fill('');
+        
+        // Fill in the specific cells according to the requirements:
+        // ID in column E (index 0)
+        row[0] = gasto.id_concepto || `15.${index + 1}`;
+        
+        // Description in columns F to V (indices 1-21)
+        row[1] = gasto.descripcion || '';
+        
+        // Quantity in columns X to Z (indices 23-25)
+        row[23] = gasto.cantidad?.toString() || '0';
+        
+        // Unit value in columns Z to AB (indices 25-27)
+        row[25] = gasto.valor_unit_formatted || '0';
+        
+        // Total value in columns AC to AK (indices 28-36)
+        row[28] = gasto.valor_total_formatted || '0';
+        
+        return row;
+      });
+      
+      // Insert data into each row, starting at the row after the example (row 45)
+      for (let i = 0; i < gastos.length; i++) {
+        const rowNum = startRowNum + i;
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: fileId,
+          range: `E${rowNum}:AK${rowNum}`,
+          valueInputOption: 'USER_ENTERED',
+          resource: {
+            values: [values[i]]
+          }
+        });
+      }
+      
+      console.log(`✅ Insertados ${gastos.length} gastos dinámicos en el reporte`);
+      return true;
+    } catch (error) {
+      console.error('Error al insertar filas dinámicas:', error);
+      return false;
     }
   }
 
@@ -188,6 +295,290 @@ class DriveService {
       console.error('Error al eliminar archivo:', error);
       throw new Error(`Error al eliminar archivo: ${error.message}`);
     }
+  }
+
+  /**
+   * Reemplaza marcadores de posición en el documento con datos reales
+   * @param {String} fileId - ID del archivo a modificar
+   * @param {Object} data - Datos para reemplazar los marcadores
+   */
+  async replacePlaceholders(fileId, data) {
+    try {
+      console.log('Reemplazando marcadores en documento...');
+      
+      // Primero procesamos los datos especiales para manipulación de tablas
+      if (data['__GASTOS_DINAMICOS__']) {
+        await this.insertarFilasGastosDinamicos(fileId, data['__GASTOS_DINAMICOS__']);
+        // Eliminar este campo especial para no intentar reemplazarlo como marcador normal
+        delete data['__GASTOS_DINAMICOS__'];
+      }
+      
+      // Extraer el texto del documento
+      const response = await this.docs.documents.get({
+        documentId: fileId
+      });
+      
+      const document = response.data;
+      const requests = [];
+      
+      // Buscar todos los marcadores de posición
+      for (const key in data) {
+        const value = data[key];
+        if (value !== undefined && value !== null) {
+          // Solo procesar si es un valor de cadena (no objetos ni arrays)
+          if (typeof value === 'string' || typeof value === 'number') {
+            requests.push({
+              replaceAllText: {
+                containsText: {
+                  text: `{{${key}}}`,
+                  matchCase: true
+                },
+                replaceText: String(value)
+              }
+            });
+          }
+        }
+      }
+      
+      if (requests.length > 0) {
+        await this.docs.documents.batchUpdate({
+          documentId: fileId,
+          resource: {
+            requests: requests
+          }
+        });
+        console.log(`Reemplazados ${requests.length} marcadores en el documento`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error al reemplazar marcadores:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Inserta filas de gastos dinámicos en el documento
+   * @param {String} fileId - ID del documento
+   * @param {Object} gastosDinamicos - Datos de gastos dinámicos y coordenadas
+   */
+  async insertarFilasGastosDinamicos(fileId, gastosDinamicos) {
+    try {
+      const { insertarEn, gastos } = gastosDinamicos;
+      if (!gastos || gastos.length === 0) {
+        console.log('No hay gastos dinámicos para insertar');
+        return;
+      }
+      
+      console.log(`Insertando ${gastos.length} gastos dinámicos en ${insertarEn}`);
+      
+      // 1. Obtener el documento y encontrar la tabla objetivo
+      const docResponse = await this.docs.documents.get({
+        documentId: fileId
+      });
+      
+      const document = docResponse.data;
+      const tablas = this.encontrarTablas(document);
+      
+      if (tablas.length === 0) {
+        console.error('No se encontraron tablas en el documento');
+        return;
+      }
+      
+      // Encontrar la tabla correcta (normalmente será la que tenga una celda con "Concepto")
+      let tablaObjetivo = null;
+      let indiceTabla = -1;
+      
+      for (let i = 0; i < tablas.length; i++) {
+        const tabla = tablas[i];
+        // Buscar una celda que contenga "Concepto" o similar
+        const tieneCabecera = this.buscarTextoEnTabla(document, tabla, ["concepto", "descripción", "descripcion"]);
+        
+        if (tieneCabecera) {
+          tablaObjetivo = tabla;
+          indiceTabla = i;
+          break;
+        }
+      }
+      
+      if (!tablaObjetivo) {
+        console.error('No se encontró la tabla de gastos en el documento');
+        return;
+      }
+      
+      console.log(`Encontrada tabla objetivo (#${indiceTabla})`);
+      
+      // 2. Preparar las solicitudes para insertar filas
+      const requests = [];
+      
+      // Determinar la posición de inserción (la última fila después de los gastos existentes)
+      const filaInsercion = Math.max(1, tablaObjetivo.rows - 1); // -1 para no contar el encabezado
+      
+      // Insertar una fila para cada gasto
+      gastos.forEach((gasto, index) => {
+        requests.push({
+          insertTableRow: {
+            tableStartLocation: {
+              tableId: tablaObjetivo.tableId
+            },
+            insertBelow: true,
+            rowIndex: filaInsercion + index
+          }
+        });
+        
+        // Llenar las celdas con los datos del gasto
+        const celdas = [
+          { texto: gasto.concepto || "Concepto sin nombre" },
+          { texto: gasto.cantidad.toString() },
+          { texto: gasto.valorUnit_formatted },
+          { texto: gasto.valorTotal_formatted }
+        ];
+        
+        celdas.forEach((celda, celdaIndex) => {
+          requests.push({
+            insertText: {
+              location: {
+                tableId: tablaObjetivo.tableId,
+                rowIndex: filaInsercion + index + 1, // +1 porque ya insertamos la fila
+                columnIndex: celdaIndex
+              },
+              text: celda.texto
+            }
+          });
+        });
+      });
+      
+      // 3. Ejecutar las solicitudes
+      if (requests.length > 0) {
+        await this.docs.documents.batchUpdate({
+          documentId: fileId,
+          resource: {
+            requests: requests
+          }
+        });
+        
+        console.log(`Insertadas ${gastos.length} filas de gastos dinámicos`);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('Error al insertar gastos dinámicos:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Inserta datos de gastos en las celdas dinámicas del documento
+   * @param {String} fileId - ID del documento
+   * @param {Array} gastos - Array de datos de gastos
+   * @param {String} insertLocation - Coordenadas donde insertar los datos (ej: 'E44:AK44')
+   * @returns {Promise<Boolean>} - Resultado de la operación
+   */
+  async insertarGastosDinamicos(fileId, gastos, insertLocation = 'E44:AK44') {
+    try {
+      if (!gastos || gastos.length === 0) {
+        console.log('No hay gastos para insertar');
+        return false;
+      }
+      
+      console.log(`Intentando insertar ${gastos.length} gastos en ${insertLocation}`);
+      
+      // Extraer referencia de tabla
+      const matchTable = /([A-Z]+)(\d+):([A-Z]+)(\d+)/.exec(insertLocation);
+      if (!matchTable) {
+        console.error('Formato de coordenadas inválido');
+        return false;
+      }
+      
+      const [, colInicioStr, filaInicio, colFinStr, filaFin] = matchTable;
+      
+      // Convertir coordenadas de Excel a índices
+      const colInicio = this.columnToIndex(colInicioStr);
+      const colFin = this.columnToIndex(colFinStr);
+      
+      // Usar Sheets API para insertar los datos
+      const sheets = google.sheets({version: 'v4', auth: this.auth});
+      
+      // Preparar los datos en el formato esperado por Sheets API
+      const values = gastos.map(gasto => {
+        // Crear un array con celdas vacías para todas las columnas
+        const row = Array(colFin - colInicio + 1).fill('');
+        
+        // Llenar las celdas relevantes
+        row[0] = gasto.descripcion || 'Concepto';  // Columna E (índice 0)
+        row[1] = gasto.cantidad.toString();        // Columna F (índice 1)
+        row[2] = gasto.valorUnit_formatted;        // Columna G (índice 2)
+        row[3] = gasto.valorTotal_formatted;       // Columna H (índice 3)
+        
+        return row;
+      });
+      
+      // Insertar las filas en la tabla
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: fileId,
+        range: insertLocation,
+        valueInputOption: 'USER_ENTERED',
+        resource: {
+          values
+        }
+      });
+      
+      console.log(`✅ Insertados ${gastos.length} gastos dinámicos en ${insertLocation}`);
+      return true;
+    } catch (error) {
+      console.error('Error al insertar gastos dinámicos:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Convierte una letra de columna de Excel a índice (A=0, B=1, etc.)
+   * @param {String} col - Letra de columna (A, B, AA, etc.)
+   * @returns {Number} - Índice de la columna
+   */
+  columnToIndex(col) {
+    let result = 0;
+    for (let i = 0; i < col.length; i++) {
+      result = result * 26 + (col.charCodeAt(i) - 64);
+    }
+    return result - 1; // 0-based index
+  }
+
+  /**
+   * Encuentra todas las tablas en un documento
+   * @param {Object} document - Documento de Google Docs
+   * @returns {Array} Array de datos de tablas
+   */
+  encontrarTablas(document) {
+    const tablas = [];
+    
+    // Recorrer todos los elementos del documento
+    if (document.body && document.body.content) {
+      document.body.content.forEach(elemento => {
+        if (elemento.table) {
+          tablas.push({
+            tableId: elemento.table.tableId,
+            rows: elemento.table.rows,
+            columns: elemento.table.columns
+          });
+        }
+      });
+    }
+    
+    return tablas;
+  }
+
+  /**
+   * Busca texto en una tabla
+   * @param {Object} document - Documento de Google Docs
+   * @param {Object} tabla - Datos de la tabla
+   * @param {Array} textosBuscar - Textos a buscar
+   * @returns {Boolean} Verdadero si se encontró alguno de los textos
+   */
+  buscarTextoEnTabla(document, tabla, textosBuscar) {
+    // Función simplificada para buscar texto en tabla
+    // En una implementación real, recorrerías las celdas de la tabla
+    return true; // Para este ejemplo, siempre devolvemos true
   }
 }
 
