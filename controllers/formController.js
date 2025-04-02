@@ -35,85 +35,132 @@ const handleQuotaError = (error, res, dataToReturn = {}) => {
  */
 
 const guardarProgreso = async (req, res) => {
-  const { id_solicitud, paso, hoja, id_usuario, name, ...formData } = req.body;
-  const piezaGrafica = req.file;
-
-  // Logging reducido para evitar sobrecarga
-  console.log(`Guardando progreso ID:${id_solicitud}, paso:${paso}, hoja:${hoja}`);
-
-  // Convertir hoja a número 
-  const parsedHoja = parseInt(hoja, 10);
-  if (isNaN(parsedHoja)) {
-    console.error('Hoja no válida: no es un número');
-    return res.status(400).json({ error: 'Hoja no válida: no es un número' });
-  }
-
   try {
-    // Obtener columnas del servicio de sheets
-    const columnas = sheetsService.columnMappings[getSheetName(parsedHoja)];
-    if (!columnas) {
-      return res.status(400).json({ error: `Hoja ${parsedHoja} no válida` });
+    // ELIMINAMOS LA CACHÉ EN GUARDAR PROGRESO - ES CRÍTICO QUE SIEMPRE SE GUARDE
+    console.log('⚠️ Guardando progreso sin caché para asegurar persistencia');
+
+    // Extraer los datos relevantes
+    const { id_solicitud, paso, hoja, etapa_actual, formulario_completo, estado_formularios, ...formData } = req.body;
+    
+    // Validar datos mínimos requeridos
+    if (!id_solicitud || !paso || !hoja) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud, paso y hoja'
+      });
     }
 
-    const sheetName = getSheetName(parsedHoja);
-    const fechaActual = dateUtils.getCurrentDate();
-
-    // Usar caché para encontrar la fila con mayor TTL (10 minutos)
-    const cacheKey = `fila_${sheetName}_${id_solicitud}`;
-    const fila = await getDataWithCache(
-      cacheKey,
-      () => sheetsService.findOrCreateRequestRow(sheetName, id_solicitud),
-      10
-    );
-
-    // Subir pieza gráfica a Google Drive si existe
-    let piezaGraficaUrl = '';
-    if (piezaGrafica) {
+    // IMPORTANTE: Guardar siempre en ETAPAS para controlar la navegación
+    if (etapa_actual) {
       try {
-        piezaGraficaUrl = await driveService.uploadFile(piezaGrafica);
-      } catch (uploadError) {
-        console.error('Error al subir pieza gráfica, continuando sin ella:', uploadError);
+        // Encontrar o crear fila en ETAPAS
+        const filaEtapas = await sheetsService.findOrCreateRequestRow('ETAPAS', id_solicitud);
+        const client = sheetsService.getClient();
+        
+        // Preparar datos para ETAPAS
+        const etapasData = [
+          etapa_actual.toString(),
+          formulario_completo ? 'Completado' : 'En progreso',
+          formData.nombre_actividad || 'Sin nombre',
+          paso.toString(),
+          JSON.stringify(estado_formularios || {})
+        ];
+        
+        // Actualizar ETAPAS sin usar caché
+        await client.spreadsheets.values.update({
+          spreadsheetId: sheetsService.spreadsheetId,
+          range: `ETAPAS!E${filaEtapas}:I${filaEtapas}`,
+          valueInputOption: 'RAW',
+          resource: { values: [etapasData] }
+        });
+        
+        console.log(`✅ Actualizada hoja ETAPAS para solicitud ${id_solicitud}, etapa ${etapa_actual}, paso ${paso}`);
+      } catch (etapasError) {
+        console.error('Error al actualizar ETAPAS:', etapasError);
       }
     }
-
-    // Actualizar el progreso del formulario
-    const columnasPaso = columnas[paso];
-
-    // Añadir la URL de la pieza gráfica solo si está presente
-    const valores = [...Object.values(formData)];
-    if (piezaGraficaUrl) {
-      valores.push(piezaGraficaUrl);
-    }
-
-    // Asegurarnos de no enviar más valores de los que se esperan para las columnas
-    const valoresFinales = valores.slice(0, columnasPaso.length);
-
-    // Logging reducido
-    console.log(`Actualizando ${valoresFinales.length} valores en columnas`);
-
-    if (valoresFinales.length !== columnasPaso.length) {
-      console.warn(`⚠️ Cantidad de valores (${valoresFinales.length}) no coincide con columnas (${columnasPaso.length})`);
-    }
-
-    const columnaInicial = columnasPaso[0];
-    const columnaFinal = columnasPaso[columnasPaso.length - 1];
-
-    // Actualizar datos en Google Sheets usando sheetsService
-    await sheetsService.updateRequestProgress({
-      sheetName,
-      rowIndex: fila,
-      startColumn: columnaInicial,
-      endColumn: columnaFinal,
-      values: valoresFinales
-    });
-
-    // OPTIMIZACIÓN: Invalidar solo las cachés específicas, no todas
-    invalidateCache(`solicitud_${id_solicitud}_${sheetName}`);
     
-    // No invalidar otras cachés que no están relacionadas con esta actualización
-    // invalidateCache(`solicitud_${id_solicitud}`);
+    // Resto del código existente para guardar en la hoja correspondiente
+    // Convertir hoja a número 
+    const parsedHoja = parseInt(hoja, 10);
+    if (isNaN(parsedHoja)) {
+      console.error('Hoja no válida: no es un número');
+      return res.status(400).json({ error: 'Hoja no válida: no es un número' });
+    }
 
-    res.status(200).json({ success: true });
+    try {
+      // Obtener columnas del servicio de sheets
+      const columnas = sheetsService.columnMappings[getSheetName(parsedHoja)];
+      if (!columnas) {
+        return res.status(400).json({ error: `Hoja ${parsedHoja} no válida` });
+      }
+
+      const sheetName = getSheetName(parsedHoja);
+      const fechaActual = dateUtils.getCurrentDate();
+
+      // Subir pieza gráfica a Google Drive si existe
+      let piezaGraficaUrl = '';
+      if (piezaGrafica) {
+        try {
+          piezaGraficaUrl = await driveService.uploadFile(piezaGrafica);
+        } catch (uploadError) {
+          console.error('Error al subir pieza gráfica, continuando sin ella:', uploadError);
+        }
+      }
+
+      // Actualizar el progreso del formulario
+      const columnasPaso = columnas[paso];
+
+      // Añadir la URL de la pieza gráfica solo si está presente
+      const valores = [...Object.values(formData)];
+      if (piezaGraficaUrl) {
+        valores.push(piezaGraficaUrl);
+      }
+
+      // Asegurarnos de no enviar más valores de los que se esperan para las columnas
+      const valoresFinales = valores.slice(0, columnasPaso.length);
+
+      // Logging reducido
+      console.log(`Actualizando ${valoresFinales.length} valores en columnas`);
+
+      if (valoresFinales.length !== columnasPaso.length) {
+        console.warn(`⚠️ Cantidad de valores (${valoresFinales.length}) no coincide con columnas (${columnasPaso.length})`);
+      }
+
+      const columnaInicial = columnasPaso[0];
+      const columnaFinal = columnasPaso[columnasPaso.length - 1];
+
+      // Actualizar datos en Google Sheets usando sheetsService
+      await sheetsService.updateRequestProgress({
+        sheetName,
+        rowIndex: fila,
+        startColumn: columnaInicial,
+        endColumn: columnaFinal,
+        values: valoresFinales
+      });
+
+      // OPTIMIZACIÓN: Invalidar solo las cachés específicas, no todas
+      invalidateCache(`solicitud_${id_solicitud}_${sheetName}`);
+      
+      // No invalidar otras cachés que no están relacionadas con esta actualización
+      // invalidateCache(`solicitud_${id_solicitud}`);
+
+      res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("Error en guardarProgreso:", error);
+      
+      // Usar el manejador centralizado de errores de cuota
+      if (handleQuotaError(error, res, {
+        message: "Datos guardados localmente para sincronización posterior"
+      })) return;
+      
+      // Para otros errores, mantener comportamiento original
+      res.status(500).json({
+        success: false,
+        error: 'Error de conexión con Google Sheets',
+        details: error.message
+      });
+    }
   } catch (error) {
     console.error("Error en guardarProgreso:", error);
     
@@ -916,22 +963,59 @@ const actualizarProgresoGlobal = async (req, res) => {
     
     // Obtener datos actuales
     const client = sheetsService.getClient();
+    
+    // CRÍTICO: Asegurar que siempre se guarde en ETAPAS, incluso si hay errores HTTP previos
+    let filaEtapas;
+    try {
+      // Intentar crear la fila si no existe
+      const checkResponse = await client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'ETAPAS!A:A'
+      });
+      
+      const etapasRows = checkResponse.data.values || [];
+      filaEtapas = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
+      
+      if (filaEtapas === -1) {
+        // Crear fila para esta solicitud
+        await client.spreadsheets.values.append({
+          spreadsheetId: sheetsService.spreadsheetId,
+          range: 'ETAPAS!A2:A',
+          valueInputOption: 'RAW',
+          resource: { values: [[id_solicitud]] }
+        });
+        
+        // Obtener fila nueva
+        const newCheckResponse = await client.spreadsheets.values.get({
+          spreadsheetId: sheetsService.spreadsheetId,
+          range: 'ETAPAS!A:A'
+        });
+        
+        filaEtapas = newCheckResponse.data.values.findIndex(row => row[0] === id_solicitud.toString());
+      }
+      
+      filaEtapas += 1; // Ajustar a 1-based para Google Sheets
+    } catch (createError) {
+      console.error('Error al verificar/crear fila en ETAPAS:', createError);
+    }
+
+    // Si no se pudo crear o encontrar la fila, devolver error
+    if (!filaEtapas) {
+      return res.status(404).json({
+        success: false,
+        error: `No se pudo encontrar o crear la fila para la solicitud ${id_solicitud}`
+      });
+    }
+    
+    // Obtener datos actuales para recuperar estado de formularios
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
       range: 'ETAPAS!A:I'
     });
     
     const etapasRows = etapasResponse.data.values || [];
-    let filaEtapas = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
-    
-    if (filaEtapas === -1) {
-      return res.status(404).json({
-        success: false,
-        error: `No se encontró la solicitud con ID ${id_solicitud}`
-      });
-    }
-    
-    filaEtapas += 1; // Ajustar a 1-based para Google Sheets
+    const solicitudRow = filaEtapas - 1 >= 0 && filaEtapas - 1 < etapasRows.length ? 
+      etapasRows[filaEtapas - 1] : null;
     
     // Recuperar el estado de formularios existente o usar el proporcionado
     let nuevoEstadoFormularios = {};
@@ -942,10 +1026,10 @@ const actualizarProgresoGlobal = async (req, res) => {
         ? JSON.parse(estadoFormularios) 
         : estadoFormularios;
     } else {
-      // Recuperar estado existente o crear uno nuevo
-      if (etapasRows[filaEtapas - 1][8]) {
+      // Recuperar estado existente o crear uno nuevo si la fila existe
+      if (solicitudRow && solicitudRow[8]) {
         try {
-          nuevoEstadoFormularios = JSON.parse(etapasRows[filaEtapas - 1][8]);
+          nuevoEstadoFormularios = JSON.parse(solicitudRow[8]);
         } catch (e) {
           nuevoEstadoFormularios = {
             "1": "En progreso",
@@ -979,6 +1063,9 @@ const actualizarProgresoGlobal = async (req, res) => {
     const nuevoEstadoGlobal = estadoGlobal || 
       ((parsedEtapa === 4 && parsedPaso >= maxPasos[4]) ? 'Completado' : 'En progreso');
     
+    // NUEVA MEJORA: Obtener nombre_actividad existente o usar N/A
+    const nombre_actividad = solicitudRow ? (solicitudRow[6] || 'N/A') : 'N/A';
+    
     // Actualizar la hoja
     await client.spreadsheets.values.update({
       spreadsheetId: sheetsService.spreadsheetId,
@@ -988,7 +1075,7 @@ const actualizarProgresoGlobal = async (req, res) => {
         values: [[
           parsedEtapa,
           nuevoEstadoGlobal,
-          etapasRows[filaEtapas - 1][6] || 'N/A', // Mantener nombre_actividad
+          nombre_actividad,
           parsedPaso,
           JSON.stringify(nuevoEstadoFormularios)
         ]]
