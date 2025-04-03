@@ -90,7 +90,6 @@ const guardarProgreso = async (req, res) => {
     const estadoGlobal = (parsedHoja === 4 && paso === maxPasos[3]) ? 'Completado' : 'En progreso';
     let estadoFormularios = {};
   
-
     // Obtener los datos actuales de ETAPAS
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
