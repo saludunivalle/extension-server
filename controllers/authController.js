@@ -6,7 +6,7 @@ const sheetsService = require('../services/sheetsService');
  * @param {Object} req - Objeto de solicitud Express
  * @param {Object} res - Objeto de respuesta Express
  */
-
+    
 const googleAuth = async (req, res) => {
   try {
     const { token } = req.body;
