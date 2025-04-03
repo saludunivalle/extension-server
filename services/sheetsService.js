@@ -2,6 +2,8 @@ const { google } = require('googleapis');
 const { jwtClient } = require('../config/google')
 const models = require('../models/spreadsheetModels');
 const { GoogleAPIError } = require('../middleware/errorHandler');
+const { withExponentialBackoff } = require('../utils/apiUtils');
+const { getDataWithCache } = require('../utils/cacheUtils');
 
 /**
  * Servicio para manejar operaciones con Google Sheets
@@ -12,6 +14,8 @@ class SheetsService {
     this.spreadsheetId = process.env.SPREADSHEET_ID || '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
     this.client = this.getClient();
     this.models = models.getModels(); // Usar los modelos definidos
+    this.cache = new Map();
+    this.cacheTTL = 600000; // Aumentado a 10 minutos para reducir peticiones
   }
 
   async saveUserIfNotExists(userId, email, name) {
@@ -94,6 +98,16 @@ class SheetsService {
 
   //Encuentra o crea una solicitud
   async findOrCreateRequestRow(sheetName, idSolicitud) {
+    const cacheKey = `${sheetName}_${idSolicitud}`;
+    
+    // Verificar caché primero
+    if (this.cache.has(cacheKey)) {
+      const {value, timestamp} = this.cache.get(cacheKey);
+      if (Date.now() - timestamp < this.cacheTTL) {
+        return value;
+      }
+    }
+    
     try {
       const response = await this.client.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
@@ -116,7 +130,14 @@ class SheetsService {
         rowIndex += 1; // Ajustar para que sea 1-based
       }
 
-      return rowIndex;
+      const result = rowIndex;
+      // Al final, guardar en caché:
+      this.cache.set(cacheKey, {
+        value: result,
+        timestamp: Date.now()
+      });
+      
+      return result;
     } catch (error) {
       console.error(`Error al buscar/crear fila en ${sheetName}:`, error);
       throw new Error(`Error al buscar/crear fila en ${sheetName}`);
@@ -143,76 +164,151 @@ class SheetsService {
   /**
    * Obtiene todos los datos de una solicitud
   */
-  async getSolicitudData(solicitudId,  definicionesHojas) {
+  async getSolicitudData(solicitudId, definicionesHojas) {
     try {
-      const hojas = definicionesHojas || {
-        SOLICITUDES: {
-          range: 'SOLICITUDES!A2:AU',
-          fields: this.fieldDefinitions.SOLICITUDES
-        },
-        SOLICITUDES2: {
-          range: 'SOLICITUDES2!A2:CL',
-          fields: this.fieldDefinitions.SOLICITUDES2
-        },
-        // Agregar estas hojas:
-        SOLICITUDES3: {
-          range: 'SOLICITUDES3!A2:AC',
-          fields: this.fieldDefinitions.SOLICITUDES3
-        },
-        SOLICITUDES4: {
-          range: 'SOLICITUDES4!A2:BK',
-          fields: this.fieldDefinitions.SOLICITUDES4
-        },
-        GASTOS: {
-          range: 'GASTOS!A2:F',
-          fields: this.fieldDefinitions.GASTOS
-        }
-      };
-
-      const resultados = {};
-      let solicitudEncontrada = false;
-
-      for (let [hoja, { range, fields }] of Object.entries(hojas)) {
-        const response = await this.client.spreadsheets.values.get({
-          spreadsheetId: this.spreadsheetId,
-          range
-        });
-
-        const rows = response.data.values || [];
-        const solicitudData = rows.find(row => row[0] === solicitudId);
-
-        if (solicitudData) {
-          solicitudEncontrada = true;
-          resultados[hoja] = fields.reduce((acc, field, index) => {
-            acc[field] = solicitudData[index] || '';
-            return acc;
-          }, {});
+      // Usar caché para esta operación frecuente
+      const cacheKey = `solicitud_${solicitudId}`;
+      
+      // Verificar caché local primero
+      if (this.cache.has(cacheKey)) {
+        const {value, timestamp} = this.cache.get(cacheKey);
+        if (Date.now() - timestamp < this.cacheTTL) {
+          console.log(`✅ Usando caché local para solicitud ${solicitudId}`);
+          return value;
         }
       }
+      
+      return await getDataWithCache(cacheKey, async () => {
+        const hojas = definicionesHojas || {
+          SOLICITUDES: {
+            range: 'SOLICITUDES!A2:AU',
+            fields: this.fieldDefinitions.SOLICITUDES
+          },
+          SOLICITUDES2: {
+            range: 'SOLICITUDES2!A2:CL',
+            fields: this.fieldDefinitions.SOLICITUDES2
+          },
+          SOLICITUDES3: {
+            range: 'SOLICITUDES3!A2:AC',
+            fields: this.fieldDefinitions.SOLICITUDES3
+          },
+          SOLICITUDES4: {
+            range: 'SOLICITUDES4!A2:BK',
+            fields: this.fieldDefinitions.SOLICITUDES4
+          },
+          GASTOS: {
+            range: 'GASTOS!A2:F',
+            fields: this.fieldDefinitions.GASTOS
+          }
+        };
 
-      if (!solicitudEncontrada) {
-        return { message: 'La solicitud no existe aún en Google Sheets', data: {} };
-      }
-
-      return resultados;
+        // Preparar rangos para batchGet - consolidar múltiples llamadas en una
+        const ranges = Object.values(hojas).map(h => h.range);
+        
+        try {
+          // Usar batchGetValues para obtener todos los datos de una vez
+          const valueRanges = await withExponentialBackoff(() => 
+            this.batchGetValues(ranges), 2);
+          
+          const resultados = {};
+          let solicitudEncontrada = false;
+          
+          // Procesar resultados
+          valueRanges.forEach((valueRange, index) => {
+            const hojaName = Object.keys(hojas)[index];
+            const rows = valueRange.values || [];
+            const fields = hojas[hojaName].fields;
+            
+            const solicitudData = rows.find(row => row[0] && row[0].toString() === solicitudId.toString());
+            
+            if (solicitudData) {
+              solicitudEncontrada = true;
+              resultados[hojaName] = fields.reduce((acc, field, i) => {
+                acc[field] = solicitudData[i] || '';
+                return acc;
+              }, {});
+            }
+          });
+          
+          if (!solicitudEncontrada) {
+            return { message: 'La solicitud no existe aún en Google Sheets', data: {} };
+          }
+          
+          // Guardar en caché local también
+          this.cache.set(cacheKey, {
+            value: resultados,
+            timestamp: Date.now()
+          });
+          
+          return resultados;
+        } catch (error) {
+          // Si hay error de cuota, intentar usar caché expirado
+          if (this.isQuotaError(error)) {
+            console.warn(`⚠️ Error de cuota al obtener datos de solicitud ${solicitudId}`);
+            
+            // Intentar usar caché expirado si existe
+            if (this.cache.has(cacheKey)) {
+              console.log('Usando datos expirados de caché como respaldo');
+              return this.cache.get(cacheKey).value;
+            }
+          }
+          throw error;
+        }
+      }, 5); // TTL de 5 minutos (aumentado de 2)
     } catch (error) {
       console.error('Error al obtener datos de solicitud:', error);
-      throw new GoogleAPIError('Error al obtener datos de solicitud');
+      throw error;
     }
   }
 
   async saveGastos(idSolicitud, gastos) {
     try {
+      // Clave de caché para conceptos
+      const conceptosCacheKey = 'conceptos_all';
+      let conceptosRows;
+      
+      // Intentar obtener conceptos de la caché primero
+      if (this.cache.has(conceptosCacheKey)) {
+        const {value, timestamp} = this.cache.get(conceptosCacheKey);
+        if (Date.now() - timestamp < this.cacheTTL) {
+          conceptosRows = value;
+          console.log('✅ Usando conceptos desde caché local');
+        }
+      }
+      
+      // Si no están en caché, obtenerlos de la API
+      if (!conceptosRows) {
+        try {
+          const conceptosResponse = await this.client.spreadsheets.values.get({
+            spreadsheetId: this.spreadsheetId,
+            range: 'CONCEPTO$!A2:F'
+          });
+          
+          conceptosRows = conceptosResponse.data.values || [];
+          
+          // Guardar en caché para futuras solicitudes
+          this.cache.set(conceptosCacheKey, {
+            value: conceptosRows,
+            timestamp: Date.now()
+          });
+        } catch (error) {
+          // En caso de error de cuota, continuar con un arreglo vacío
+          if (this.isQuotaError(error)) {
+            console.warn('⚠️ Error de cuota al obtener conceptos, continuando con valores por defecto');
+            conceptosRows = [];
+          } else {
+            throw error;
+          }
+        }
+      }
+      
+      // Resto del código de saveGastos...
       const conceptosValidos = new Set();
       const conceptosSolicitudValidos = new Set();
       const conceptosPadre = new Map();
-      // Validar conceptos
-      const conceptosResponse = await this.client.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range: 'CONCEPTO$!A2:F' // Incluir las columnas adicionales
-      });
-
-      (conceptosResponse.data.values || []).forEach(row => {
+      
+      // Procesar conceptos existentes
+      (conceptosRows || []).forEach(row => {
         const concepto = String(row[0]);
         const descripcion = row[1] || '';
         const esPadre = row[2] === 'true' || row[2] === 'TRUE';
@@ -229,7 +325,7 @@ class SheetsService {
           }
         }
       });
-  
+
       // 3. Identificar TODOS los nuevos conceptos (tanto regulares como sub)
       const nuevosConceptos = gastos
         .filter(gasto => {
@@ -298,6 +394,7 @@ class SheetsService {
   
       return true;
     } catch (error) {
+      // Añadir manejo específico para errores de cuota aquí...
       console.error("Error en saveGastos:", error);
       throw new Error('Error guardando gastos');
     }
@@ -518,6 +615,59 @@ class SheetsService {
       console.error('Error al eliminar riesgo:', error);
       throw new Error('Error al eliminar riesgo');
     }
+  }
+
+  /**
+   * NUEVA FUNCIÓN: Obtiene múltiples rangos de datos en una sola llamada API
+   * @param {Array<string>} ranges - Array de rangos a obtener (ej. ['SOLICITUDES!A2:Z', 'GASTOS!A2:F']) 
+   * @returns {Promise<Array>} - Datos de todos los rangos solicitados
+   */
+  async batchGetValues(ranges) {
+    try {
+      // Verificar si hay demasiados rangos (máximo recomendado: 20)
+      if (ranges.length > 20) {
+        console.warn(`⚠️ batchGetValues recibió ${ranges.length} rangos, el máximo recomendado es 20. Particionando...`);
+        
+        const results = [];
+        // Procesar en grupos de 20 rangos
+        for (let i = 0; i < ranges.length; i += 20) {
+          const batchRanges = ranges.slice(i, i + 20);
+          const batchResults = await this.batchGetValues(batchRanges);
+          results.push(...batchResults);
+        }
+        return results;
+      }
+
+      console.log(`🔄 Solicitando ${ranges.length} rangos en una sola llamada API`);
+      
+      const response = await this.client.spreadsheets.values.batchGet({
+        spreadsheetId: this.spreadsheetId,
+        ranges: ranges,
+        majorDimension: 'ROWS',
+        valueRenderOption: 'UNFORMATTED_VALUE'
+      });
+      
+      return response.data.valueRanges || [];
+    } catch (error) {
+      if (this.isQuotaError(error)) {
+        console.error('🚨 Error de cuota en batchGetValues:', error.message);
+        throw new Error('Cuota API excedida: intente más tarde');
+      }
+      
+      console.error('Error en batchGetValues:', error);
+      throw new Error('Error al obtener valores en lote');
+    }
+  }
+
+  /**
+   * NUEVA FUNCIÓN: Verifica si un error es por exceso de cuota
+   * @param {Error} error - El error a verificar
+   * @returns {boolean} - True si es error de cuota
+   */
+  isQuotaError(error) {
+    return error.code === 429 || 
+           (error.response && error.response.status === 429) ||
+           error.message?.includes('Quota exceeded');
   }
 
 }

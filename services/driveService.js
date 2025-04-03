@@ -99,6 +99,15 @@ class DriveService {
   async processXLSXWithStyles(templateId, data, fileName) {
     try {
       console.log(`Descargando la plantilla: ${templateId}`);
+      // Determinar el número de formulario basado en el templateId
+      let formNumber = null;
+      for (const [key, value] of Object.entries(this.templateIds)) {
+        if (value === templateId) {
+          formNumber = key;
+          break;
+        }
+      }
+      
       const fileResponse = await this.drive.files.get(
         { fileId: templateId, alt: 'media' },
         { responseType: 'stream' }
@@ -143,11 +152,10 @@ class DriveService {
       excelUtils.replaceMarkers(workbook, data);
       console.log('Marcadores reemplazados correctamente');
   
-      // Guardar a archivo temporal
+      // Subir a Google Drive primero para obtener el ID
       const tempFilePath = await excelUtils.saveToTempFile(workbook, fileName);
       console.log(`Archivo guardado temporalmente en ${tempFilePath}`);
   
-      // Subir a Google Drive
       const uploadResponse = await this.drive.files.create({
         requestBody: {
           name: fileName,
@@ -163,6 +171,32 @@ class DriveService {
       const fileId = uploadResponse.data.id;
       await this.makeFilePublic(fileId);
       
+      // Procesar filas dinámicas si existe el método y está configurado
+      if (formNumber) {
+        try {
+          // Usar import dinámico para evitar errores si el archivo no existe
+          const reportConfig = await import(`../reportConfigs/report${formNumber}Config.js`)
+            .catch(err => {
+              console.log(`Configuración no encontrada para formulario ${formNumber}`);
+              return null;
+            });
+            
+          if (reportConfig && typeof reportConfig.processDynamicRows === 'function') {
+            const sheets = google.sheets({version: 'v4', auth: this.jwtClient});
+            console.log(`Procesando filas dinámicas para formulario ${formNumber}...`);
+            await reportConfig.processDynamicRows(fileId, data, sheets);
+          } else {
+            // Usar el método genérico si no hay configuración específica
+            if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
+              await this.insertDynamicRowsInSheet(fileId, dynamicRowsData);
+            }
+          }
+        } catch (dynamicRowsError) {
+          console.error('Error al procesar filas dinámicas:', dynamicRowsError);
+          // Continuar con la generación aunque falle
+        }
+      }
+  
       // Insertar filas dinámicas si es necesario
       if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
         await this.insertDynamicRowsInSheet(fileId, dynamicRowsData);
@@ -304,55 +338,98 @@ class DriveService {
    */
   async replacePlaceholders(fileId, data) {
     try {
-      console.log('Reemplazando marcadores en documento...');
+      console.log("📊 INICIO DE REEMPLAZO DE PLACEHOLDERS");
+
+      // Combinar los datos originales con los valores de prueba
+      const mergedData = { ...data, ...testData };
       
-      // Primero procesamos los datos especiales para manipulación de tablas
-      if (data['__GASTOS_DINAMICOS__']) {
-        await this.insertarFilasGastosDinamicos(fileId, data['__GASTOS_DINAMICOS__']);
-        // Eliminar este campo especial para no intentar reemplazarlo como marcador normal
-        delete data['__GASTOS_DINAMICOS__'];
-      }
-      
-      // Extraer el texto del documento
-      const response = await this.docs.documents.get({
+      // PASO 2: Analizar la plantilla para encontrar todos los placeholders
+      const docResponse = await this.docs.documents.get({
         documentId: fileId
       });
       
-      const document = response.data;
+      // Extraer todos los placeholders del documento para ver qué formato usan
+      const docText = JSON.stringify(docResponse.data);
+      const placeholderRegex = /\{\{([^}]+)\}\}/g;
+      const placeholdersFound = [];
+      let match;
+      
+      while ((match = placeholderRegex.exec(docText)) !== null) {
+        const placeholder = match[0];
+        const fieldName = match[1].trim();
+        placeholdersFound.push({ placeholder, fieldName });
+      }
+      
+      console.log("🔍 PLACEHOLDERS ENCONTRADOS:", placeholdersFound.length);
+      // Mostrar solo los primeros 10 para no saturar los logs
+      placeholdersFound.slice(0, 10).forEach(p => {
+        console.log(`- ${p.placeholder} => ${mergedData[p.fieldName] || "NO TIENE VALOR"}`);
+      });
+      
+      // PASO 3: Procesar cada placeholder con un enfoque más directo
       const requests = [];
       
-      // Buscar todos los marcadores de posición
-      for (const key in data) {
-        const value = data[key];
-        if (value !== undefined && value !== null) {
-          // Solo procesar si es un valor de cadena (no objetos ni arrays)
-          if (typeof value === 'string' || typeof value === 'number') {
-            requests.push({
-              replaceAllText: {
-                containsText: {
-                  text: `{{${key}}}`,
-                  matchCase: true
-                },
-                replaceText: String(value)
-              }
-            });
+      placeholdersFound.forEach(p => {
+        // Buscar el valor usando el nombre de campo exacto
+        let value = mergedData[p.fieldName] || '';
+        
+        // Si no se encuentra, probar con variantes (sin espacios, sin caracteres especiales)
+        if (!value) {
+          // Variante 1: sin espacios
+          const fieldNoSpaces = p.fieldName.replace(/\s+/g, '');
+          if (mergedData[fieldNoSpaces]) {
+            value = mergedData[fieldNoSpaces];
+            console.log(`  ✅ Encontrado valor en variante sin espacios: ${fieldNoSpaces}`);
+          }
+          
+          // Variante 2: con puntos en lugar de comas
+          else if (p.fieldName.includes(',')) {
+            const fieldWithDots = p.fieldName.replace(/,/g, '.');
+            if (mergedData[fieldWithDots]) {
+              value = mergedData[fieldWithDots];
+              console.log(`  ✅ Encontrado valor en variante con puntos: ${fieldWithDots}`);
+            }
+          }
+          
+          // Variante 3: sin caracteres especiales
+          else if (p.fieldName.includes('%') || p.fieldName.includes(',')) {
+            const fieldSimplified = p.fieldName.replace(/[%,]/g, '');
+            if (mergedData[fieldSimplified]) {
+              value = mergedData[fieldSimplified];
+              console.log(`  ✅ Encontrado valor en variante simplificada: ${fieldSimplified}`);
+            }
           }
         }
-      }
+        
+        // Una vez tenemos el valor, crear la solicitud de reemplazo
+        if (value !== '') {
+          console.log(`  🔄 Reemplazando ${p.placeholder} con "${value}"`);
+          requests.push({
+            replaceAllText: {
+              containsText: { text: p.placeholder, matchCase: true },
+              replaceText: value
+            }
+          });
+        } else {
+          console.log(`  ⚠️ No se encontró valor para ${p.placeholder}`);
+        }
+      });
       
+      // PASO 4: Ejecutar todos los reemplazos en una sola operación batch
       if (requests.length > 0) {
+        console.log(`📝 Ejecutando ${requests.length} reemplazos...`);
         await this.docs.documents.batchUpdate({
           documentId: fileId,
-          resource: {
-            requests: requests
-          }
+          resource: { requests }
         });
-        console.log(`Reemplazados ${requests.length} marcadores en el documento`);
+        console.log("✅ Reemplazos completados");
+      } else {
+        console.warn("⚠️ No se generaron solicitudes de reemplazo");
       }
       
-      return true;
+      return fileId;
     } catch (error) {
-      console.error('Error al reemplazar marcadores:', error);
+      console.error("❌ Error al reemplazar placeholders:", error);
       throw error;
     }
   }
@@ -583,3 +660,17 @@ class DriveService {
 }
 
 module.exports = new DriveService();
+
+// Agregar en services/sheetsService.js
+const cache = {};
+
+async function getDataWithCache(key, fetcher, ttlMinutes = 5) {
+  if (cache[key] && (Date.now() - cache[key].timestamp) < ttlMinutes * 60 * 1000) {
+    console.log(`Usando datos en caché para ${key}`);
+    return cache[key].data;
+  }
+  
+  const data = await fetcher();
+  cache[key] = { data, timestamp: Date.now() };
+  return data;
+}

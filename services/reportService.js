@@ -24,6 +24,21 @@ class ReportGenerationService {
 
       // Obtener datos de la solicitud usando la configuración de hojas del reporte
       const solicitudData = await this.getSolicitudData(solicitudId, reportConfig.sheetDefinitions);
+      
+      // AÑADIR ESTE CÓDIGO PARA DIAGNÓSTICO
+      console.log("🔍 DATOS RECIBIDOS PARA TRANSFORMAR:");
+      console.log("- ID Solicitud:", solicitudId);
+      console.log("- Datos solicitud:", JSON.stringify(solicitudData).substring(0, 300) + "...");
+      
+      // Verificar específicamente campos críticos
+      const camposCriticos = [
+        'nombre_actividad', 'ingresos_cantidad', 'ingresos_vr_unit', 
+        'subtotal_gastos', 'imprevistos_3', 'gastos'
+      ];
+      
+      camposCriticos.forEach(campo => {
+        console.log(`- ${campo}: ${solicitudData[campo] || 'NO ENCONTRADO'}`);
+      });
 
       // Procesar datos adicionales si el reporte lo requiere (como gastos)
       const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
@@ -111,8 +126,6 @@ class ReportGenerationService {
    * @returns {Promise<Object>} Datos de gastos procesados
    */
   async processGastosData(solicitudId) {
-    // Aquí mover la lógica actual de processGastosData de reportService.js
-    // Simplificando para este ejemplo:
     try {
       const client = sheetsService.getClient();
       
@@ -122,25 +135,30 @@ class ReportGenerationService {
         range: 'GASTOS!A2:F500'
       });
       
-      const conceptosResponse = await client.spreadsheets.values.get({
-        spreadsheetId: sheetsService.spreadsheetId,
-        range: 'CONCEPTO$!A2:F500'
-      });
-      
-      // Procesar los datos
+      // Procesar los datos - SOLUCIÓN MEJORADA
       const gastosRows = gastosResponse.data.values || [];
-      const conceptosRows = conceptosResponse.data.values || [];
       
-      // Filtrar gastos de la solicitud actual
-      const solicitudGastos = gastosRows.filter(row => row[1] === solicitudId);
+      // Filtrar gastos de la solicitud actual y convertir a formato de objeto
+      const solicitudGastos = gastosRows
+        .filter(row => row[1] === solicitudId.toString())
+        .map(row => ({
+          id_conceptos: row[0]?.toString() || '',
+          id_solicitud: row[1]?.toString() || '',
+          cantidad: parseFloat(row[2]) || 0,
+          valor_unit: parseFloat(row[3]) || 0,
+          valor_total: parseFloat(row[4]) || 0,
+          concepto_padre: row[5]?.toString() || ''
+        }));
       
-      // Aquí implementar el resto de la lógica de procesamiento de gastos...
-      // (Adaptado de tu implementación actual)
+      console.log(`🔍 GASTOS procesados para solicitud ${solicitudId}: ${solicitudGastos.length}`);
+      if (solicitudGastos.length > 0) {
+        console.log(`🔍 Primer GASTO: ${JSON.stringify(solicitudGastos[0])}`);
+      }
       
-      return { gastos: solicitudGastos };
+      return { GASTOS: solicitudGastos };
     } catch (error) {
       console.error('Error al procesar gastos:', error);
-      return {};
+      return { GASTOS: [] };
     }
   }
 }
