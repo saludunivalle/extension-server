@@ -52,7 +52,7 @@ class SpreadsheetModel {
   const SOLICITUDES = new SpreadsheetModel(
     'SOLICITUDES',
     [
-      'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
+      'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'nombre_solicitante', 'dependencia_tipo',
       'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia',
       'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo',
       'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
