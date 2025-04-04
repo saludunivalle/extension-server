@@ -88,7 +88,12 @@ const guardarProgreso = async (req, res) => {
   
 
     const estadoGlobal = (parsedHoja === 4 && paso === maxPasos[3]) ? 'Completado' : 'En progreso';
-    let estadoFormularios = {};
+    let estadoFormularios = {
+      "1": "En progreso", 
+      "2": "En progreso",
+      "3": "En progreso", 
+      "4": "En progreso"
+    };
   
 
     // Obtener los datos actuales de ETAPAS
@@ -137,25 +142,24 @@ const guardarProgreso = async (req, res) => {
     let filaEtapas = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
 
     if (filaEtapas === -1) {
-      // Si no se encuentra, agregar una nueva fila
-      filaEtapas = etapasRows.length + 1;
+      const nuevaFila = [
+        id_solicitud,
+        id_usuario || userData.id, // Usar ID correcto
+        fechaActual,
+        name || 'N/A',
+        1, // etapa_actual inicial
+        'En progreso',
+        formData.nombre_actividad || 'Nueva solicitud', // Usar nombre real
+        paso,
+        JSON.stringify(estadoFormularios)
+      ];
+      
       await client.spreadsheets.values.append({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: `ETAPAS!A${filaEtapas}:H${filaEtapas}`,
+        range: 'ETAPAS!A:I',
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
-        resource: {
-          values: [[
-            id_solicitud,
-            id_usuario,
-            fechaActual,
-            name,
-            etapaActualAjustada,
-            estadoGlobal,
-            formData.nombre_actividad || 'N/A',
-            paso
-          ]]
-        }
+        resource: { values: [nuevaFila] }
       });
     } else {
       filaEtapas += 1; // Ajustar índice a 1-based
@@ -177,15 +181,15 @@ const guardarProgreso = async (req, res) => {
         {
           range: `ETAPAS!I${filaEtapas}`, 
           values: [[estadoFormulariosJSON]]
-        }
+        },
+        { range: `ETAPAS!B${filaEtapas}`, values: [[id_usuario]] },
+        { range: `ETAPAS!G${filaEtapas}`, values: [[formData.nombre_actividad]] },
+        { range: `ETAPAS!D${filaEtapas}`, values: [[name]] }
       ];
 
       await client.spreadsheets.values.batchUpdate({
         spreadsheetId: sheetsService.spreadsheetId,
-        resource: {
-          valueInputOption: 'RAW',
-          data: updateRequests
-        }
+        resource: { data: updateRequests, valueInputOption: 'RAW' }
       });
     }
 
@@ -213,10 +217,19 @@ const guardarProgreso = async (req, res) => {
 */
 const createNewRequest = async (req, res) => {
   try {
-    const { id_solicitud, fecha_solicitud, nombre_actividad, nombre_solicitante, dependencia_tipo, nombre_dependencia } = req.body;
+    // 1. Primero obtener el último ID existente en SOLICITUDES
+    const lastId = await sheetsService.getLastId('SOLICITUDES');
+    const id_solicitud = lastId + 1;
+    
+    // 2. Extraer resto de datos del body (sin id_solicitud)
+    const { fecha_solicitud, nombre_actividad, nombre_solicitante, dependencia_tipo, nombre_dependencia } = req.body;
     
     const client = sheetsService.getClient();
+    const fechaActual = dateUtils.getCurrentDate();
+    
+    // 3. Crear entrada en SOLICITUDES
     const range = 'SOLICITUDES!A2:F2';
+    // Importante: nombre_actividad y fecha_solicitud en orden correcto
     const values = [[id_solicitud, fecha_solicitud, nombre_actividad, nombre_solicitante, dependencia_tipo, nombre_dependencia]];
 
     await client.spreadsheets.values.append({
@@ -226,9 +239,40 @@ const createNewRequest = async (req, res) => {
       insertDataOption: 'INSERT_ROWS',
       resource: { values },
     });
+    
+    // 4. Crear entrada en ETAPAS con el mismo ID
+    const estadoFormularios = { 
+      "1": "En progreso", 
+      "2": "En progreso", 
+      "3": "En progreso", 
+      "4": "En progreso" 
+    };
+    
+    const nuevaFila = [
+      id_solicitud,
+      req.body.id_usuario || 'N/A',
+      fechaActual,
+      req.body.name || 'N/A',
+      1,                          // etapa_actual inicial
+      'En progreso',              // estado inicial
+      nombre_actividad || 'Nueva solicitud', 
+      1,                          // paso inicial
+      JSON.stringify(estadoFormularios)
+    ];
+    
+    await client.spreadsheets.values.append({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A:I',
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values: [nuevaFila] }
+    });
 
     console.log(`✅ Nueva solicitud guardada en Sheets con ID: ${id_solicitud}`);
+    
+    // 5. Solo ahora enviamos la respuesta exitosa
     res.status(200).json({ success: true, id_solicitud });
+    
   } catch (error) {
     console.error('🚨 Error al crear la nueva solicitud en Sheets:', error);
     res.status(500).json({ error: 'Error al crear la nueva solicitud' });
@@ -277,61 +321,115 @@ const getRequests = async (req, res) => {
 const getActiveRequests = async (req, res) => {
   try {
     const { userId } = req.query;
-    console.log('Obteniendo solicitudes activas para el usuario:', userId);
+    console.log('Obteniendo solicitudes activas para:', userId);
+    
+    if (!userId) {
+      return res.status(400).json({ error: 'Se requiere el ID de usuario' });
+    }
+    
     const client = sheetsService.getClient();
 
-    // Obtener datos de ETAPAS
+    // 1. Obtener datos de ETAPAS con manejo de errores mejorado
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!A2:I`,
+      range: 'ETAPAS!A2:I',
+    }).catch(err => {
+      console.error(`Error al acceder a ETAPAS: ${err.message}`);
+      throw new Error(`Error al acceder a ETAPAS: ${err.message}`);
     });
 
-    const rows = etapasResponse.data.values;
-    if (!rows || rows.length === 0) {
-      return res.status(404).json({ error: 'No se encontraron solicitudes activas' });
-    }
-
-    // Filtrar solicitudes activas
-    const activeRequests = rows
-      .filter((row) => row[1] === userId && row[5] === 'En progreso')
-      .map((row) => ({
-        idSolicitud: row[0],
-        formulario: parseInt(row[4]),
-        paso: parseInt(row[7]),
-        nombre_actividad: row[6],
-        // Nuevo campo: estado por formulario
-        formulariosCompletados: {
-          1: parseInt(row[7]) >= 5,  // 5 pasos para formulario 1
-          2: parseInt(row[7]) >= 3,  // 3 pasos para formulario 2
-          3: parseInt(row[7]) >= 5,
-          4: parseInt(row[7]) >= 5
+    const etapasRows = etapasResponse.data.values || [];
+    
+    // 2. Filtrar y mapear con validación robusta de datos
+    const activeRequests = etapasRows
+      .filter(row => {
+        // Verificar que la fila tenga suficientes columnas
+        return row.length >= 9 && 
+               row[1] === userId && 
+               row[5] === 'En progreso';
+      })
+      .map(row => {
+        // Añadir chequeos de valores
+        const etapa = row[4] ? parseInt(row[4], 10) : 1;
+        const paso = row[7] ? parseInt(row[7], 10) : 1;
+        
+        // Parsing seguro de JSON
+        let estadoFormularios = {
+          "1": "En progreso", 
+          "2": "En progreso",
+          "3": "En progreso", 
+          "4": "En progreso"
+        };
+        
+        if (row[8]) {
+          try {
+            const parsed = JSON.parse(row[8]);
+            if (parsed && typeof parsed === 'object') {
+              estadoFormularios = parsed;
+            }
+          } catch (e) {
+            console.warn(`Error al parsear estado_formularios para ID ${row[0]}: ${e.message}`);
+          }
         }
-      }));
+        
+        return {
+          idSolicitud: row[0] || 'N/A',
+          formulario: isNaN(etapa) ? 1 : etapa,
+          paso: isNaN(paso) ? 1 : paso,
+          estadoFormularios,
+          nombre_actividad: row[6]?.trim() || 'Sin nombre'
+        };
+      });
 
-    // Obtener datos de SOLICITUDES para buscar nombre_actividad
+    // 3. Obtener datos adicionales de SOLICITUDES para validar nombre_actividad
     const solicitudesResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `SOLICITUDES!A2:D`, // Columna nombre_actividad
+      range: 'SOLICITUDES!A2:C', // A=id_solicitud, B=fecha_solicitud, C=nombre_actividad
+    }).catch(err => {
+      console.error('Error al obtener SOLICITUDES:', err);
+      return { data: { values: [] } };
     });
 
-    const solicitudesRows = solicitudesResponse.data.values;
-
-    // Combinar datos de ETAPAS y SOLICITUDES
-    const combinedRequests = activeRequests.map((request) => {
-      const solicitud = solicitudesRows?.find((row) => row[0] === request.idSolicitud);
-      return {
-        ...request,
-        nombre_actividad: solicitud ? solicitud[2] : 'Sin nombre', // Índice de nombre_actividad
-      };
+    const solicitudesRows = solicitudesResponse.data.values || [];
+    
+    // 4. Combinar datos asegurando la correcta asignación de campos
+    const combinedRequests = activeRequests.map(request => {
+      const solicitud = solicitudesRows.find(r => r[0] === request.idSolicitud);
+      
+      if (solicitud) {
+        // Verificar si los campos están intercambiados
+        let nombre = solicitud[2];
+        let fecha = solicitud[1];
+        
+        // Si fecha contiene texto que no parece fecha y nombre parece fecha, intercambiar
+        if (
+          (typeof nombre === 'string' && nombre.includes('/')) && 
+          (typeof fecha === 'string' && !fecha.includes('/') && fecha.length > 4)
+        ) {
+          console.log(`⚠️ Detectada inversión de campos para solicitud ${request.idSolicitud}`);
+          // Intercambiar valores para corregir
+          const temp = nombre;
+          nombre = fecha;
+          fecha = temp;
+        }
+        
+        return {
+          ...request,
+          nombre_actividad: nombre || request.nombre_actividad,
+          fecha_solicitud: fecha
+        };
+      }
+      
+      return request;
     });
 
-    console.log('Solicitudes activas combinadas:', combinedRequests);
     res.status(200).json(combinedRequests);
   } catch (error) {
-    console.error('Error al obtener solicitudes activas:', error);
-    console.error('Detalles del error:', error.message);
-    console.error('Stack trace:', error.stack);
-    res.status(500).json({ error: 'Error al obtener solicitudes activas', details: error.message });
+    console.error('Error en getActiveRequests:', error);
+    res.status(500).json({ 
+      error: 'Error al obtener solicitudes activas',
+      details: error.message 
+    });
   }
 };
 
@@ -675,8 +773,10 @@ const actualizarPasoMaximo = async (req, res) => {
 const validarProgresion = async (req, res) => {
   try {
     const { id_solicitud, etapa_destino, paso_destino } = req.body;
+    const id_usuario = req.body.id_usuario || 'N/A';
+    const name = req.body.name || 'N/A';
 
-    // Validaciones de parámetros
+    // Validaciones básicas
     if (!id_solicitud || etapa_destino === undefined || paso_destino === undefined) {
       return res.status(400).json({
         success: false,
@@ -684,118 +784,116 @@ const validarProgresion = async (req, res) => {
       });
     }
 
-    // Convertir parámetros a números
-    const etapaDestino = parseInt(etapa_destino);
-    const pasoDestino = parseInt(paso_destino);
-
-    if (isNaN(etapaDestino) || isNaN(pasoDestino)) {
-      return res.status(400).json({
-        success: false,
-        error: 'etapa_destino y paso_destino deben ser valores numéricos'
-      });
-    }
-
-    // Validar rangos
-    if (etapaDestino < 1 || etapaDestino > 4) {
-      return res.status(400).json({
-        success: false,
-        error: 'etapa_destino debe estar entre 1 y 4'
-      });
-    }
-
-    if (pasoDestino < 1) {
-      return res.status(400).json({
-        success: false,
-        error: 'paso_destino debe ser mayor o igual a 1'
-      });
-    }
-
-    // Obtener datos actuales de la solicitud
     const client = sheetsService.getClient();
+    
+    // Obtener datos de ETAPAS con manejo de creación de fila
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A2:I'
+      range: 'ETAPAS!A:I'
     });
 
-    const etapasRows = etapasResponse.data.values || [];
-    const filaActual = etapasRows.find(row => row[0] === id_solicitud.toString());
+    let etapasRows = etapasResponse.data.values || [];
+    let filaExistente = etapasRows.find(row => row[0] === id_solicitud.toString());
 
-    if (!filaActual) {
-      return res.status(404).json({
-        success: false,
-        error: `No se encontró la solicitud con ID ${id_solicitud}`
-      });
+    // Si no existe la solicitud, crear registro inicial
+    if (!filaExistente) {
+      console.log(`No se encontró registro para solicitud ${id_solicitud}. Creando registro inicial...`);
+      const fechaActual = dateUtils.getCurrentDate();
+      const estadoFormularios = { 
+        "1": "En progreso", 
+        "2": "En progreso", 
+        "3": "En progreso", 
+        "4": "En progreso" 
+      };
+      
+      const nuevaFila = [
+        id_solicitud,
+        req.body.id_usuario || 'N/A',  // Usar datos del request
+        fechaActual,
+        req.body.name || 'N/A',        // Usar datos del request
+        1,                             // etapa_actual inicial
+        'En progreso',
+        req.body.nombre_actividad || 'Nueva solicitud', 
+        1,                             // paso inicial
+        JSON.stringify(estadoFormularios)
+      ];
+
+      try {
+        await client.spreadsheets.values.append({
+          spreadsheetId: sheetsService.spreadsheetId,
+          range: 'ETAPAS!A:I',
+          valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS',
+          resource: { values: [nuevaFila] }
+        });
+        
+        console.log(`✅ Registro inicial creado para solicitud ${id_solicitud}`);
+        
+        // Actualizar lista de filas para continuar el proceso
+        filaExistente = nuevaFila;
+        
+        // También guardar en progressState si está disponible
+        if (req.session) {
+          req.session.progressState = {
+            etapa_actual: 1,
+            paso: 1,
+            estado: 'En progreso',
+            estado_formularios: estadoFormularios,
+            id_solicitud: id_solicitud
+          };
+        }
+      } catch (appendError) {
+        console.error(`Error al crear registro inicial para solicitud ${id_solicitud}:`, appendError);
+        return res.status(500).json({
+          success: false,
+          error: 'Error al crear registro inicial para la solicitud',
+          details: appendError.message
+        });
+      }
     }
 
-    // Obtener la etapa actual y estado de formularios
-    const etapaActual = parseInt(filaActual[4]) || 1;
-    const pasoActual = parseInt(filaActual[7]) || 1;
-
-    let estadoFormularios = {};
-    if (filaActual[8]) {
-      try {
-        estadoFormularios = JSON.parse(filaActual[8]);
-      } catch (e) {
-        estadoFormularios = {
-          "1": "En progreso",
-          "2": "En progreso",
-          "3": "En progreso",
-          "4": "En progreso"
-        };
-      }
-    } else {
+    // Continuar con el resto de la lógica normal de validarProgresion
+    // Extraer datos actuales
+    const etapaActual = parseInt(filaExistente[4]) || 1;
+    const pasoActual = parseInt(filaExistente[7]) || 1;
+    
+    // Extraer estado de formularios con manejo de errores
+    let estadoFormularios;
+    try {
+      estadoFormularios = filaExistente[8] ? JSON.parse(filaExistente[8]) : {
+        "1": "En progreso", "2": "En progreso",
+        "3": "En progreso", "4": "En progreso"
+      };
+    } catch (e) {
+      console.warn(`Error al parsear JSON de estado_formularios para solicitud ${id_solicitud}:`, e);
       estadoFormularios = {
-        "1": "En progreso",
-        "2": "En progreso",
-        "3": "En progreso",
-        "4": "En progreso"
+        "1": "En progreso", "2": "En progreso",
+        "3": "En progreso", "4": "En progreso"
       };
     }
-
-    // Definir pasos máximos para cada formulario
-    const maxPasos = {
-      1: 5,
-      2: 3,
-      3: 5,
-      4: 5
-    };
-
-    // Lógica de validación SIMPLIFICADA
-    let puedeAvanzar = true; // Por defecto permitimos la navegación
+    
+    // Resto de la lógica de validación...
+    // Simplificamos la validación para permitir navegación flexible
+    const formulariosIniciados = Object.entries(estadoFormularios)
+      .filter(([_, estado]) => estado === 'Completado' || estado === 'En progreso')
+      .map(([num, _]) => parseInt(num));
+      
+    let puedeAvanzar = true;
     let mensaje = '';
-
-    // Verificar el estado de todos los formularios hasta el destino
-    const formulariosIniciados = [];
-    for (let i = 1; i <= 4; i++) {
-      if (estadoFormularios[i.toString()] === 'Completado' || 
-          estadoFormularios[i.toString()] === 'En progreso') {
-        formulariosIniciados.push(i);
-      }
-    }
-
+    
     // ÚNICA RESTRICCIÓN: No permitir saltar a formularios futuros no iniciados
-    if (etapaDestino > etapaActual && 
-        !formulariosIniciados.includes(etapaDestino)) {
+    if (etapa_destino > etapaActual && !formulariosIniciados.includes(etapa_destino)) {
       puedeAvanzar = false;
       mensaje = 'No puede acceder a formularios futuros sin completar los anteriores';
     } else {
-      // Permitir navegar a cualquier formulario ya iniciado o completado
-      puedeAvanzar = true;
-      
-      // Mensaje más descriptivo según el caso
-      if (etapaDestino < etapaActual) {
-        mensaje = 'Navegando a un formulario anterior';
-      } else if (etapaDestino === etapaActual) {
-        mensaje = 'Continuando en el formulario actual';
-      } else {
-        mensaje = 'Avanzando al siguiente formulario';
-      }
-      
-      // Log para depuración
-      console.log(`Permitiendo navegación: ID=${id_solicitud}, De=${etapaActual} a=${etapaDestino}, formulariosIniciados=${formulariosIniciados.join(',')}`);
+      mensaje = etapa_destino < etapaActual 
+        ? 'Navegando a un formulario anterior' 
+        : etapa_destino === etapaActual 
+          ? 'Continuando en el formulario actual' 
+          : 'Avanzando al siguiente formulario';
     }
-
-    res.status(200).json({
+    
+    return res.status(200).json({
       success: true,
       puedeAvanzar,
       mensaje,
@@ -803,21 +901,17 @@ const validarProgresion = async (req, res) => {
         etapaActual,
         pasoActual,
         estadoFormularios,
-        etapaDestino,
-        pasoDestino,
+        etapaDestino: parseInt(etapa_destino),
+        pasoDestino: parseInt(paso_destino),
         formulariosIniciados
       }
     });
-
+    
   } catch (error) {
-    console.error('Error en validarProgresion:', {
-      mensaje: error.message,
-      stack: error.stack
-    });
-
+    console.error('Error en validarProgresion:', error);
     res.status(500).json({
       success: false,
-      error: 'Error al validar la progresión',
+      error: 'Error al validar progresión',
       details: error.message
     });
   }
@@ -1007,17 +1101,10 @@ const getLastId = async (req, res) => {
     if (!sheetName) {
       return res.status(400).json({ error: 'El nombre de la hoja es requerido' });
     }
-
-    const client = sheetsService.getClient();
-    const range = `${sheetName}!A:A`; // Obtener todos los valores de la columna A
-    const response = await client.spreadsheets.values.get({
-      spreadsheetId: sheetsService.spreadsheetId,
-      range,
-    });
-
-    const values = response.data.values || [];
-    const lastId = values.length > 0 ? values.length : 0; // El último ID es la cantidad de filas
-
+    
+    // Utilizar el método mejorado de sheetsService para obtener el último ID
+    const lastId = await sheetsService.getLastId(sheetName);
+    
     res.status(200).json({ lastId });
   } catch (error) {
     console.error('Error al obtener el último ID:', error);
