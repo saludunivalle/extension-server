@@ -398,8 +398,8 @@ const getActiveRequests = async (req, res) => {
       
       if (solicitud) {
         // Verificar si los campos están intercambiados
-        let nombre = solicitud[2];
-        let fecha = solicitud[1];
+        let nombre = solicitud[1];
+        let fecha = solicitud[2];
         
         // Si fecha contiene texto que no parece fecha y nombre parece fecha, intercambiar
         if (
