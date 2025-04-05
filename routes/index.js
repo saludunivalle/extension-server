@@ -8,7 +8,7 @@ const riskRoutes = require('./risk');
 const otherRoutes = require('./other');
 const formController = require('../controllers/formController');
 const multer = require('multer');
-const upload = multer({ dest: '/tmp/uploads/' });  // Añade esta línea
+const upload = multer({ dest: '/tmp/uploads/' });
 
 // Middleware para verificar el token JWT
 const { verifyToken } = require('../middleware/auth');
@@ -28,6 +28,8 @@ router.get('/getFormDataForm2', formController.getFormDataForm2);
 router.post('/actualizarPasoMaximo', formController.actualizarPasoMaximo);
 router.post('/progreso-actual', formController.validarProgresion);
 router.post('/actualizacion-progreso', formController.actualizarProgresoGlobal);
+// Añadir esta línea para el endpoint que falta
+router.post('/actualizacion-progreso-global', formController.actualizarProgresoGlobal);
 router.get('/getLastId', formController.getLastId);
 router.post('/guardarProgreso', upload.single('pieza_grafica'), formController.guardarProgreso);
 router.post('/guardarGastos', formController.guardarGastos);
@@ -38,17 +40,12 @@ router.get('/getSolicitud', require('../controllers/otherController').getSolicit
 router.post('/guardarForm2Paso2', formController.guardarForm2Paso2);
 
 // Añade esta línea como ruta pública (antes del middleware de autenticación)
-// Asegúrate de que esté ubicada con las otras rutas públicas
 router.get('/getGastos', formController.getGastos);
-
-// COMENTAR O ELIMINAR COMPLETAMENTE la verificación de token
-// router.use(verifyToken);
 
 // Rutas de formulario (para mantener compatibilidad)
 router.use('/form', formRoutes);
 
 // Para mantener compatibilidad, deja las rutas de reporte también después
-// del middleware, para usuarios autenticados
 router.use('/report', reportRoutes);
 
 // Rutas de usuario
@@ -59,7 +56,7 @@ router.use('/risk', riskRoutes);
 
 router.use('/other', otherRoutes);
 
-// Ruta de ejemplo (asegúrate de que todas las rutas tengan un controlador)
+// Ruta de ejemplo
 router.get('/', (req, res) => {
   res.send('¡Hola desde la ruta principal!');
 });
