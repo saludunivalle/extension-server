@@ -9,41 +9,149 @@ class ReportGenerationService {
    * @returns {Promise<Object>} Resultado con link al reporte generado
    */
   async generateReport(solicitudId, formNumber) {
+    console.log('⚡️ INICIO DE GENERACIÓN DE REPORTE:');
+    console.log(`📋 Datos recibidos: solicitudId=${solicitudId}, formNumber=${formNumber}`);
+    
     try {
-      // Validar parámetros
-      if (!solicitudId || !formNumber) {
-        throw new Error('Los parámetros solicitudId y formNumber son requeridos');
+      // Verificar servicios
+      if (!sheetsService || typeof sheetsService.getClient !== 'function') {
+        throw new Error('El servicio sheetsService no está configurado correctamente');
       }
-
+      
+      if (!driveService || typeof driveService.generateReport !== 'function') {
+        throw new Error('El servicio driveService no está configurado correctamente');
+      }
+      
+      console.log('✅ Verificación de servicios: OK');
+      
+      // Validar parámetros
+      if (!solicitudId || typeof solicitudId !== 'string') {
+        throw new Error('solicitudId inválido');
+      }
+  
+      const formNum = parseInt(formNumber, 10);
+      if (isNaN(formNum)) {
+        throw new Error('formNumber debe ser numérico');
+      }
+      
+      console.log('✅ Validación de parámetros: OK');
+  
       // Cargar la configuración específica del reporte
-      const reportConfig = this.loadReportConfig(formNumber);
+      console.log(`🔄 Cargando configuración para formulario ${formNum}...`);
+      const reportConfig = this.loadReportConfig(formNum);
       
       if (!reportConfig) {
-        throw new Error(`No se encontró configuración para el formulario ${formNumber}`);
+        throw new Error(`No se encontró configuración para el formulario ${formNum}`);
       }
-
+      
+      if (!reportConfig.transformData || typeof reportConfig.transformData !== 'function') {
+        throw new Error(`La configuración del formulario ${formNum} no tiene un método transformData válido`);
+      }
+      
+      console.log('✅ Configuración cargada correctamente:', {
+        título: reportConfig.title || 'Sin título',
+        tieneTransformData: !!reportConfig.transformData,
+        requiereDatosAdicionales: reportConfig.requiresAdditionalData || false,
+        requiereGastos: reportConfig.requiresGastos || false
+      });
+  
       // Obtener datos de la solicitud usando la configuración de hojas del reporte
+      console.log(`🔄 Obteniendo datos de solicitud ${solicitudId}...`);
       const solicitudData = await this.getSolicitudData(solicitudId, reportConfig.sheetDefinitions);
-
+      console.log(`✅ Datos de solicitud obtenidos:`, {
+        tieneData: !!solicitudData,
+        camposRecibidos: Object.keys(solicitudData).length,
+        muestraData: {
+          nombre_actividad: solicitudData.nombre_actividad,
+          fecha_solicitud: solicitudData.fecha_solicitud,
+          // Agregar otros campos importantes según el tipo de formulario
+        }
+      });
+  
       // Procesar datos adicionales si el reporte lo requiere (como gastos)
+      console.log(`🔄 Procesando datos adicionales...`);
       const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
-
+      console.log(`✅ Datos adicionales procesados:`, {
+        tieneData: !!additionalData,
+        camposRecibidos: Object.keys(additionalData).length
+      });
+  
       // Combinar datos de la solicitud con datos adicionales
       const combinedData = { ...solicitudData, ...additionalData };
-
+      console.log(`✅ Datos combinados: ${Object.keys(combinedData).length} campos totales`);
+  
       // Transformar datos utilizando la función específica de la configuración del reporte
+      console.log(`🔄 Transformando datos para el reporte...`);
       const transformedData = reportConfig.transformData(combinedData);
-
+      console.log(`✅ Datos transformados: ${Object.keys(transformedData).length} campos`);
+  
       // Generar el reporte usando el servicio de Drive
+      console.log(`🔄 Generando reporte en Drive...`);
       const reportLink = await driveService.generateReport(
-        formNumber,
+        formNum,
         solicitudId,
         transformedData
       );
-
+      
+      if (!reportLink) {
+        throw new Error('No se recibió un enlace válido del servicio de Drive');
+      }
+      
+      console.log(`✅ Reporte generado exitosamente. Link: ${reportLink}`);
       return { link: reportLink };
     } catch (error) {
-      console.error('Error al generar el informe:', error);
+      console.error(`❌ ERROR al generar informe para solicitud ${solicitudId}, formulario ${formNumber}:`, error.message);
+      console.error('📚 Stack de error:', error.stack);
+      throw error;
+    }
+  }
+
+  /**
+   * Genera un reporte para descarga con un modo específico (view, edit)
+   * @param {String} solicitudId - ID de la solicitud 
+   * @param {Number} formNumber - Número de formulario (1-4)
+   * @param {String} mode - Modo de acceso al documento (view, edit)
+   * @returns {Promise<Object>} Resultado con link al reporte generado
+   */
+  async downloadReport(solicitudId, formNumber, mode = 'view') {
+    console.log(`⚡️ INICIO DE GENERACIÓN DE REPORTE (MODO ${mode})`);
+    try {
+      // Validación básica
+      if (!solicitudId || !formNumber) {
+        throw new Error('solicitudId y formNumber son requeridos');
+      }
+      
+      // Convertir a números por seguridad
+      const formNum = parseInt(formNumber, 10);
+      
+      // Cargar config, obtener datos y generar como en el método principal
+      const reportConfig = this.loadReportConfig(formNum);
+      
+      if (!reportConfig) {
+        throw new Error(`No se encontró configuración para el formulario ${formNum} (modo ${mode})`);
+      }
+      
+      console.log('✅ Configuración cargada correctamente para download/edit');
+      
+      const solicitudData = await this.getSolicitudData(solicitudId, reportConfig.sheetDefinitions);
+      const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
+      const combinedData = { ...solicitudData, ...additionalData };
+      const transformedData = reportConfig.transformData(combinedData);
+      
+      // Generar usando el modo especificado
+      console.log(`🔄 Generando reporte para ${mode}...`);
+      const reportLink = await driveService.generateReport(
+        formNum,
+        solicitudId,
+        transformedData,
+        mode
+      );
+      
+      console.log(`✅ Reporte generado exitosamente para ${mode}. Link: ${reportLink}`);
+      return { link: reportLink };
+    } catch (error) {
+      console.error(`❌ ERROR al generar informe para ${mode}:`, error.message);
+      console.error('📚 Stack de error:', error.stack);
       throw error;
     }
   }
@@ -55,11 +163,25 @@ class ReportGenerationService {
    */
   loadReportConfig(formNumber) {
     try {
+      console.log(`🔄 Intentando cargar configuración para formulario ${formNumber}...`);
       // Cargar dinámicamente la configuración del reporte
-      return require(`../reportConfigs/report${formNumber}Config.js`);
+      const config = require(`../reportConfigs/report${formNumber}Config.js`);
+      console.log(`✅ Configuración para formulario ${formNumber} cargada correctamente`);
+      
+      // Verificar la estructura básica de la configuración
+      if (!config || typeof config !== 'object') {
+        throw new Error(`La configuración del formulario ${formNumber} no es un objeto válido`);
+      }
+      
+      if (!config.transformData || typeof config.transformData !== 'function') {
+        console.warn(`⚠️ Advertencia: La configuración del formulario ${formNumber} no tiene un método transformData válido`);
+      }
+      
+      return config;
     } catch (error) {
-      console.error(`Error al cargar configuración del reporte ${formNumber}:`, error);
-      return null;
+      console.error(`❌ Error al cargar configuración para formulario ${formNumber}:`, error.message);
+      console.error('📚 Stack de error:', error.stack);
+      throw new Error(`Configuración no encontrada para formulario ${formNumber}: ${error.message}`);
     }
   }
 
@@ -71,10 +193,25 @@ class ReportGenerationService {
    */
   async getSolicitudData(solicitudId, sheetDefinitions) {
     try {
-      return await sheetsService.getSolicitudData(solicitudId, sheetDefinitions);
+      console.log(`🔄 Obteniendo datos desde Sheets para solicitud ${solicitudId}...`);
+      if (!sheetsService || typeof sheetsService.getSolicitudData !== 'function') {
+        throw new Error('El servicio sheetsService no está configurado correctamente');
+      }
+      
+      const data = await sheetsService.getSolicitudData(solicitudId, sheetDefinitions);
+      
+      // Verificar si obtuvimos datos
+      if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
+        console.warn(`⚠️ No se encontraron datos para la solicitud ${solicitudId}`);
+        return {};
+      }
+      
+      console.log(`✅ Datos obtenidos correctamente: ${Object.keys(data).length} tablas`);
+      return data;
     } catch (error) {
-      console.error('Error al obtener datos de la solicitud:', error);
-      throw new Error('Error al obtener datos de la solicitud');
+      console.error(`❌ Error al obtener datos de la solicitud ${solicitudId}:`, error.message);
+      console.error('📚 Stack de error:', error.stack);
+      throw new Error(`Error al obtener datos de la solicitud: ${error.message}`);
     }
   }
 
@@ -87,20 +224,25 @@ class ReportGenerationService {
   async processAdditionalData(solicitudId, reportConfig) {
     // Si el reporte no requiere datos adicionales, retornar objeto vacío
     if (!reportConfig.requiresAdditionalData) {
+      console.log('ℹ️ Este reporte no requiere datos adicionales');
       return {};
     }
 
     try {
       // Procesar gastos si el reporte lo requiere
       if (reportConfig.requiresGastos) {
-        return await this.processGastosData(solicitudId);
+        console.log(`🔄 Procesando gastos para solicitud ${solicitudId}...`);
+        const datos = await this.processGastosData(solicitudId);
+        console.log(`✅ Gastos procesados: ${datos.gastos?.length || 0} registros`);
+        return datos;
       }
       
       // Otros tipos de datos adicionales pueden ser procesados aquí
-
+      console.log('ℹ️ No hay procesamiento adicional definido');
       return {};
     } catch (error) {
-      console.error('Error al procesar datos adicionales:', error);
+      console.error(`❌ Error al procesar datos adicionales:`, error.message);
+      console.error('📚 Stack de error:', error.stack);
       return {};
     }
   }
@@ -114,7 +256,17 @@ class ReportGenerationService {
     // Aquí mover la lógica actual de processGastosData de reportService.js
     // Simplificando para este ejemplo:
     try {
+      if (!sheetsService || typeof sheetsService.getClient !== 'function') {
+        throw new Error('sheetsService no está configurado correctamente');
+      }
+      
       const client = sheetsService.getClient();
+      console.log(`🔄 Obteniendo datos de gastos desde Sheets...`);
+      
+      // Verificar si tenemos acceso al ID de la hoja
+      if (!sheetsService.spreadsheetId) {
+        throw new Error('No se encontró el ID de la hoja de cálculo');
+      }
       
       // Obtener gastos y conceptos
       const gastosResponse = await client.spreadsheets.values.get({
@@ -131,15 +283,16 @@ class ReportGenerationService {
       const gastosRows = gastosResponse.data.values || [];
       const conceptosRows = conceptosResponse.data.values || [];
       
+      console.log(`ℹ️ Registros obtenidos: ${gastosRows.length} gastos, ${conceptosRows.length} conceptos`);
+      
       // Filtrar gastos de la solicitud actual
       const solicitudGastos = gastosRows.filter(row => row[1] === solicitudId);
-      
-      // Aquí implementar el resto de la lógica de procesamiento de gastos...
-      // (Adaptado de tu implementación actual)
+      console.log(`✅ Encontrados ${solicitudGastos.length} gastos para la solicitud ${solicitudId}`);
       
       return { gastos: solicitudGastos };
     } catch (error) {
-      console.error('Error al procesar gastos:', error);
+      console.error(`❌ Error al procesar gastos para solicitud ${solicitudId}:`, error.message);
+      console.error('📚 Stack de error:', error.stack);
       return {};
     }
   }

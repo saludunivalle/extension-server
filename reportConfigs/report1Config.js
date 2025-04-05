@@ -14,7 +14,7 @@ const report1Config = {
     SOLICITUDES: {
       range: 'SOLICITUDES!A2:AU',
       fields: [
-        'id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante', 'dependencia_tipo',
+        'id_solicitud', 'nombre_actividad','fecha_solicitud', 'nombre_solicitante', 'dependencia_tipo',
         'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
         'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 'otro_tipo',
         'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont',
@@ -49,14 +49,23 @@ const report1Config = {
     // Inicializar objeto de resultado
     let transformedData = {...formDataCorregido};
     
-    // Procesar fecha
-    if (formDataCorregido.fecha_solicitud) {
-      const { dia, mes, anio } = formatDateParts(formDataCorregido.fecha_solicitud);
-      transformedData.dia = dia;
-      transformedData.mes = mes;
-      transformedData.anio = anio;
-    } else {
-      // Valores por defecto
+    // Procesar fecha - PUNTO CRÍTICO DE ERROR
+    try {
+      if (formDataCorregido.fecha_solicitud) {
+        // Usamos formatDateParts con manejo de errores mejorado
+        const dateParts = formatDateParts(formDataCorregido.fecha_solicitud);
+        transformedData.dia = dateParts.dia;
+        transformedData.mes = dateParts.mes;
+        transformedData.anio = dateParts.anio;
+      } else {
+        // Valores por defecto
+        transformedData.dia = '';
+        transformedData.mes = '';
+        transformedData.anio = '';
+      }
+    } catch (error) {
+      console.error('Error al procesar fecha:', error);
+      // Valores por defecto en caso de error
       transformedData.dia = '';
       transformedData.mes = '';
       transformedData.anio = '';
@@ -139,41 +148,19 @@ const report1Config = {
 };
 
 /**
- * Función auxiliar para formatear partes de fecha
+ * Función auxiliar para formatear partes de fecha - CORREGIDA
  * @param {String} date - Fecha en cualquier formato
  * @returns {Object} - Partes de la fecha formateadas
  */
 function formatDateParts(date) {
   try {
+    // Valor por defecto en caso de fallo
+    const defaultValue = { dia: '', mes: '', anio: '' };
+    
+    if (!date) return defaultValue;
+
     const dateObj = new Date(date);
-    if (isNaN(dateObj.getTime())) {
-      // Si no es una fecha válida, intentar parsear formatos comunes
-      if (date.includes('/')) {
-        const parts = date.split('/');
-        return {
-          dia: parts[0].padStart(2, '0'),
-          mes: parts[1].padStart(2, '0'),
-          anio: parts[2]
-        };
-      } else if (date.includes('-')) {
-        const parts = date.split('-');
-        if (parts[0].length === 4) {
-          // Formato YYYY-MM-DD
-          return {
-            dia: parts[2].padStart(2, '0'),
-            mes: parts[1].padStart(2, '0'),
-            anio: parts[0]
-          };
-        } else {
-          // Formato DD-MM-YYYY
-          return {
-            dia: parts[0].padStart(2, '0'),
-            mes: parts[1].padStart(2, '0'),
-            anio: parts[2]
-          };
-        }
-      }
-    } else {
+    if (!isNaN(dateObj.getTime())) {
       // Es una fecha válida
       return {
         dia: dateObj.getDate().toString().padStart(2, '0'),
@@ -181,9 +168,47 @@ function formatDateParts(date) {
         anio: dateObj.getFullYear().toString()
       };
     }
+    
+    // Intentar parsear formatos comunes
+    if (typeof date === 'string') {
+      if (date.includes('/')) {
+        const parts = date.split('/');
+        if (parts.length >= 3) {
+          return {
+            dia: parts[0].padStart(2, '0'),
+            mes: parts[1].padStart(2, '0'),
+            anio: parts[2]
+          };
+        }
+      } else if (date.includes('-')) {
+        const parts = date.split('-');
+        if (parts.length >= 3) {
+          if (parts[0].length === 4) {
+            // Formato YYYY-MM-DD
+            return {
+              dia: parts[2].padStart(2, '0'),
+              mes: parts[1].padStart(2, '0'),
+              anio: parts[0]
+            };
+          } else {
+            // Formato DD-MM-YYYY
+            return {
+              dia: parts[0].padStart(2, '0'),
+              mes: parts[1].padStart(2, '0'),
+              anio: parts[2]
+            };
+          }
+        }
+      }
+    }
+    
+    // Si llegamos aquí, no pudimos extraer una fecha válida
+    console.warn(`No se pudo parsear la fecha: "${date}"`);
+    return defaultValue;
+    
   } catch (error) {
     console.error('Error al formatear fecha:', error);
-    // Valor por defecto
+    // Valor por defecto en caso de error
     return { dia: '', mes: '', anio: '' };
   }
 }
@@ -236,6 +261,8 @@ function procesarCertificado(formData) {
  * @returns {Object} - Datos corregidos
  */
 function corregirCamposMalMapados(formData) {
+  if (!formData) return {};
+  
   const dataCopia = {...formData};
   
   // Si periodicidad tiene un valor de organización, intercambiarlos
