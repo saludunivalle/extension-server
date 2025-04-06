@@ -3,6 +3,43 @@ const driveService = require('../services/driveService');
 const dateUtils = require('../utils/dateUtils');
 const progressService = require('../services/progressStateService'); // Añadir esta línea
 
+// Sistema de caché para ETAPAS
+const etapasCache = {
+  datos: null,
+  ultimaActualizacion: null,
+  ttl: 60000, // 1 minuto (en lugar de 5)
+
+  valido() {
+    return this.datos && (Date.now() - this.ultimaActualizacion < this.ttl);
+  },
+
+  async refresh() {
+    try {
+      console.log('🔄 Actualizando caché de ETAPAS...');
+      const client = sheetsService.getClient();
+      const response = await client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'ETAPAS!A:I'
+      });
+      this.datos = response.data.values || [];
+      this.ultimaActualizacion = Date.now();
+      console.log(`✅ Caché de ETAPAS actualizada con ${this.datos.length} filas`);
+      return true;
+    } catch (error) {
+      console.error('❌ Error al actualizar caché de ETAPAS:', error);
+      return false;
+    }
+  }
+};
+
+// Función para obtener datos de ETAPAS usando caché
+async function getEtapas(fuerzaRefresh = false) {
+  if (fuerzaRefresh || !etapasCache.valido()) {
+    await etapasCache.refresh();
+  }
+  return etapasCache.datos;
+}
+
 /**
  * Guarda el progreso de un formulario
 */
