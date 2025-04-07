@@ -163,25 +163,30 @@ class ReportGenerationService {
    */
   loadReportConfig(formNumber) {
     try {
-      console.log(`🔄 Intentando cargar configuración para formulario ${formNumber}...`);
-      // Cargar dinámicamente la configuración del reporte
-      const config = require(`../reportConfigs/report${formNumber}Config.js`);
-      console.log(`✅ Configuración para formulario ${formNumber} cargada correctamente`);
+      let reportConfig;
       
-      // Verificar la estructura básica de la configuración
-      if (!config || typeof config !== 'object') {
-        throw new Error(`La configuración del formulario ${formNumber} no es un objeto válido`);
+      switch (formNumber) {
+        case 1:
+          reportConfig = require('../reportConfigs/report1Config');
+          break;
+        case 2:
+          reportConfig = require('../reportConfigs/report2Config');
+          break;
+        case 3:
+          reportConfig = require('../reportConfigs/report3Config');
+          break;
+        case 4:
+          reportConfig = require('../reportConfigs/report4Config');
+          break;
+        default:
+          throw new Error(`Número de formulario inválido: ${formNumber}`);
       }
       
-      if (!config.transformData || typeof config.transformData !== 'function') {
-        console.warn(`⚠️ Advertencia: La configuración del formulario ${formNumber} no tiene un método transformData válido`);
-      }
-      
-      return config;
+      console.log(`Configuración cargada para formulario ${formNumber}: ${reportConfig.title || 'Sin título'}`);
+      return reportConfig;
     } catch (error) {
-      console.error(`❌ Error al cargar configuración para formulario ${formNumber}:`, error.message);
-      console.error('📚 Stack de error:', error.stack);
-      throw new Error(`Configuración no encontrada para formulario ${formNumber}: ${error.message}`);
+      console.error(`Error al cargar configuración para formulario ${formNumber}:`, error);
+      return null;
     }
   }
 
