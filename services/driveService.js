@@ -139,8 +139,11 @@ class DriveService {
       // Incorporar los campos individuales de gastos al objeto data
       Object.assign(data, gastoFields);
       
-      // Reemplazar marcadores
-      excelUtils.replaceMarkers(workbook, data);
+      // Log the data before replacing markers for debugging
+      console.log('Datos para reemplazar marcadores:', Object.keys(data));
+      
+      // Reemplazar marcadores con opción de depuración
+      excelUtils.replaceMarkers(workbook, data, true);
       console.log('Marcadores reemplazados correctamente');
   
       // Guardar a archivo temporal

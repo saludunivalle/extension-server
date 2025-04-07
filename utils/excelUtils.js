@@ -48,33 +48,65 @@ const loadTemplateWorkbook = async (templatePath) => {
   };
   
   /**
-   * Reemplaza marcadores en un libro de Excel con datos reales
-   * @param {ExcelJS.Workbook} workbook - Libro de Excel a procesar
-   * @param {Object} data - Objeto con datos para reemplazar marcadores
-   * @param {Object} options - Opciones de configuración
-   * @param {string} [options.markerFormat='{{%s}}'] - Formato de los marcadores (usa %s para la variable)
-   * @returns {ExcelJS.Workbook} - Libro de Excel con marcadores reemplazados
+   * Reemplaza marcadores en un libro de Excel
+   * @param {ExcelJS.Workbook} workbook - Libro de Excel
+   * @param {Object} data - Datos para reemplazar los marcadores
+   * @param {Boolean} debug - Si es verdadero, muestra información de depuración
    */
-  const replaceMarkers = (workbook, data, options = {}) => {
-    const { markerFormat = '{{%s}}' } = options;
+  const replaceMarkers = (workbook, data, debug = false) => {
+    if (!data) return;
     
-    workbook.eachSheet((sheet) => {
-      sheet.eachRow((row) => {
-        row.eachCell((cell) => {
-          if (typeof cell.value === 'string') {
-            Object.entries(data).forEach(([key, value]) => {
-              const marker = markerFormat.replace('%s', key);
-              if (cell.value.includes(marker)) {
-                const newValue = cell.value.replace(marker, value || '');
-                cell.value = newValue;
+    // Iteramos por cada hoja
+    workbook.eachSheet(sheet => {
+      // Marcadores encontrados para depuración
+      const markersFound = new Set();
+      const markersReplaced = new Set();
+      
+      // Iteramos por cada celda de la hoja
+      sheet.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          // Solo procesar celdas con texto
+          if (cell.value && typeof cell.value === 'string') {
+            const cellValue = cell.value;
+            
+            // Buscamos todos los marcadores de la forma {{nombre}}
+            const markerRegex = /\{\{([^}]+)\}\}/g;
+            let match;
+            let newValue = cellValue;
+            let replaced = false;
+            
+            while ((match = markerRegex.exec(cellValue)) !== null) {
+              const marker = match[1].trim();
+              markersFound.add(marker);
+              
+              // Verificamos si el marcador existe en los datos
+              if (data[marker] !== undefined) {
+                // Reemplazamos el marcador por el valor correspondiente
+                newValue = newValue.replace(`{{${marker}}}`, data[marker]);
+                markersReplaced.add(marker);
+                replaced = true;
+              } else if (debug) {
+                console.warn(`⚠️ Marcador no encontrado en los datos: ${marker}`);
               }
-            });
+            }
+            
+            // Solo actualizamos la celda si hubo reemplazos
+            if (replaced) {
+              cell.value = newValue;
+            }
           }
         });
       });
+      
+      // Mostrar información de depuración si está habilitado
+      if (debug) {
+        console.log(`🔍 Hoja: ${sheet.name}`);
+        console.log(`🔍 Marcadores encontrados (${markersFound.size}):`, Array.from(markersFound));
+        console.log(`✅ Marcadores reemplazados (${markersReplaced.size}):`, Array.from(markersReplaced));
+        console.log(`⚠️ Marcadores no reemplazados (${markersFound.size - markersReplaced.size}):`, 
+          Array.from(markersFound).filter(m => !markersReplaced.has(m)));
+      }
     });
-    
-    return workbook;
   };
   
   /**
