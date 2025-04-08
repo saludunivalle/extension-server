@@ -5,20 +5,21 @@ const dateUtils = require('../utils/dateUtils');
  */
 const report2Config = {
   title: 'Formulario de Presupuesto - F-05-MP-05-01-02',
-  templateId: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF',
-  requiresAdditionalData: true, 
-  requiresGastos: true,
+  templateId: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF', // Replace with actual template ID
+  requiresAdditionalData: false,
+  requiresGastos: true, // Budget form likely needs expense data
   
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES2: {
-      range: 'SOLICITUDES2!A2:CL',
+      range: 'SOLICITUDES2!A2:Z',
       fields: [
-        'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'ingresos_cantidad', 
-        'ingresos_vr_unit', 'total_ingresos', 'subtotal_gastos', 'imprevistos_3%',
-        'total_gastos_imprevistos', 'fondo_comun_porcentaje', 'facultadad_instituto_porcentaje',
-        'escuela_departamento_porcentaje', 'total_recursos', 'subtotal_costos_directos',
-        'costos_indirectos_cantidad', 'administracion_cantidad', 'descuentos_cantidad',
+        'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
+        'subtotal_gastos', 'imprevistos_3', 'imprevistos_3%', 'total_gastos_imprevistos',
+        'fondo_comun_porcentaje', 'facultadad_instituto_porcentaje',
+        'escuela_departamento_porcentaje', 'total_recursos',
+        'subtotal_costos_directos', 'costos_indirectos_cantidad', 
+        'administracion_cantidad', 'descuentos_cantidad',
         'total_costo_actividad', 'excedente_cantidad', 'valor_inscripcion_individual'
       ]
     },
@@ -76,37 +77,15 @@ const report2Config = {
       transformedData['mes'] = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
       transformedData['anio'] = fechaActual.getFullYear().toString();
 
-      // PROCESAMIENTO UNIFICADO DE FECHA (un solo bloque de código)
+      // PROCESAMIENTO DE FECHA
       if (combinedData.fecha_solicitud) {
         try {
-          // Intentar diferentes formatos de fecha
-          let fechaParts;
-          
-          if (combinedData.fecha_solicitud.includes('/')) {
-            // Formato DD/MM/YYYY
-            fechaParts = combinedData.fecha_solicitud.split('/');
-            transformedData['dia'] = fechaParts[0].padStart(2, '0');
-            transformedData['mes'] = fechaParts[1].padStart(2, '0');
-            transformedData['anio'] = fechaParts[2];
-          } else if (combinedData.fecha_solicitud.includes('-')) {
-            // Formato YYYY-MM-DD o DD-MM-YYYY
-            fechaParts = combinedData.fecha_solicitud.split('-');
-            
-            if (fechaParts[0].length === 4) {
-              // Formato YYYY-MM-DD
-              transformedData['dia'] = fechaParts[2].padStart(2, '0');
-              transformedData['mes'] = fechaParts[1].padStart(2, '0');
-              transformedData['anio'] = fechaParts[0];
-            } else {
-              // Formato DD-MM-YYYY
-              transformedData['dia'] = fechaParts[0].padStart(2, '0');
-              transformedData['mes'] = fechaParts[1].padStart(2, '0');
-              transformedData['anio'] = fechaParts[2];
-            }
-          }
-          
-          // Asegurarse que fecha_solicitud esté en formato estándar
-          transformedData['fecha_solicitud'] = `${transformedData['dia']}/${transformedData['mes']}/${transformedData['anio']}`;
+          // Formatear usando la utilidad de fechas
+          const dateParts = dateUtils.formatDateParts(combinedData.fecha_solicitud);
+          transformedData.dia = dateParts.dia;
+          transformedData.mes = dateParts.mes;
+          transformedData.anio = dateParts.anio;
+          transformedData.fecha_solicitud = `${dateParts.dia}/${dateParts.mes}/${dateParts.anio}`;
         } catch (error) {
           console.error('Error al procesar la fecha:', error);
         }
@@ -134,44 +113,37 @@ const report2Config = {
         }).format(numValue);
       };
       
-      // Formatear valores monetarios específicos (campos estáticos)
-      const monetaryFields = [
-        'ingresos_vr_unit', 'total_ingresos',
-        'subtotal_costos_directos', 'costos_indirectos_cantidad', 'administracion_cantidad',
-        'descuentos_cantidad', 'total_costo_actividad', 'excedente_cantidad',
-        'valor_inscripcion_individual', 'subtotal_gastos', 'total_gastos_imprevistos',
-        'total_recursos'
-      ];
-      
-      monetaryFields.forEach(field => {
+      // Formatear valores monetarios específicos
+      ['ingresos_vr_unit', 'total_ingresos', 'subtotal_gastos', 
+       'imprevistos_3', 'total_gastos_imprevistos', 'total_recursos',
+       'costos_indirectos_cantidad', 'administracion_cantidad', 
+       'descuentos_cantidad', 'total_costo_actividad', 'excedente_cantidad',
+       'valor_inscripcion_individual'].forEach(field => {
         if (transformedData[field]) {
-          transformedData[field] = formatCurrency(transformedData[field]);
+          transformedData[field + '_formatted'] = formatCurrency(transformedData[field]);
         }
       });
       
-      // PROCESAMIENTO DE GASTOS - CORREGIDO
-      if (Array.isArray(gastosData) && gastosData.length > 0) {
-        console.log(`Procesando ${gastosData.length} gastos`);
+      // PROCESAMIENTO DE GASTOS
+      // Filtrar gastos para esta solicitud
+      if (gastosData && gastosData.length > 0) {
+        const gastosFiltrados = gastosData.filter(g => g.id_solicitud === combinedData.id_solicitud);
+        console.log(`Procesando ${gastosFiltrados.length} gastos para solicitud ${combinedData.id_solicitud}`);
         
-        // Procesar cada gasto y asignarlo a su placeholder correspondiente
-        gastosData.forEach(gasto => {
-          // Extraer datos del gasto
-          const idConcepto = gasto.id_conceptos || '';
-          const cantidad = parseFloat(gasto.cantidad) || 0;
-          const valorUnit = parseFloat(gasto.valor_unit) || 0;
-          const valorTotal = parseFloat(gasto.valor_total) || 0;
+        gastosFiltrados.forEach(gasto => {
+          const idConcepto = gasto.id_conceptos;
+          const idConComa = idConcepto.replace(/\./g, ','); // Convertir '1.1' a '1,1'
+          const placeholderId = `gasto_${idConComa}`;
+          const cantidad = gasto.cantidad || 0;
+          const valorUnit = gasto.valor_unit || 0;
+          const valorTotal = gasto.valor_total || 0;
           
-          // Convertir el ID de concepto (si tiene punto, cambiarlo por coma)
-          // por ejemplo: 7.1 -> 7,1 para que coincida con el formato de la plantilla
-          const placeholderId = idConcepto.replace(/\./g, ',');
-          
-          // Asignar valores a los placeholders correspondientes
-          transformedData[`gasto_${placeholderId}_cantidad`] = cantidad.toString();
-          transformedData[`gasto_${placeholderId}_valor_unit`] = formatCurrency(valorUnit);
-          transformedData[`gasto_${placeholderId}_valor_total`] = formatCurrency(valorTotal);
-          transformedData[`gasto_${placeholderId}_descripcion`] = gasto.concepto_padre || `Concepto ${idConcepto}`;
-          
-          console.log(`✅ Asignado gasto con ID ${idConcepto} (${placeholderId}) a placeholders`);
+          // Asignar valores a sus respectivos placeholders
+          transformedData[`${placeholderId}_cantidad`] = cantidad.toString();
+          transformedData[`${placeholderId}_valor_unit`] = valorUnit.toString();
+          transformedData[`${placeholderId}_valor_unit_formatted`] = formatCurrency(valorUnit);
+          transformedData[`${placeholderId}_valor_total`] = valorTotal.toString();
+          transformedData[`${placeholderId}_valor_total_formatted`] = formatCurrency(valorTotal);
         });
       } else {
         console.log('⚠️ No se encontraron gastos para procesar');

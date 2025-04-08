@@ -1,11 +1,11 @@
 const reportService = require('../services/reportService');
 
 /**
- * Genera el reporte para el formulario 2
+ * Genera el reporte para el formulario 4
  * @param {Object} req - Objeto de solicitud Express
  * @param {Object} res - Objeto de respuesta Express
  */
-const generateReport2 = async (req, res) => {
+const generateReport4 = async (req, res) => {
   try {
     const { solicitudId } = req.body;
     
@@ -15,8 +15,8 @@ const generateReport2 = async (req, res) => {
       });
     }
     
-    // El tipo de formulario es 2 (fijo para este controlador)
-    const formNumber = 2;
+    // El tipo de formulario es 4 (fijo para este controlador)
+    const formNumber = 4;
     
     // Registrar tiempo de inicio para medición de rendimiento
     const startTime = Date.now();
@@ -26,18 +26,18 @@ const generateReport2 = async (req, res) => {
     
     // Calcular tiempo de generación
     const endTime = Date.now();
-    console.log(`✅ Reporte 2 generado en ${(endTime - startTime)/1000} segundos`);
+    console.log(`✅ Reporte 4 generado en ${(endTime - startTime)/1000} segundos`);
     
     res.status(200).json(result);
   } catch (error) {
-    console.error('Error al generar el reporte 2:', error);
+    console.error('Error al generar el reporte 4:', error);
     res.status(500).json({ 
-      error: 'Error al generar el reporte 2',
+      error: 'Error al generar el reporte 4',
       details: error.message 
     });
   }
 };
 
 module.exports = {
-  generateReport2
+  generateReport4
 };
