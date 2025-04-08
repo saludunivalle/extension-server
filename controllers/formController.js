@@ -1245,89 +1245,133 @@ const guardarForm2Paso1 = async (req, res) => {
  */
 const guardarForm2Paso2 = async (req, res) => {
   try {
-    const { 
-      id_solicitud, 
-      ingresos_cantidad, 
-      ingresos_vr_unit, 
-      total_ingresos,
-      subtotal_gastos, 
-      imprevistos_3, 
-      imprevistos_3_porcentaje, 
-      total_gastos_imprevistos
-    } = req.body;
-
+    const { id_solicitud, formData } = req.body;
+    
     if (!id_solicitud) {
-      return res.status(400).json({ error: 'El ID de solicitud es obligatorio' });
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere id_solicitud'
+      });
     }
 
-    console.log("📝 Datos recibidos para guardar en SOLICITUDES2 (Paso 2):", req.body);
-
-    // Buscar la fila de la solicitud en SOLICITUDES2
+    console.log('📝 DATOS RECIBIDOS:', formData);
+    
+    // 1. Buscar la fila de la solicitud
     const resultado = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
-    
-    if (!resultado || !resultado.rowIndex) {
-      return res.status(404).json({ error: 'No se pudo encontrar o crear la fila para la solicitud' });
+    if (!resultado) {
+      return res.status(404).json({ 
+        error: 'No se pudo encontrar o crear la fila para la solicitud' 
+      });
     }
-
-    // Mapear los campos al modelo correspondiente en Sheets
-    const modelo = sheetsService.models.SOLICITUDES2;
-    const updateValues = [];
-    const columnas = [];
     
-    // Datos financieros del paso 2
+    // 2. Preparar datos para guardar - CORREGIDO EL MAPEO
     const campos = [
-      'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
-      'subtotal_gastos', 'imprevistos_3', 'imprevistos_3_porcentaje', 
-      'total_gastos_imprevistos'
+      'nombre_actividad',
+      'fecha_solicitud',
+      'ingresos_cantidad',
+      'ingresos_vr_unit',
+      'total_ingresos',
+      'subtotal_gastos',
+      'imprevistos_3', // IMPORTANTE: Este valor se guardará en la columna 'imprevistos_3%'
+      'total_gastos_imprevistos',
+      'fondo_comun_porcentaje',
+      'facultadad_instituto_porcentaje',
+      'escuela_departamento_porcentaje',
+      'total_recursos'
     ];
-
-    // Mapear cada campo al modelo y añadir a la actualización
+    
+    // 3. Crear array de valores
+    const valores = [];
+    
+    // Mapear campos del formData a sus valores
     campos.forEach(campo => {
-      // Manejar el caso especial de imprevistos_3_porcentaje
-      const fieldName = campo === 'imprevistos_3_porcentaje' ? 'imprevistos_3%' : campo;
-      
-      if (modelo[fieldName] !== undefined) {
-        const colIndex = modelo[fieldName];
-        columnas.push(colIndex);
-        updateValues.push(req.body[campo] !== undefined ? req.body[campo].toString() : '');
+      // Para el caso especial de imprevistos_3
+      if (campo === 'imprevistos_3' && formData['imprevistos_3%'] !== undefined) {
+        valores.push(formData['imprevistos_3%'] || '');
+      }
+      // Para el resto de campos
+      else {
+        valores.push(formData[campo] || '');
       }
     });
 
-    // Si hay campos para actualizar
-    if (columnas.length > 0) {
-      // Calcular columna de inicio y fin para la actualización
-      const startColumn = Math.min(...columnas);
-      const endColumn = Math.max(...columnas);
-      
-      // Crear un array lleno de valores vacíos para todas las columnas en el rango
-      const rangeValues = Array(endColumn - startColumn + 1).fill('');
-      
-      // Colocar los valores en las posiciones correctas
-      columnas.forEach((col, index) => {
-        rangeValues[col - startColumn] = updateValues[index];
+    // 4. Actualizar en Google Sheets
+    await sheetsService.client.spreadsheets.values.update({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: `SOLICITUDES2!B${resultado.rowIndex}:M${resultado.rowIndex}`,
+      valueInputOption: 'USER_ENTERED',
+      resource: {
+        values: [valores]
+      }
+    });
+    
+    // 5. Actualizar el progreso global IMPORTANTE
+    try {
+      // Actualizar estado de formularios
+      const etapasResponse = await sheetsService.client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'ETAPAS!A:I'
       });
       
-      // Actualizar la hoja
-      await sheetsService.updateRequestProgress({
-        sheetName: 'SOLICITUDES2',
-        rowIndex: resultado.rowIndex,
-        startColumn,
-        endColumn,
-        values: rangeValues
-      });
-
-      console.log(`✅ Datos Paso 2 guardados en SOLICITUDES2 para solicitud ${id_solicitud}`);
+      const etapasRows = etapasResponse.data.values || [];
+      let filaEtapa = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
       
-      // Actualizar el progreso global
-      await progressService.updateRequestProgress(id_solicitud, 2, 2);
-      
-      return res.status(200).json({ success: true, message: 'Datos financieros guardados correctamente' });
-    } else {
-      return res.status(400).json({ error: 'No hay campos válidos para actualizar' });
+      if (filaEtapa !== -1) {
+        filaEtapa += 1;
+        
+        // Obtener estado actual
+        let estadoFormularios = {
+          "1": "En progreso", "2": "En progreso",
+          "3": "En progreso", "4": "En progreso"
+        };
+        
+        try {
+          if (etapasRows[filaEtapa-1][8]) {
+            estadoFormularios = JSON.parse(etapasRows[filaEtapa-1][8]);
+          }
+        } catch (e) {
+          console.error("Error al parsear estado_formularios:", e);
+        }
+        
+        // Actualizar formulario 2 como "En progreso"
+        estadoFormularios["2"] = "En progreso";
+        
+        // Guardar en ETAPAS
+        await sheetsService.client.spreadsheets.values.update({
+          spreadsheetId: sheetsService.spreadsheetId,
+          range: `ETAPAS!I${filaEtapa}`,
+          valueInputOption: 'RAW',
+          resource: {
+            values: [[JSON.stringify(estadoFormularios)]]
+          }
+        });
+        
+        // Actualizar en sesión
+        if (req.session) {
+          req.session.progressState = {
+            ...req.session.progressState,
+            estado_formularios: estadoFormularios
+          };
+        }
+      }
+    } catch (error) {
+      console.error("Error al actualizar estado de progreso:", error);
+      // Continuar aunque haya error en el progreso
     }
+    
+    console.log('✅ Datos del formulario 2 paso 2 guardados');
+    res.status(200).json({ 
+      success: true, 
+      message: 'Datos del formulario 2 paso 2 guardados correctamente'
+    });
+    
   } catch (error) {
-    console.error('Error al guardar datos del Formulario 2 Paso 2:', error);
-    return res.status(500).json({ error: 'Error al guardar datos financieros', details: error.message });
+    console.error('❌ Error en guardarForm2Paso2:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al guardar los datos del formulario 2',
+      details: error.message
+    });
   }
 };
 

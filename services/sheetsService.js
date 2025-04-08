@@ -94,6 +94,12 @@ class SheetsService {
 
   //Encuentra o crea una solicitud
   async findOrCreateRequestRow(sheetName, idSolicitud) {
+    // Añadir caché para evitar solicitudes duplicadas
+    const cacheKey = `${sheetName}_${idSolicitud}`;
+    if (this.rowCache && this.rowCache[cacheKey]) {
+      return this.rowCache[cacheKey];
+    }
+    
     try {
       const response = await this.client.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
@@ -116,7 +122,13 @@ class SheetsService {
         rowIndex += 1; // Ajustar para que sea 1-based
       }
 
-      return rowIndex;
+      const result = rowIndex;
+
+      // Guardar en caché
+      if (!this.rowCache) this.rowCache = {};
+      this.rowCache[cacheKey] = result;
+      
+      return result;
     } catch (error) {
       console.error(`Error al buscar/crear fila en ${sheetName}:`, error);
       throw new Error(`Error al buscar/crear fila en ${sheetName}`);
