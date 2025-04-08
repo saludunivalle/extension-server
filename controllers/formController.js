@@ -1162,161 +1162,264 @@ function getSheetName(hojaId) {
 }
 
 /**
+ * Guarda datos del Paso 1 del Formulario 2 en SOLICITUDES2
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const guardarForm2Paso1 = async (req, res) => {
+  try {
+    const { id_solicitud, nombre_actividad, fecha_solicitud } = req.body;
+
+    if (!id_solicitud) {
+      return res.status(400).json({ error: 'El ID de solicitud es obligatorio' });
+    }
+
+    console.log("📝 Datos recibidos para guardar en SOLICITUDES2 (Paso 1):", req.body);
+
+    // Buscar la fila de la solicitud en SOLICITUDES2
+    const resultado = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
+    
+    if (!resultado || !resultado.rowIndex) {
+      return res.status(404).json({ error: 'No se pudo encontrar o crear la fila para la solicitud' });
+    }
+
+    // Mapear los campos al modelo correspondiente en Sheets
+    const modelo = sheetsService.models.SOLICITUDES2;
+    const updateValues = [];
+    const columnas = [];
+    
+    // Datos básicos del paso 1
+    const campos = ['nombre_actividad', 'fecha_solicitud'];
+
+    // Mapear cada campo al modelo y añadir a la actualización
+    campos.forEach(campo => {
+      if (modelo[campo] !== undefined) {
+        const colIndex = modelo[campo];
+        columnas.push(colIndex);
+        updateValues.push(req.body[campo] !== undefined ? req.body[campo].toString() : '');
+      }
+    });
+
+    // Si hay campos para actualizar
+    if (columnas.length > 0) {
+      // Calcular columna de inicio y fin para la actualización
+      const startColumn = Math.min(...columnas);
+      const endColumn = Math.max(...columnas);
+      
+      // Crear un array lleno de valores vacíos para todas las columnas en el rango
+      const rangeValues = Array(endColumn - startColumn + 1).fill('');
+      
+      // Colocar los valores en las posiciones correctas
+      columnas.forEach((col, index) => {
+        rangeValues[col - startColumn] = updateValues[index];
+      });
+      
+      // Actualizar la hoja
+      await sheetsService.updateRequestProgress({
+        sheetName: 'SOLICITUDES2',
+        rowIndex: resultado.rowIndex,
+        startColumn,
+        endColumn,
+        values: rangeValues
+      });
+
+      console.log(`✅ Datos Paso 1 guardados en SOLICITUDES2 para solicitud ${id_solicitud}`);
+      
+      // Actualizar el progreso global
+      await progressService.updateRequestProgress(id_solicitud, 2, 1);
+      
+      return res.status(200).json({ success: true, message: 'Datos básicos guardados correctamente' });
+    } else {
+      return res.status(400).json({ error: 'No hay campos válidos para actualizar' });
+    }
+  } catch (error) {
+    console.error('Error al guardar datos del Formulario 2 Paso 1:', error);
+    return res.status(500).json({ error: 'Error al guardar datos básicos', details: error.message });
+  }
+};
+
+/**
  * Guarda datos específicos del Formulario 2 Paso 2 en SOLICITUDES2
  * @param {Object} req - Objeto de solicitud Express
  * @param {Object} res - Objeto de respuesta Express
  */
 const guardarForm2Paso2 = async (req, res) => {
   try {
-    // Extraer los datos relevantes
-    const { id_solicitud, formData } = req.body;
+    const { 
+      id_solicitud, 
+      ingresos_cantidad, 
+      ingresos_vr_unit, 
+      total_ingresos,
+      subtotal_gastos, 
+      imprevistos_3, 
+      imprevistos_3_porcentaje, 
+      total_gastos_imprevistos
+    } = req.body;
 
     if (!id_solicitud) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere id_solicitud'
-      });
+      return res.status(400).json({ error: 'El ID de solicitud es obligatorio' });
     }
 
-    // Obtener cliente sheets
-    const client = sheetsService.getClient();
+    console.log("📝 Datos recibidos para guardar en SOLICITUDES2 (Paso 2):", req.body);
+
+    // Buscar la fila de la solicitud en SOLICITUDES2
+    const resultado = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
     
-    console.log('👉 DATOS RECIBIDOS DEL FRONTEND:', formData);
-    console.log('🔍 Verificando campos críticos:');
-    console.log('- nombre_actividad:', formData.nombre_actividad || 'NO ENCONTRADO');
-    console.log('- fecha_solicitud:', formData.fecha_solicitud || 'NO ENCONTRADO');
-    
-    // SOLUCIÓN: Verificar si faltan campos críticos y obtenerlos de SOLICITUDES
-    if (!formData.nombre_actividad || !formData.fecha_solicitud) {
-      console.log("⚠️ ALERTA: Faltan campos críticos, intentando recuperarlos de SOLICITUDES");
-      
-      try {
-        const solicitudesResponse = await client.spreadsheets.values.get({
-          spreadsheetId: sheetsService.spreadsheetId,
-          range: 'SOLICITUDES!A2:D100'
-        });
-        
-        const solicitudesRows = solicitudesResponse.data.values || [];
-        const solicitudRow = solicitudesRows.find(row => row[0] === id_solicitud);
-        
-        if (solicitudRow) {
-          console.log("✅ Datos encontrados en SOLICITUDES:", solicitudRow);
-          
-          // Actualizar formData con los campos de SOLICITUDES
-          if (!formData.nombre_actividad && solicitudRow[2]) {
-            formData.nombre_actividad = solicitudRow[2];
-            console.log(`Campo nombre_actividad recuperado: ${formData.nombre_actividad}`);
-          }
-          
-          if (!formData.fecha_solicitud && solicitudRow[1]) {
-            formData.fecha_solicitud = solicitudRow[1];
-            console.log(`Campo fecha_solicitud recuperado: ${formData.fecha_solicitud}`);
-          }
-        } else {
-          console.log("❌ No se encontró la solicitud en SOLICITUDES, generando valores por defecto");
-          if (!formData.nombre_actividad) {
-            formData.nombre_actividad = `Actividad para solicitud ${id_solicitud}`;
-          }
-          if (!formData.fecha_solicitud) {
-            const hoy = new Date();
-            formData.fecha_solicitud = `${hoy.getDate()}/${hoy.getMonth()+1}/${hoy.getFullYear()}`;
-          }
-        }
-      } catch (error) {
-        console.error("❌ Error al buscar datos en SOLICITUDES:", error);
-        // Generar valores por defecto en caso de error
-        if (!formData.nombre_actividad) {
-          formData.nombre_actividad = `Actividad para solicitud ${id_solicitud}`;
-        }
-        if (!formData.fecha_solicitud) {
-          const hoy = new Date();
-          formData.fecha_solicitud = `${hoy.getDate()}/${hoy.getMonth()+1}/${hoy.getFullYear()}`;
-        }
-      }
+    if (!resultado || !resultado.rowIndex) {
+      return res.status(404).json({ error: 'No se pudo encontrar o crear la fila para la solicitud' });
     }
+
+    // Mapear los campos al modelo correspondiente en Sheets
+    const modelo = sheetsService.models.SOLICITUDES2;
+    const updateValues = [];
+    const columnas = [];
     
-    // Encontrar o crear fila para la solicitud
-    const fila = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
-    
-    // Campos específicos para el paso 2 del formulario 2 - NO MODIFICAR ESTE ORDEN
+    // Datos financieros del paso 2
     const campos = [
-      'nombre_actividad',  // Columna B
-      'fecha_solicitud',   // Columna C 
-      'ingresos_cantidad', // Columna D
-      'ingresos_vr_unit',  // Columna E
-      'total_ingresos',    // Columna F
-      'subtotal_gastos',   // Columna G
-      'imprevistos_3%',    // Columna H
-      'total_gastos_imprevistos',       // Columna I
-      'fondo_comun_porcentaje',         // Columna J
-      'facultadad_instituto_porcentaje', // Columna K
-      'escuela_departamento_porcentaje', // Columna L
-      'total_recursos'                  // Columna M
+      'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
+      'subtotal_gastos', 'imprevistos_3', 'imprevistos_3_porcentaje', 
+      'total_gastos_imprevistos'
     ];
-    
-    // Preparar valores a guardar (extrayéndolos de formData)
-    const valores = campos.map(campo => {
-      let valor = formData[campo] || '';
-      if (campo === 'nombre_actividad' && !valor) {
-        valor = `Actividad para solicitud ${id_solicitud}`;
+
+    // Mapear cada campo al modelo y añadir a la actualización
+    campos.forEach(campo => {
+      // Manejar el caso especial de imprevistos_3_porcentaje
+      const fieldName = campo === 'imprevistos_3_porcentaje' ? 'imprevistos_3%' : campo;
+      
+      if (modelo[fieldName] !== undefined) {
+        const colIndex = modelo[fieldName];
+        columnas.push(colIndex);
+        updateValues.push(req.body[campo] !== undefined ? req.body[campo].toString() : '');
       }
-      if (campo === 'fecha_solicitud' && !valor) {
-        const hoy = new Date();
-        valor = `${hoy.getDate()}/${hoy.getMonth()+1}/${hoy.getFullYear()}`;
-      }
-      console.log(`Campo: ${campo}, Valor: ${valor}`);
-      return valor;
     });
-    
-    console.log(`Guardando datos en SOLICITUDES2 para solicitud ${id_solicitud}, fila ${fila}`);
-    console.log('Valores a guardar:', valores);
-    
-    // VERIFICACIÓN: Confirmar que los campos nombre_actividad y fecha_solicitud están presentes
-    if (!valores[0]) {
-      console.error("❌ CRÍTICO: nombre_actividad aún falta después de intentar recuperarlo");
+
+    // Si hay campos para actualizar
+    if (columnas.length > 0) {
+      // Calcular columna de inicio y fin para la actualización
+      const startColumn = Math.min(...columnas);
+      const endColumn = Math.max(...columnas);
+      
+      // Crear un array lleno de valores vacíos para todas las columnas en el rango
+      const rangeValues = Array(endColumn - startColumn + 1).fill('');
+      
+      // Colocar los valores en las posiciones correctas
+      columnas.forEach((col, index) => {
+        rangeValues[col - startColumn] = updateValues[index];
+      });
+      
+      // Actualizar la hoja
+      await sheetsService.updateRequestProgress({
+        sheetName: 'SOLICITUDES2',
+        rowIndex: resultado.rowIndex,
+        startColumn,
+        endColumn,
+        values: rangeValues
+      });
+
+      console.log(`✅ Datos Paso 2 guardados en SOLICITUDES2 para solicitud ${id_solicitud}`);
+      
+      // Actualizar el progreso global
+      await progressService.updateRequestProgress(id_solicitud, 2, 2);
+      
+      return res.status(200).json({ success: true, message: 'Datos financieros guardados correctamente' });
+    } else {
+      return res.status(400).json({ error: 'No hay campos válidos para actualizar' });
     }
-    if (!valores[1]) {
-      console.error("❌ CRÍTICO: fecha_solicitud aún falta después de intentar recuperarlo");
-    }
-    
-    // Actualizar datos en Google Sheets - REVISAR QUE EL RANGO SEA CORRECTO
-    await client.spreadsheets.values.update({
-      spreadsheetId: sheetsService.spreadsheetId,
-      range: `SOLICITUDES2!B${fila}:M${fila}`,
-      valueInputOption: 'USER_ENTERED', // USER_ENTERED para mejor formato
-      resource: {
-        values: [valores]
-      }
-    });
-    
-    // VERIFICACIÓN ADICIONAL: Leer de vuelta los datos guardados para confirmar
-    const verificacionResponse = await client.spreadsheets.values.get({
-      spreadsheetId: sheetsService.spreadsheetId,
-      range: `SOLICITUDES2!B${fila}:C${fila}`
-    });
-    const datosSalvados = verificacionResponse.data.values?.[0] || [];
-    console.log("✅ VERIFICACIÓN DE DATOS GUARDADOS:");
-    console.log(`- nombre_actividad guardado: ${datosSalvados[0] || 'NO GUARDADO'}`);
-    console.log(`- fecha_solicitud guardado: ${datosSalvados[1] || 'NO GUARDADO'}`);
-    
-    console.log('✅ Operación completa: Datos del formulario 2 paso 2 guardados');
-    
-    res.status(200).json({ 
-      success: true, 
-      message: 'Datos del formulario 2 paso 2 guardados correctamente',
-      datosSalvados: {
-        nombre_actividad: datosSalvados[0] || '',
-        fecha_solicitud: datosSalvados[1] || '',
-      }
-    });
-    
   } catch (error) {
-    console.error('❌ Error en guardarForm2Paso2:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Error al guardar los datos del formulario 2',
-      details: error.message
+    console.error('Error al guardar datos del Formulario 2 Paso 2:', error);
+    return res.status(500).json({ error: 'Error al guardar datos financieros', details: error.message });
+  }
+};
+
+/**
+ * Guarda datos del Paso 3 del Formulario 2 en SOLICITUDES2
+ * @param {Object} req - Objeto de solicitud Express
+ * @param {Object} res - Objeto de respuesta Express
+ */
+const guardarForm2Paso3 = async (req, res) => {
+  try {
+    const { 
+      id_solicitud, 
+      fondo_comun_porcentaje, 
+      facultadad_instituto_porcentaje, 
+      escuela_departamento_porcentaje, 
+      total_recursos,
+      observaciones,
+      responsable_financiero
+    } = req.body;
+
+    if (!id_solicitud) {
+      return res.status(400).json({ error: 'El ID de solicitud es obligatorio' });
+    }
+
+    console.log("📝 Datos recibidos para guardar en SOLICITUDES2 (Paso 3):", req.body);
+
+    // Buscar la fila de la solicitud en SOLICITUDES2
+    const resultado = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
+    
+    if (!resultado || !resultado.rowIndex) {
+      return res.status(404).json({ error: 'No se pudo encontrar o crear la fila para la solicitud' });
+    }
+
+    // Mapear los campos al modelo correspondiente en Sheets
+    const modelo = sheetsService.models.SOLICITUDES2;
+    const updateValues = [];
+    const columnas = [];
+    
+    // Datos del paso 3
+    const campos = [
+      'fondo_comun_porcentaje', 
+      'facultadad_instituto_porcentaje', 
+      'escuela_departamento_porcentaje', 
+      'total_recursos',
+      'observaciones',
+      'responsable_financiero'
+    ];
+
+    // Mapear cada campo al modelo y añadir a la actualización
+    campos.forEach(campo => {
+      if (modelo[campo] !== undefined) {
+        const colIndex = modelo[campo];
+        columnas.push(colIndex);
+        updateValues.push(req.body[campo] !== undefined ? req.body[campo].toString() : '');
+      }
     });
+
+    // Si hay campos para actualizar
+    if (columnas.length > 0) {
+      // Calcular columna de inicio y fin para la actualización
+      const startColumn = Math.min(...columnas);
+      const endColumn = Math.max(...columnas);
+      
+      // Crear un array lleno de valores vacíos para todas las columnas en el rango
+      const rangeValues = Array(endColumn - startColumn + 1).fill('');
+      
+      // Colocar los valores en las posiciones correctas
+      columnas.forEach((col, index) => {
+        rangeValues[col - startColumn] = updateValues[index];
+      });
+      
+      // Actualizar la hoja
+      await sheetsService.updateRequestProgress({
+        sheetName: 'SOLICITUDES2',
+        rowIndex: resultado.rowIndex,
+        startColumn,
+        endColumn,
+        values: rangeValues
+      });
+
+      console.log(`✅ Datos Paso 3 guardados en SOLICITUDES2 para solicitud ${id_solicitud}`);
+      
+      // Actualizar el progreso global
+      await progressService.updateRequestProgress(id_solicitud, 2, 3);
+      
+      return res.status(200).json({ success: true, message: 'Datos del resumen financiero guardados correctamente' });
+    } else {
+      return res.status(400).json({ error: 'No hay campos válidos para actualizar' });
+    }
+  } catch (error) {
+    console.error('Error al guardar datos del Formulario 2 Paso 3:', error);
+    return res.status(500).json({ error: 'Error al guardar datos del resumen financiero', details: error.message });
   }
 };
 
@@ -1333,5 +1436,7 @@ module.exports = {
   validarProgresion,  
   actualizarProgresoGlobal,
   getLastId,
-  guardarForm2Paso2
+  guardarForm2Paso1,
+  guardarForm2Paso2,
+  guardarForm2Paso3
 };
