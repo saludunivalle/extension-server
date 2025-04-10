@@ -82,17 +82,17 @@ class SpreadsheetModel {
       'ingresos_vr_unit', 
       'total_ingresos', 
       'subtotal_gastos', 
-      'imprevistos_3%', 
+      'imprevistos_3', 
       'total_gastos_imprevistos', 
       'fondo_comun_porcentaje', 
-      'facultadad_instituto_porcentaje', 
+      'facultad_instituto_porcentaje', 
       'escuela_departamento_porcentaje', 
       'total_recursos'
     ],
     {
       1: ['B', 'C'],
-      2: ['D', 'E', 'F', 'G'],
-      3: ['H', 'I', 'J', 'K', 'L', 'M', 'N']
+      2: ['D', 'E', 'F', 'G', 'H', 'I',],
+      3: ['J', 'K', 'L', 'M']
     }
   );
   

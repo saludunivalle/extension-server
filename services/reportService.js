@@ -258,15 +258,13 @@ class ReportGenerationService {
    * @returns {Promise<Object>} Datos de gastos procesados
    */
   async processGastosData(solicitudId) {
-    // Aquí mover la lógica actual de processGastosData de reportService.js
-    // Simplificando para este ejemplo:
     try {
       if (!sheetsService || typeof sheetsService.getClient !== 'function') {
         throw new Error('sheetsService no está configurado correctamente');
       }
       
       const client = sheetsService.getClient();
-      console.log(`🔄 Obteniendo datos de gastos desde Sheets...`);
+      console.log(`🔄 Obteniendo datos de gastos desde Sheets para solicitud ${solicitudId}...`);
       
       // Verificar si tenemos acceso al ID de la hoja
       if (!sheetsService.spreadsheetId) {
@@ -294,7 +292,72 @@ class ReportGenerationService {
       const solicitudGastos = gastosRows.filter(row => row[1] === solicitudId);
       console.log(`✅ Encontrados ${solicitudGastos.length} gastos para la solicitud ${solicitudId}`);
       
-      return { gastos: solicitudGastos };
+      // Crear un mapa de conceptos para obtener nombres
+      const conceptosMap = new Map();
+      conceptosRows.forEach(row => {
+        conceptosMap.set(row[0], {
+          nombre: row[1] || row[0],
+          es_padre: row[2] === 'true' || row[2] === 'TRUE'
+        });
+      });
+      
+      // Procesar gastos normales y dinámicos separadamente
+      const gastosNormales = [];
+      const gastosDinamicos = [];
+      
+      solicitudGastos.forEach(row => {
+        const idConcepto = row[0];
+        const cantidad = parseFloat(row[2]) || 0;
+        const valorUnit = parseFloat(row[3]) || 0;
+        const valorTotal = parseFloat(row[4]) || 0;
+        
+        // Formatear valores monetarios
+        const valorUnit_formatted = new Intl.NumberFormat('es-CO', {
+          style: 'currency',
+          currency: 'COP',
+          minimumFractionDigits: 0
+        }).format(valorUnit);
+        
+        const valorTotal_formatted = new Intl.NumberFormat('es-CO', {
+          style: 'currency',
+          currency: 'COP',
+          minimumFractionDigits: 0
+        }).format(valorTotal);
+        
+        // Obtener nombre del concepto
+        const concepto = conceptosMap.get(idConcepto)?.nombre || idConcepto;
+        
+        // Crear objeto de gasto
+        const gastoObj = {
+          id: idConcepto,
+          concepto,
+          cantidad,
+          valorUnit,
+          valorTotal,
+          valorUnit_formatted,
+          valorTotal_formatted,
+          descripcion: concepto
+        };
+        
+        // Determinar si es un gasto dinámico (empieza con 15.)
+        if (idConcepto.startsWith('15.')) {
+          gastosDinamicos.push(gastoObj);
+        } else {
+          gastosNormales.push(gastoObj);
+        }
+      });
+      
+      console.log(`📊 Gastos procesados: ${gastosNormales.length} normales, ${gastosDinamicos.length} dinámicos`);
+      
+      return { 
+        gastos: solicitudGastos,
+        gastosNormales,
+        gastosDinamicos,
+        gastosFormateados: {
+          normales: gastosNormales,
+          dinamicos: gastosDinamicos
+        }
+      };
     } catch (error) {
       console.error(`❌ Error al procesar gastos para solicitud ${solicitudId}:`, error.message);
       console.error('📚 Stack de error:', error.stack);

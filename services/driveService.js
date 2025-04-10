@@ -170,6 +170,16 @@ class DriveService {
       if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
         await this.insertDynamicRowsInSheet(fileId, dynamicRowsData);
       }
+
+      // Extract dynamic expenses data
+      const gastosDinamicos = data['__GASTOS_DINAMICOS__'];
+      
+      // After the file is created and made public
+      if (gastosDinamicos && gastosDinamicos.gastos && gastosDinamicos.gastos.length > 0) {
+        console.log(`Insertando ${gastosDinamicos.gastos.length} gastos dinámicos en el reporte`);
+        // Use the existing method to insert dynamic rows
+        await this.insertDynamicRowsInSheet(fileId, gastosDinamicos);
+      }
   
       // Limpiar archivos temporales
       excelUtils.cleanupTempFiles([tempFilePath]);

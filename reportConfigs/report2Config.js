@@ -5,9 +5,9 @@ const dateUtils = require('../utils/dateUtils');
  */
 const report2Config = {
   title: 'Formulario de Presupuesto - F-05-MP-05-01-02',
-  templateId: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF', // Replace with actual template ID
-  requiresAdditionalData: false,
-  requiresGastos: true, // Budget form likely needs expense data
+  templateId: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF',
+  requiresAdditionalData: true,
+  requiresGastos: true, // Budget form needs expense data
   
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
@@ -40,30 +40,130 @@ const report2Config = {
       // Extraer datos de las fuentes
       const solicitudData = allData.SOLICITUDES || {}; 
       const formData = allData.SOLICITUDES2 || {};
-      const gastosData = allData.GASTOS || [];
       
-      console.log("Datos de SOLICITUDES:", solicitudData);
-      console.log("Datos de SOLICITUDES2:", formData);
-      console.log("Datos de GASTOS:", gastosData);
+      // Fix: Ensure we extract gastos data from all possible sources
+      const gastosData = Array.isArray(allData.GASTOS) ? allData.GASTOS : [];
+      const gastosFromAdditional = allData.gastosNormales || [];
+      const gastosDinamicos = allData.gastosDinamicos || [];
       
-      // Crear un objeto combinado con todas las fuentes
-      const combinedData = {
-        ...solicitudData,
-        ...formData
+      // FIELD TYPE VALIDATION FUNCTIONS
+      const isDateLike = (value) => {
+        if (typeof value !== 'string') return false;
+        // Check for common date patterns: yyyy-mm-dd, dd/mm/yyyy, etc.
+        return /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value);
       };
       
-      // Crear un objeto nuevo para los datos transformados
+      const isNumeric = (value) => {
+        if (value === undefined || value === null) return false;
+        return !isNaN(parseFloat(value)) && isFinite(value.toString().replace(/,/g, ''));
+      };
+      
+      // Log diagnostic data for debugging
+      console.log("🔍 DIAGNÓSTICO DE DATOS:");
+      console.log("- SOLICITUDES.nombre_actividad:", solicitudData.nombre_actividad);
+      console.log("- SOLICITUDES.fecha_solicitud:", solicitudData.fecha_solicitud);
+      console.log("- SOLICITUDES2.nombre_actividad:", formData.nombre_actividad);
+      console.log("- SOLICITUDES2.fecha_solicitud:", formData.fecha_solicitud);
+      console.log("- SOLICITUDES2.ingresos_cantidad:", formData.ingresos_cantidad);
+      console.log("- SOLICITUDES2.ingresos_vr_unit:", formData.ingresos_vr_unit);
+      console.log("- SOLICITUDES2.total_ingresos:", formData.total_ingresos);
+      
+      // Create a copy to avoid modifying the original data
+      const formDataCorregido = { ...formData };
+      
+      // CASE 1: Date in quantity field - FIX THE MAIN ISSUE
+      if (isDateLike(formDataCorregido.ingresos_cantidad) && !isDateLike(formDataCorregido.fecha_solicitud)) {
+        console.log("⚠️ CORRECCIÓN: Fecha detectada en campo ingresos_cantidad");
+        
+        // Move date to correct field
+        formDataCorregido.fecha_solicitud = formDataCorregido.ingresos_cantidad;
+        
+        // Check for quantity value in other fields
+        if (isNumeric(formDataCorregido.ingresos_vr_unit)) {
+          formDataCorregido.ingresos_cantidad = formDataCorregido.ingresos_vr_unit;
+          
+          // Try to find unit price in another field
+          if (isNumeric(formDataCorregido.total_ingresos)) {
+            const cantidad = parseFloat(formDataCorregido.ingresos_cantidad);
+            const total = parseFloat(formDataCorregido.total_ingresos);
+            // Calculate unit price if possible
+            formDataCorregido.ingresos_vr_unit = cantidad > 0 ? (total / cantidad).toString() : '0';
+          } else {
+            formDataCorregido.ingresos_vr_unit = '0';
+          }
+        } else {
+          // Default safe values
+          formDataCorregido.ingresos_cantidad = '0';
+        }
+        
+        console.log("✅ VALORES CORREGIDOS:");
+        console.log(`- fecha_solicitud: "${formDataCorregido.fecha_solicitud}"`);
+        console.log(`- ingresos_cantidad: "${formDataCorregido.ingresos_cantidad}"`);
+        console.log(`- ingresos_vr_unit: "${formDataCorregido.ingresos_vr_unit}"`);
+      }
+      
+      // CASE 2: Use data from SOLICITUDES if missing in SOLICITUDES2
+      if (!formDataCorregido.fecha_solicitud && solicitudData.fecha_solicitud) {
+        console.log("ℹ️ Usando fecha_solicitud de tabla SOLICITUDES");
+        formDataCorregido.fecha_solicitud = solicitudData.fecha_solicitud;
+      }
+      
+      if (!formDataCorregido.nombre_actividad && solicitudData.nombre_actividad) {
+        console.log("ℹ️ Usando nombre_actividad de tabla SOLICITUDES");
+        formDataCorregido.nombre_actividad = solicitudData.nombre_actividad;
+      }
+      
+      if (!formDataCorregido.nombre_solicitante && solicitudData.nombre_solicitante) {
+        console.log("ℹ️ Usando nombre_solicitante de tabla SOLICITUDES");
+        formDataCorregido.nombre_solicitante = solicitudData.nombre_solicitante;
+      }
+      
+      // CASE 3: Ensure numeric fields contain valid numbers
+      const numericFields = [
+        'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
+        'subtotal_gastos', 'imprevistos_3', 'total_gastos_imprevistos',
+        'fondo_comun_porcentaje', 'facultadad_instituto_porcentaje', 
+        'escuela_departamento_porcentaje'
+      ];
+      
+      numericFields.forEach(field => {
+        // Check if field exists and is not a valid number
+        if (formDataCorregido[field] !== undefined && !isNumeric(formDataCorregido[field])) {
+          console.log(`⚠️ CORRECCIÓN: Campo ${field} no es numérico "${formDataCorregido[field]}", estableciendo a 0`);
+          formDataCorregido[field] = '0';
+        } else if (formDataCorregido[field] === undefined) {
+          formDataCorregido[field] = '0';
+        }
+      });
+      
+      // CASE 4: Calculate missing values where possible
+      if (isNumeric(formDataCorregido.ingresos_cantidad) && isNumeric(formDataCorregido.ingresos_vr_unit)) {
+        const cantidad = parseFloat(formDataCorregido.ingresos_cantidad);
+        const valorUnit = parseFloat(formDataCorregido.ingresos_vr_unit);
+        const totalCalculado = cantidad * valorUnit;
+        
+        if (!isNumeric(formDataCorregido.total_ingresos) || parseFloat(formDataCorregido.total_ingresos) === 0) {
+          console.log(`ℹ️ Calculando total_ingresos: ${cantidad} × ${valorUnit} = ${totalCalculado}`);
+          formDataCorregido.total_ingresos = totalCalculado.toString();
+        }
+      }
+      
+      // Combine all data with corrected values
+      const datosCorregidos = {
+        ...solicitudData,
+        ...formDataCorregido
+      };
+      
+      // Now continue with the rest of the transformation
       const transformedData = {};
       
-      // PRE-INICIALIZAR PLACEHOLDERS DE GASTOS
-      // Lista completa de IDs de gastos (formato con coma para la plantilla)
+      // Pre-initialize placeholders for expenses
       const conceptosGastos = [
         '1', '1,1', '1,2', '1,3', '2', '3', '4', '5', '6', '7', '7,1', '7,2', 
         '7,3', '7,4', '7,5', '8', '8,1', '8,2', '8,3', '8,4', '9', '9,1', '9,2', 
         '9,3', '10', '11', '12', '13', '14', '15'
       ];
       
-      // Inicializar todos los placeholders de gastos con valores por defecto
       conceptosGastos.forEach(concepto => {
         transformedData[`gasto_${concepto}_cantidad`] = '0';
         transformedData[`gasto_${concepto}_valor_unit`] = '$0';
@@ -71,34 +171,68 @@ const report2Config = {
         transformedData[`gasto_${concepto}_descripcion`] = '';
       });
       
-      // Añadir fecha actual formateada para el reporte (como valor por defecto)
-      const fechaActual = new Date();
-      transformedData['dia'] = fechaActual.getDate().toString().padStart(2, '0');
-      transformedData['mes'] = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
-      transformedData['anio'] = fechaActual.getFullYear().toString();
-
-      // PROCESAMIENTO DE FECHA
-      if (combinedData.fecha_solicitud) {
-        try {
-          // Formatear usando la utilidad de fechas
-          const dateParts = dateUtils.formatDateParts(combinedData.fecha_solicitud);
-          transformedData.dia = dateParts.dia;
-          transformedData.mes = dateParts.mes;
-          transformedData.anio = dateParts.anio;
-          transformedData.fecha_solicitud = `${dateParts.dia}/${dateParts.mes}/${dateParts.anio}`;
-        } catch (error) {
-          console.error('Error al procesar la fecha:', error);
+      // Copy all corrected data to the result
+      Object.keys(datosCorregidos).forEach(key => {
+        if (datosCorregidos[key] !== undefined && datosCorregidos[key] !== null) {
+          transformedData[key] = datosCorregidos[key];
         }
-      }
-
-      // Copiar datos base del formulario
-      Object.keys(combinedData).forEach(key => {
-        if (combinedData[key] !== undefined && combinedData[key] !== null) {
-          transformedData[key] = combinedData[key];
-        }
-      }); 
+      });
       
-      // Formatear valores monetarios
+      // Process date formatting
+      const fechaActual = new Date();
+      try {
+        const fechaStr = transformedData.fecha_solicitud;
+        if (fechaStr) {
+          let fechaProcesada;
+          
+          // Try to parse the date string based on format
+          if (fechaStr.includes('/')) {
+            // Format: dd/mm/yyyy
+            const [dia, mes, anio] = fechaStr.split('/');
+            fechaProcesada = new Date(parseInt(anio), parseInt(mes) - 1, parseInt(dia));
+          } else if (fechaStr.includes('-')) {
+            // Format: yyyy-mm-dd or dd-mm-yyyy
+            const parts = fechaStr.split('-');
+            if (parts[0].length === 4) {
+              // yyyy-mm-dd
+              fechaProcesada = new Date(fechaStr);
+            } else {
+              // dd-mm-yyyy
+              const [dia, mes, anio] = parts;
+              fechaProcesada = new Date(parseInt(anio), parseInt(mes) - 1, parseInt(dia));
+            }
+          } else {
+            // Try standard Date parsing
+            fechaProcesada = new Date(fechaStr);
+          }
+          
+          if (!isNaN(fechaProcesada.getTime())) {
+            // Valid date, extract parts
+            transformedData.dia = fechaProcesada.getDate().toString().padStart(2, '0');
+            transformedData.mes = (fechaProcesada.getMonth() + 1).toString().padStart(2, '0');
+            transformedData.anio = fechaProcesada.getFullYear().toString();
+          } else {
+            // Invalid date, use current date
+            console.log(`⚠️ Fecha inválida: "${fechaStr}", usando fecha actual`);
+            transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
+            transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
+            transformedData.anio = fechaActual.getFullYear().toString();
+          }
+        } else {
+          // No date available, use current date
+          console.log('ℹ️ No hay fecha_solicitud, usando fecha actual');
+          transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
+          transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
+          transformedData.anio = fechaActual.getFullYear().toString();
+        }
+      } catch (error) {
+        console.error('Error al procesar la fecha:', error);
+        transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
+        transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
+        transformedData.anio = fechaActual.getFullYear().toString();
+      }
+      
+      // Format currency values
       const formatCurrency = (value) => {
         if (!value && value !== 0) return '';
         
@@ -113,30 +247,55 @@ const report2Config = {
         }).format(numValue);
       };
       
-      // Formatear valores monetarios específicos
-      ['ingresos_vr_unit', 'total_ingresos', 'subtotal_gastos', 
-       'imprevistos_3', 'total_gastos_imprevistos', 'total_recursos',
-       'costos_indirectos_cantidad', 'administracion_cantidad', 
-       'descuentos_cantidad', 'total_costo_actividad', 'excedente_cantidad',
-       'valor_inscripcion_individual'].forEach(field => {
+      // Format specific monetary fields
+      const monetaryFields = [
+        'ingresos_vr_unit', 'total_ingresos', 'subtotal_gastos', 
+        'imprevistos_3', 'total_gastos_imprevistos', 'total_recursos',
+        'costos_indirectos_cantidad', 'administracion_cantidad', 
+        'descuentos_cantidad', 'total_costo_actividad', 'excedente_cantidad',
+        'valor_inscripcion_individual'
+      ];
+      
+      monetaryFields.forEach(field => {
         if (transformedData[field]) {
           transformedData[field + '_formatted'] = formatCurrency(transformedData[field]);
         }
       });
       
       // PROCESAMIENTO DE GASTOS
-      // Filtrar gastos para esta solicitud
-      if (gastosData && gastosData.length > 0) {
-        const gastosFiltrados = gastosData.filter(g => g.id_solicitud === combinedData.id_solicitud);
-        console.log(`Procesando ${gastosFiltrados.length} gastos para solicitud ${combinedData.id_solicitud}`);
+      // First check gastosFromAdditional which comes from processGastosData
+      if (gastosFromAdditional && gastosFromAdditional.length > 0) {
+        console.log(`Procesando ${gastosFromAdditional.length} gastos normales de datos adicionales`);
+        
+        gastosFromAdditional.forEach(gasto => {
+          // La plantilla usa formato con coma (1,1)
+          const idConComa = gasto.id.replace(/\./g, ',');
+          const placeholderId = `gasto_${idConComa}`;
+          
+          // Asignar valores a sus respectivos placeholders
+          transformedData[`${placeholderId}_cantidad`] = gasto.cantidad.toString();
+          transformedData[`${placeholderId}_valor_unit`] = gasto.valorUnit.toString();
+          transformedData[`${placeholderId}_valor_unit_formatted`] = gasto.valorUnit_formatted;
+          transformedData[`${placeholderId}_valor_total`] = gasto.valorTotal.toString();
+          transformedData[`${placeholderId}_valor_total_formatted`] = gasto.valorTotal_formatted;
+          transformedData[`${placeholderId}_descripcion`] = gasto.descripcion || gasto.concepto;
+        });
+      }
+      // Then check raw gastosData from GASTOS sheet
+      else if (gastosData && gastosData.length > 0) {
+        console.log(`Procesando ${gastosData.length} gastos desde hoja GASTOS`);
+        
+        // Filter gastos that match the solicitudId
+        const gastosFiltrados = gastosData.filter(g => g.id_solicitud === datosCorregidos.id_solicitud);
+        console.log(`Procesando ${gastosFiltrados.length} gastos para solicitud ${datosCorregidos.id_solicitud}`);
         
         gastosFiltrados.forEach(gasto => {
           const idConcepto = gasto.id_conceptos;
-          const idConComa = idConcepto.replace(/\./g, ','); // Convertir '1.1' a '1,1'
+          const idConComa = idConcepto.replace(/\./g, ','); // Convert '1.1' to '1,1'
           const placeholderId = `gasto_${idConComa}`;
-          const cantidad = gasto.cantidad || 0;
-          const valorUnit = gasto.valor_unit || 0;
-          const valorTotal = gasto.valor_total || 0;
+          const cantidad = parseFloat(gasto.cantidad) || 0;
+          const valorUnit = parseFloat(gasto.valor_unit) || 0;
+          const valorTotal = parseFloat(gasto.valor_total) || cantidad * valorUnit;
           
           // Asignar valores a sus respectivos placeholders
           transformedData[`${placeholderId}_cantidad`] = cantidad.toString();
@@ -148,6 +307,50 @@ const report2Config = {
       } else {
         console.log('⚠️ No se encontraron gastos para procesar');
       }
+      
+      // Process dynamic expenses if available
+      if (gastosDinamicos && gastosDinamicos.length > 0) {
+        console.log(`Procesando ${gastosDinamicos.length} gastos dinámicos para el reporte`);
+        
+        // Add special field for dynamic expenses
+        transformedData['__GASTOS_DINAMICOS__'] = {
+          insertarEn: 'E45', // Adjust this to the correct insertion point in your template
+          gastos: gastosDinamicos
+        };
+      }
+      
+      // IMPORTANTE: Asegurarse que los valores de subtotal_gastos e imprevistos son correctos
+      // En caso de que estos valores vengan desplazados, calcularlos basados en gastos
+      // Calcular subtotal_gastos si no existe o es inválido
+      if (!transformedData.subtotal_gastos || isNaN(parseFloat(transformedData.subtotal_gastos))) {
+        let subtotalCalculado = 0;
+        
+        // Sumar todos los gastos normales
+        conceptosGastos.forEach(concepto => {
+          const valorTotal = parseFloat(transformedData[`gasto_${concepto}_valor_total`]) || 0;
+          subtotalCalculado += valorTotal;
+        });
+        
+        // Sumar gastos dinámicos si existen
+        if (gastosDinamicos && gastosDinamicos.length > 0) {
+          gastosDinamicos.forEach(gasto => {
+            subtotalCalculado += parseFloat(gasto.valorTotal) || 0;
+          });
+        }
+        
+        transformedData.subtotal_gastos = subtotalCalculado.toString();
+        console.log(`✏️ Recalculado subtotal_gastos: ${subtotalCalculado}`);
+      }
+      
+      // Calcular imprevistos_3 como 3% del subtotal_gastos
+      const subtotalGastos = parseFloat(transformedData.subtotal_gastos) || 0;
+      const imprevistos3Porcentaje = parseFloat(transformedData['imprevistos_3%'] || 3);
+      const imprevistos3 = subtotalGastos * (imprevistos3Porcentaje / 100);
+      transformedData.imprevistos_3 = imprevistos3.toString();
+      
+      // Calcular total_gastos_imprevistos
+      const totalGastosImprevistos = subtotalGastos + imprevistos3;
+      transformedData.total_gastos_imprevistos = totalGastosImprevistos.toString();
       
       // IMPORTANTE: Eliminar marcadores no reemplazados
       Object.keys(transformedData).forEach(key => {
@@ -178,11 +381,7 @@ const report2Config = {
       console.error('Error en transformación de datos:', error);
       return {
         error: true,
-        message: error.message,
-        dia: new Date().getDate().toString().padStart(2, '0'),
-        mes: (new Date().getMonth() + 1).toString().padStart(2, '0'),
-        anio: new Date().getFullYear().toString(),
-        fecha_solicitud: new Date().toLocaleDateString('es-CO')
+        message: error.message
       };
     }
   },
@@ -195,5 +394,25 @@ const report2Config = {
   footerText: 'Universidad del Valle - Extensión y Proyección Social - Presupuesto',
   watermark: false
 };
+
+// Helper function if dateUtils.getDateParts is not available
+function getDateParts(date) {
+  try {
+    const dateObj = new Date(date);
+    
+    if (isNaN(dateObj.getTime())) {
+      return { dia: '', mes: '', anio: '' };
+    }
+    
+    return {
+      dia: dateObj.getDate().toString().padStart(2, '0'),
+      mes: (dateObj.getMonth() + 1).toString().padStart(2, '0'),
+      anio: dateObj.getFullYear().toString()
+    };
+  } catch (error) {
+    console.error('Error en getDateParts:', error);
+    return { dia: '', mes: '', anio: '' };
+  }
+}
 
 module.exports = report2Config;
