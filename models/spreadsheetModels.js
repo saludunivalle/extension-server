@@ -75,24 +75,28 @@ class SpreadsheetModel {
   const SOLICITUDES2 = new SpreadsheetModel(
     'SOLICITUDES2',
     [
-      'id_solicitud',
-      'nombre_actividad', 
-      'fecha_solicitud', 
-      'ingresos_cantidad', 
-      'ingresos_vr_unit', 
-      'total_ingresos', 
-      'subtotal_gastos', 
-      'imprevistos_3', 
-      'total_gastos_imprevistos', 
-      'fondo_comun_porcentaje', 
-      'facultad_instituto_porcentaje', 
-      'escuela_departamento_porcentaje', 
-      'total_recursos'
+      'id_solicitud', // A
+      'nombre_actividad', // B 
+      'fecha_solicitud', // C 
+      'ingresos_cantidad', // D
+      'ingresos_vr_unit', // E
+      'total_ingresos', // F 
+      'subtotal_gastos', // G 
+      'imprevistos_3', // H
+      'total_gastos_imprevistos', // I
+      'fondo_comun_porcentaje', // J
+      'fondo_comun', // K
+      'facultad_instituto', // L (Previously missing porcentaje)
+      'escuela_departamento_porcentaje', // M
+      'escuela_departamento', // N
+      'total_recursos', // O
+      'observaciones', // P (Assuming this is next)
+      'responsable_financiero' // Q (Assuming this is next)
     ],
     {
-      1: ['B', 'C'],
-      2: ['D', 'E', 'F', 'G', 'H', 'I',],
-      3: ['J', 'K', 'L', 'M']
+      1: ['B', 'C'], // Step 1: nombre_actividad, fecha_solicitud
+      2: ['D', 'E', 'F', 'G', 'H', 'I'], // Step 2: Ingresos y Gastos Totales
+      3: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q'] // Step 3: Aportes y Resumen (J to Q)
     }
   );
   

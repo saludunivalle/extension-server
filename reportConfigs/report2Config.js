@@ -12,12 +12,12 @@ const report2Config = {
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES2: {
-      range: 'SOLICITUDES2!A2:Z',
+      range: 'SOLICITUDES2!A2:M',
       fields: [
-        'id_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
+        'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
         'subtotal_gastos', 'imprevistos_3', 'imprevistos_3%', 'total_gastos_imprevistos',
-        'fondo_comun_porcentaje', 'facultadad_instituto_porcentaje',
-        'escuela_departamento_porcentaje', 'total_recursos',
+        'fondo_comun_porcentaje', 'fondo_comun', 'facultad_instituto_porcentaje', 'facultad_instituto',
+        'escuela_departamento_porcentaje', 'escuela_departamento', 'total_recursos',
         'subtotal_costos_directos', 'costos_indirectos_cantidad', 
         'administracion_cantidad', 'descuentos_cantidad',
         'total_costo_actividad', 'excedente_cantidad', 'valor_inscripcion_individual'
@@ -34,6 +34,16 @@ const report2Config = {
   },
   
   transformData: function(allData) {
+    // Get data from both sheets
+    const solicitudData = allData.SOLICITUDES || {};
+    const formData = allData.SOLICITUDES2 || {};
+    
+    // Combine the data
+    const combinedData = {
+      ...solicitudData,
+      ...formData
+    };
+    
     try {
       console.log("Datos recibidos en transformData:", allData);
       
@@ -102,15 +112,20 @@ const report2Config = {
         console.log(`- ingresos_vr_unit: "${formDataCorregido.ingresos_vr_unit}"`);
       }
       
-      // CASE 2: Use data from SOLICITUDES if missing in SOLICITUDES2
-      if (!formDataCorregido.fecha_solicitud && solicitudData.fecha_solicitud) {
-        console.log("ℹ️ Usando fecha_solicitud de tabla SOLICITUDES");
-        formDataCorregido.fecha_solicitud = solicitudData.fecha_solicitud;
-      }
-      
-      if (!formDataCorregido.nombre_actividad && solicitudData.nombre_actividad) {
+      // CASE 2: Use data from SOLICITUDES2 if available, otherwise fallback to SOLICITUDES
+      // Priorize data from SOLICITUDES2 sheet over SOLICITUDES
+      if (formDataCorregido.nombre_actividad) {
+        console.log("ℹ️ Usando nombre_actividad de tabla SOLICITUDES2");
+      } else if (solicitudData.nombre_actividad) {
         console.log("ℹ️ Usando nombre_actividad de tabla SOLICITUDES");
         formDataCorregido.nombre_actividad = solicitudData.nombre_actividad;
+      }
+
+      if (formDataCorregido.fecha_solicitud) {
+        console.log("ℹ️ Usando fecha_solicitud de tabla SOLICITUDES2");
+      } else if (solicitudData.fecha_solicitud) {
+        console.log("ℹ️ Usando fecha_solicitud de tabla SOLICITUDES");
+        formDataCorregido.fecha_solicitud = solicitudData.fecha_solicitud;
       }
       
       if (!formDataCorregido.nombre_solicitante && solicitudData.nombre_solicitante) {
@@ -122,7 +137,7 @@ const report2Config = {
       const numericFields = [
         'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
         'subtotal_gastos', 'imprevistos_3', 'total_gastos_imprevistos',
-        'fondo_comun_porcentaje', 'facultadad_instituto_porcentaje', 
+        'fondo_comun_porcentaje', 'facultad_instituto_porcentaje', 
         'escuela_departamento_porcentaje'
       ];
       
@@ -211,6 +226,9 @@ const report2Config = {
             transformedData.dia = fechaProcesada.getDate().toString().padStart(2, '0');
             transformedData.mes = (fechaProcesada.getMonth() + 1).toString().padStart(2, '0');
             transformedData.anio = fechaProcesada.getFullYear().toString();
+            
+            // Log successful date extraction
+            console.log(`✅ Fecha procesada correctamente: dia=${transformedData.dia}, mes=${transformedData.mes}, anio=${transformedData.anio}`);
           } else {
             // Invalid date, use current date
             console.log(`⚠️ Fecha inválida: "${fechaStr}", usando fecha actual`);
@@ -255,6 +273,26 @@ const report2Config = {
         'descuentos_cantidad', 'total_costo_actividad', 'excedente_cantidad',
         'valor_inscripcion_individual'
       ];
+      
+      // Ensure ingresos fields are properly populated
+      if (isNumeric(transformedData.ingresos_cantidad) && isNumeric(transformedData.ingresos_vr_unit)) {
+        const cantidad = parseFloat(transformedData.ingresos_cantidad);
+        const valorUnit = parseFloat(transformedData.ingresos_vr_unit);
+        const totalCalculado = cantidad * valorUnit;
+        
+        // Update formatted value and ensure total_ingresos is calculated
+        transformedData.ingresos_cantidad_formatted = cantidad.toString();
+        transformedData.ingresos_vr_unit_formatted = formatCurrency(valorUnit);
+        transformedData.total_ingresos = totalCalculado.toString();
+        transformedData.total_ingresos_formatted = formatCurrency(totalCalculado);
+        
+        console.log(`✅ Valores de ingresos procesados: cantidad=${cantidad}, valorUnit=${valorUnit}, total=${totalCalculado}`);
+      } else {
+        console.log("⚠️ Valores de ingresos inválidos o ausentes, estableciendo valores por defecto");
+        transformedData.ingresos_cantidad = transformedData.ingresos_cantidad || '0';
+        transformedData.ingresos_vr_unit = transformedData.ingresos_vr_unit || '0';
+        transformedData.total_ingresos = transformedData.total_ingresos || '0';
+      }
       
       monetaryFields.forEach(field => {
         if (transformedData[field]) {
@@ -344,13 +382,42 @@ const report2Config = {
       
       // Calcular imprevistos_3 como 3% del subtotal_gastos
       const subtotalGastos = parseFloat(transformedData.subtotal_gastos) || 0;
-      const imprevistos3Porcentaje = parseFloat(transformedData['imprevistos_3%'] || 3);
-      const imprevistos3 = subtotalGastos * (imprevistos3Porcentaje / 100);
+      // Usar exactamente 3% para imprevistos, independientemente del valor en imprevistos_3%
+      const imprevistos3 = subtotalGastos * 0.03;
       transformedData.imprevistos_3 = imprevistos3.toString();
+      transformedData['imprevistos_3%'] = '3'; // Fijar el porcentaje en 3%
       
-      // Calcular total_gastos_imprevistos
+      // Calcular total_gastos_imprevistos como suma del subtotal_gastos + imprevistos_3
       const totalGastosImprevistos = subtotalGastos + imprevistos3;
       transformedData.total_gastos_imprevistos = totalGastosImprevistos.toString();
+      
+      // Calcular los valores monetarios a partir de los porcentajes para el fondo común, facultad e instituto, y escuela
+      const totalIngresos = parseFloat(transformedData.total_ingresos) || 0;
+      
+      // Obtener porcentajes (usar valores por defecto si no existen)
+      const fondoComunPorcentaje = parseFloat(transformedData.fondo_comun_porcentaje) || 30;
+      const facultadInstitutoPorcentaje = 5; // Fijo en 5%
+      const escuelaDepartamentoPorcentaje = parseFloat(transformedData.escuela_departamento_porcentaje) || 0;
+      
+      // Calcular valores monetarios
+      const fondoComun = totalIngresos * (fondoComunPorcentaje / 100);
+      const facultadInstituto = totalIngresos * (facultadInstitutoPorcentaje / 100);
+      const escuelaDepartamento = totalIngresos * (escuelaDepartamentoPorcentaje / 100);
+      
+      // Calcular total de recursos
+      const totalRecursos = fondoComun + facultadInstituto + escuelaDepartamento;
+      
+      // Asignar valores calculados
+      transformedData.fondo_comun = fondoComun.toString();
+      transformedData.facultad_instituto = facultadInstituto.toString();
+      transformedData.escuela_departamento = escuelaDepartamento.toString();
+      transformedData.total_recursos = totalRecursos.toString();
+      
+      // Guardar también el porcentaje de facultad_instituto para referencia
+      transformedData.facultad_instituto_porcentaje = facultadInstitutoPorcentaje.toString();
+      
+      console.log(`✅ Cálculos de gastos: subtotal=${subtotalGastos}, imprevistos(3%)=${imprevistos3}, total=${totalGastosImprevistos}`);
+      console.log(`✅ Cálculos de aportes: fondo_comun(${fondoComunPorcentaje}%)=${fondoComun}, facultad(${facultadInstitutoPorcentaje}%)=${facultadInstituto}, escuela(${escuelaDepartamentoPorcentaje}%)=${escuelaDepartamento}, total=${totalRecursos}`);
       
       // IMPORTANTE: Eliminar marcadores no reemplazados
       Object.keys(transformedData).forEach(key => {

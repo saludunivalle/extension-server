@@ -11,7 +11,9 @@ const {
   validarProgresion,       
   actualizarProgresoGlobal,
   getLastId,
-  guardarForm2Paso2  // Asegúrate de incluirlo aquí
+  guardarForm2Paso1,
+  guardarForm2Paso2,
+  guardarForm2Paso3  // Añadir guardarForm2Paso3 aquí
 } = require('../controllers/formController');
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { loadProgressMiddleware } = require('../middleware/progressMiddleware');
@@ -31,7 +33,9 @@ router.get('/getFormDataForm2', getFormDataForm2);
 router.post('/actualizarPasoMaximo', actualizarPasoMaximo);
 router.post('/progreso-actual', validarProgresion);
 router.post('/actualizacion-progreso', actualizarProgresoGlobal);
-router.get('/getLastId', getLastId); // Agrega esta línea
+router.get('/getLastId', getLastId);
+router.post('/guardarForm2Paso1', guardarForm2Paso1); // Añadir esta ruta también
 router.post('/guardarForm2Paso2', guardarForm2Paso2);
+router.post('/guardarForm2Paso3', guardarForm2Paso3); // Añadir la ruta para guardarForm2Paso3
 
 module.exports = router;
