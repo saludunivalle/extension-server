@@ -281,7 +281,6 @@ class SheetsService {
   
       // Preparar filas válidas
       const rows = gastos
-        .filter(gasto => gasto.id_conceptos && conceptosValidos.has(String(gasto.id_conceptos)))
         .map(gasto => {
           const cantidad = parseFloat(gasto.cantidad) || 0;
           const valor_unit = parseFloat(gasto.valor_unit) || 0;

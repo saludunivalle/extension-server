@@ -5,6 +5,8 @@ const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { generateExpenseRows } = require('./dynamicRows');
+const expensesGenerator = require('./dynamicRows/expensesGenerator');
 
 /**
  * Servicio para manejar operaciones con Google Drive
@@ -167,20 +169,10 @@ class DriveService {
       await this.makeFilePublic(fileId);
       
       // Insertar filas dinámicas si es necesario
-      if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
-        await this.insertDynamicRowsInSheet(fileId, dynamicRowsData);
+      if (dynamicRowsData && dynamicRowsData.rows && dynamicRowsData.rows.length > 0) {
+        await expensesGenerator.insertDynamicRows(fileId, dynamicRowsData);
       }
 
-      // Extract dynamic expenses data
-      const gastosDinamicos = data['__GASTOS_DINAMICOS__'];
-      
-      // After the file is created and made public
-      if (gastosDinamicos && gastosDinamicos.gastos && gastosDinamicos.gastos.length > 0) {
-        console.log(`Insertando ${gastosDinamicos.gastos.length} gastos dinámicos en el reporte`);
-        // Use the existing method to insert dynamic rows
-        await this.insertDynamicRowsInSheet(fileId, gastosDinamicos);
-      }
-  
       // Limpiar archivos temporales
       excelUtils.cleanupTempFiles([tempFilePath]);
   
@@ -191,73 +183,42 @@ class DriveService {
     }
   }
 
-  // New function to insert dynamic rows into a Google Sheet
+  // New function to insert dynamic rows into a Google Sheet using the dynamicRows service
   async insertDynamicRowsInSheet(fileId, dynamicRowsData) {
     try {
-      const insertLocation = dynamicRowsData.insertarEn || 'E45:AK45'; // Start at row 45 (after example row 44)
-      const gastos = dynamicRowsData.gastos || [];
-      
-      if (gastos.length === 0) {
-        console.log('No hay gastos para insertar');
-        return;
+      if (!dynamicRowsData) {
+        console.log('No hay datos de filas dinámicas para insertar');
+        return false;
       }
       
-      console.log(`Insertando ${gastos.length} gastos dinámicos en ${insertLocation}`);
+      console.log(`Procesando inserción de filas dinámicas en el reporte (fileId: ${fileId})`);
       
-      // Initialize Google Sheets API
-      const sheets = google.sheets({version: 'v4', auth: jwtClient});
-      
-      // Parse the insertion location to get row and column info
-      const match = /([A-Z]+)(\d+):([A-Z]+)(\d+)/.exec(insertLocation);
-      if (!match) {
-        console.error('Formato de ubicación inválido:', insertLocation);
-        return;
+      // Validate that we have the required data structure
+      if (!dynamicRowsData.gastos || !Array.isArray(dynamicRowsData.gastos)) {
+        console.log('Estructura de datos inválida - gastos no es un array');
+        return false;
       }
       
-      const [_, startCol, startRow] = match;
-      const startRowNum = parseInt(startRow);
+      // Log the data we're working with
+      console.log(`Inserción de ${dynamicRowsData.gastos.length} filas dinámicas`);
+      console.log(`Rango de inserción: ${dynamicRowsData.insertarEn || 'No especificado'}`);
       
-      // Prepare the data for each row
-      const values = gastos.map((gasto, index) => {
-        // Create a row with enough cells to span from E to AK (37 columns)
-        const row = new Array(37).fill('');
-        
-        // Fill in the specific cells according to the requirements:
-        // ID in column E (index 0)
-        row[0] = gasto.id_concepto || `15.${index + 1}`;
-        
-        // Description in columns F to V (indices 1-21)
-        row[1] = gasto.descripcion || '';
-        
-        // Quantity in columns X to Z (indices 23-25)
-        row[23] = gasto.cantidad?.toString() || '0';
-        
-        // Unit value in columns Z to AB (indices 25-27)
-        row[25] = gasto.valor_unit_formatted || '0';
-        
-        // Total value in columns AC to AK (indices 28-36)
-        row[28] = gasto.valor_total_formatted || '0';
-        
-        return row;
-      });
+      // Import the expensesGenerator if not already available
+      const { insertDynamicRows } = require('./dynamicRows/expensesGenerator');
       
-      // Insert data into each row, starting at the row after the example (row 45)
-      for (let i = 0; i < gastos.length; i++) {
-        const rowNum = startRowNum + i;
-        await sheets.spreadsheets.values.update({
-          spreadsheetId: fileId,
-          range: `E${rowNum}:AK${rowNum}`,
-          valueInputOption: 'USER_ENTERED',
-          resource: {
-            values: [values[i]]
-          }
-        });
+      // Call the insertDynamicRows function from the expensesGenerator
+      const result = await insertDynamicRows(fileId, dynamicRowsData);
+      
+      if (result) {
+        console.log('✅ Filas dinámicas insertadas correctamente');
+      } else {
+        console.log('⚠️ No se pudieron insertar las filas dinámicas');
       }
       
-      console.log(`✅ Insertados ${gastos.length} gastos dinámicos en el reporte`);
-      return true;
+      return result;
     } catch (error) {
       console.error('Error al insertar filas dinámicas:', error);
+      console.error('Stack:', error.stack);
       return false;
     }
   }
@@ -320,10 +281,10 @@ class DriveService {
       console.log('Reemplazando marcadores en documento...');
       
       // Primero procesamos los datos especiales para manipulación de tablas
-      if (data['__GASTOS_DINAMICOS__']) {
-        await this.insertarFilasGastosDinamicos(fileId, data['__GASTOS_DINAMICOS__']);
+      if (data['__FILAS_DINAMICAS__']) {
+        await this.insertDynamicRowsInSheet(fileId, data['__FILAS_DINAMICAS__']);
         // Eliminar este campo especial para no intentar reemplazarlo como marcador normal
-        delete data['__GASTOS_DINAMICOS__'];
+        delete data['__FILAS_DINAMICAS__'];
       }
       
       // Extraer el texto del documento

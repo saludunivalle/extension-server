@@ -1,0 +1,38 @@
+{
+  "templateRow": {
+    "range": "A44:AK44",
+    "copyStyle": true,
+    "insertStartRow": 45,
+    "description": "Template row for expense items that should be copied for dynamic rows"
+  },
+  "columns": {
+    "id": {
+      "column": "E",
+      "description": "ID of expense concept"
+    },
+    "description": {
+      "column": "F:V",
+      "description": "Description of expense",
+      "span": 17
+    },
+    "quantity": {
+      "column": "X:Y",
+      "description": "Quantity"
+    },
+    "unitValue": {
+      "column": "Z:AB",
+      "description": "Unit value"
+    },
+    "totalValue": {
+      "column": "AC:AK",
+      "description": "Total value"
+    }
+  },
+  "dataMapping": {
+    "id": "id_concepto",
+    "description": "descripcion",
+    "quantity": "cantidad",
+    "unitValue": "valorUnit_formatted",
+    "totalValue": "valorTotal_formatted"
+  }
+}

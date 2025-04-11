@@ -1,0 +1,38 @@
+{
+  "templateRow": {
+    "range": "B44:H44",
+    "copyStyle": true,
+    "insertStartRow": 45,
+    "description": "Template row for risk items that should be copied for dynamic rows"
+  },
+  "columns": {
+    "id": {
+      "column": "E",
+      "description": "ID of risk"
+    },
+    "description": {
+      "column": "F:V",
+      "description": "Description of risk",
+      "span": 2
+    },
+    "impact": {
+      "column": "E",
+      "description": "Impact level"
+    },
+    "probability": {
+      "column": "F",
+      "description": "Probability"
+    },
+    "strategy": {
+      "column": "G",
+      "description": "Mitigation strategy"
+    }
+  },
+  "dataMapping": {
+    "id": "id",
+    "description": "descripcion",
+    "impact": "impacto",
+    "probability": "probabilidad",
+    "strategy": "estrategia"
+  }
+}

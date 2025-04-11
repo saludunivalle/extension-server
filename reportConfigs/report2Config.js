@@ -1,4 +1,5 @@
 const dateUtils = require('../utils/dateUtils');
+const { generateExpenseRows } = require('../services/dynamicRows');
 
 /**
  * Configuración específica para el reporte del Formulario 2 - Presupuesto
@@ -350,11 +351,23 @@ const report2Config = {
       if (gastosDinamicos && gastosDinamicos.length > 0) {
         console.log(`Procesando ${gastosDinamicos.length} gastos dinámicos para el reporte`);
         
-        // Add special field for dynamic expenses
-        transformedData['__GASTOS_DINAMICOS__'] = {
-          insertarEn: 'E45', // Adjust this to the correct insertion point in your template
-          gastos: gastosDinamicos
-        };
+        // Use the dynamic rows service to generate the rows data
+        const dynamicRowsData = generateExpenseRows(gastosDinamicos);
+        
+        if (dynamicRowsData) {
+          // IMPORTANTE: Asegurarnos que las filas dinámicas se inserten en la fila 45
+          console.log(`⚠️ CRÍTICO: Configurando inserción de filas dinámicas a partir de la fila 45`);
+          
+          // Add special field for dynamic expenses with rows data
+          transformedData['__FILAS_DINAMICAS__'] = {
+            gastos: dynamicRowsData.gastos,
+            rows: dynamicRowsData.rows,
+            insertarEn: "A44:AK44", // Template row range
+            insertStartRow: 45 // FIXED VALUE: Always insert at row 45
+          };
+          
+          console.log(`✅ Configuración de filas dinámicas completada con insertStartRow=45`);
+        }
       }
       
       // IMPORTANTE: Asegurarse que los valores de subtotal_gastos e imprevistos son correctos
