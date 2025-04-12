@@ -104,10 +104,11 @@ class SpreadsheetModel {
   const SOLICITUDES3 = new SpreadsheetModel(
     'SOLICITUDES3',
     [
-      'id_solicitud', 'proposito', 'comentario', 'fecha', 'elaboradoPor', 'aplicaDiseno1', 'aplicaDiseno2', 
-      'aplicaDiseno3', 'aplicaLocacion1', 'aplicaLocacion2', 'aplicaLocacion3', 'aplicaDesarrollo1', 
-      'aplicaDesarrollo2', 'aplicaDesarrollo3', 'aplicaDesarrollo4', 'aplicaCierre1', 'aplicaCierre2', 
-      'aplicaOtros1', 'aplicaOtros2'  
+      'id_solicitud', 'proposito', 'comentario', 'programa', 'fecha_solicitud', 'nombre_solicitante', 'aplicaDiseno1', 'aplicaDiseno2', 
+      'aplicaDiseno3', 'aplicaDiseno4', 'aplicaLocacion1', 'aplicaLocacion2', 'aplicaLocacion3', 'aplicaLocacion4', 'aplicaLocacion5', 
+      'aplicaDesarrollo1', 'aplicaDesarrollo2', 'aplicaDesarrollo3', 'aplicaDesarrollo4', 'aplicaDesarrollo5', 'aplicaDesarrollo6', 
+      'aplicaDesarrollo7', 'aplicaDesarrollo8', 'aplicaDesarrollo9', 'aplicaDesarrollo10', 'aplicaDesarrollo11', 'aplicaCierre1', 
+      'aplicaCierre2', 'aplicaCierre3'
     ],
     {
       1: ['B', 'C', 'D', 'E', 'F'],

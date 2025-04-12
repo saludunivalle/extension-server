@@ -20,7 +20,7 @@ const report3Config = {
     SOLICITUDES3: {
       range: 'SOLICITUDES3!A2:AC',
       fields: [
-        'id_solicitud', 'proposito', 'comentario',
+        'id_solicitud', 'proposito', 'comentario', 'programa', 'fecha_solicitud', 'nombre_solicitante',
         // Diseño
         'aplicaDiseno1', 'aplicaDiseno2', 'aplicaDiseno3', 'aplicaDiseno4',
         // Locaciones
@@ -30,19 +30,29 @@ const report3Config = {
         'aplicaDesarrollo5', 'aplicaDesarrollo6', 'aplicaDesarrollo7', 'aplicaDesarrollo8', 
         'aplicaDesarrollo9', 'aplicaDesarrollo10', 'aplicaDesarrollo11',
         // Cierre
-        'aplicaCierre1', 'aplicaCierre2', 'aplicaCierre3',
-        'programa'
+        'aplicaCierre1', 'aplicaCierre2', 'aplicaCierre3'
       ]
     }
   },
   
   transformData: function(allData) {
     try {
-      console.log("Datos recibidos en transformData para formulario 3:", allData);
+      console.log("🔎 DATOS RECIBIDOS EN TRANSFORMDATA PARA FORMULARIO 3:");
+      console.log("- DATOS COMPLETOS:", JSON.stringify(allData, null, 2));
       
       // Extraer datos de las fuentes
       const solicitudData = allData.SOLICITUDES || {}; 
       const formData = allData.SOLICITUDES3 || {};
+      
+      console.log("- SOLICITUDES:", JSON.stringify(solicitudData, null, 2));
+      console.log("- SOLICITUDES3:", JSON.stringify(formData, null, 2));
+      console.log("- Campo 'programa':", formData.programa);
+      console.log("- Campos diseño:", {
+        aplicaDiseno1: formData.aplicaDiseno1,
+        aplicaDiseno2: formData.aplicaDiseno2,
+        aplicaDiseno3: formData.aplicaDiseno3,
+        aplicaDiseno4: formData.aplicaDiseno4
+      });
       
       // Crear un objeto combinado con todas las fuentes
       const combinedData = {
@@ -99,11 +109,32 @@ const report3Config = {
       
       camposRiesgo.forEach(campo => {
         const valor = transformedData[campo];
-        if (valor === true || valor === 'true' || valor === 'Sí' || valor === 'Si' || valor === 'si' || valor === 'sí') {
+        // Valores considerados afirmativos
+        if (
+          valor === true || 
+          valor === 'true' || 
+          valor === 'TRUE' || 
+          valor === 'Sí' || 
+          valor === 'Si' || 
+          valor === 'SI' || 
+          valor === 'si' || 
+          valor === 'sí' || 
+          valor === 'SÍ' ||
+          valor === 'S' ||
+          valor === 's' ||
+          valor === 'Y' || 
+          valor === 'y' ||
+          valor === 'Yes' ||
+          valor === 'yes'
+        ) {
           transformedData[campo] = 'Sí aplica';
         } else {
+          // Si no es afirmativo o está vacío, considerarlo como "No aplica"
           transformedData[campo] = 'No aplica';
         }
+        
+        // Imprimir para depuración
+        console.log(`Campo ${campo}: valor original = "${valor}", transformado = "${transformedData[campo]}"`);
       });
       
       // Valores por defecto para campos críticos
