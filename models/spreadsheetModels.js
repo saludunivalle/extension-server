@@ -125,14 +125,17 @@ class SpreadsheetModel {
     [
       'id_solicitud', 'descripcionPrograma', 'identificacionNecesidades', 'atributosBasicos', 
           'atributosDiferenciadores', 'competencia', 'programa', 'programasSimilares', 
-          'estrategiasCompetencia', 'personasInteres', 'personasMatriculadas', 'otroInteres', 
-          'innovacion', 'solicitudExterno', 'interesSondeo', 'llamadas', 'encuestas', 'webinar', 
-          'preregistro', 'mesasTrabajo', 'focusGroup', 'desayunosTrabajo', 'almuerzosTrabajo', 'openHouse', 
+          'estrategiasCompetencia', 'personasInteresChecked', 'personasMatriculadasChecked', 'otroInteres', 
+          'innovacion', 'solicitudExterno', 'interesSondeo', 'otroMercadeo','llamadas', 'encuestas', 'webinar', 
+          'pautas_redes', 'otroEstrategias', 'preregistroFisico', 'preregistroGoogle', 'preregistroOtro',
+          'gremios', 'sectores_empresariales', 'politicas_publicas', 'otros_mesas_trabajo', 'focusGroup', 
+          'desayunosTrabajo', 'almuerzosTrabajo', 'openHouse', 'ferias_colegios', 'ferias_empresarial', 'otros_mercadeo',
           'valorEconomico', 'modalidadPresencial', 'modalidadVirtual', 'modalidadSemipresencial', 
-          'otraModalidad', 'beneficiosTangibles', 'beneficiosIntangibles', 'particulares', 'colegios', 
-          'empresas', 'egresados', 'colaboradores', 'otros_publicos_potenciales', 'tendenciasActuales', 
-          'dofaDebilidades', 'dofaOportunidades', 'dofaFortalezas', 'dofaAmenazas', 'paginaWeb', 
-          'facebook', 'instagram', 'linkedin', 'correo', 'prensa', 'boletin', 'llamadas_redes', 'otro_canal'
+          'traslados_docente', 'modalidad_asistida_tecnologia', 'beneficiosTangibles', 'beneficiosIntangibles', 
+          'particulares', 'colegios', 'empresas', 'egresados', 'colaboradores', 'otros_publicos_potenciales', 
+          'tendenciasActuales', 'dofaDebilidades', 'dofaOportunidades', 'dofaFortalezas', 'dofaAmenazas', 
+          'paginaWeb', 'facebook', 'instagram', 'linkedin', 'correo', 'prensa', 'boletin', 'llamadas', 
+          'otro_canal'
     ],
     {
       1: ['B', 'C'],
