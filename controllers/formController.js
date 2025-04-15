@@ -45,7 +45,10 @@ async function getEtapas(fuerzaRefresh = false) {
 */
 
 const guardarProgreso = async (req, res) => {
-  const { id_solicitud, paso, hoja, id_usuario, name, ...formData } = req.body;
+  // Extraer nombre_actividad explícitamente para asegurar que se capture correctamente
+  const { id_solicitud, paso, hoja, id_usuario, name, nombre_actividad, ...restFormData } = req.body;
+  // Reconstruir formData incluyendo nombre_actividad explícitamente
+  const formData = { nombre_actividad, ...restFormData };
   const piezaGrafica = req.file;
 
   console.log('Recibiendo datos para guardar progreso:', { id_solicitud, paso, hoja, id_usuario, name });
@@ -190,7 +193,21 @@ const guardarProgreso = async (req, res) => {
     const estadoFormulariosJSON = JSON.stringify(estadoFormularios);
     const etapaActual = (parsedPaso >= maxPasos[parsedHoja] && parsedHoja < 4) ? parsedHoja + 1 : parsedHoja;
     const etapaActualAjustada = etapaActual > 4 ? 4 : etapaActual;
-    const nombreActividadActual = filaExistente ? (filaExistente[6] || formData.nombre_actividad || 'N/A') : (formData.nombre_actividad || 'N/A');
+    
+    // Usar directamente el nombre_actividad de formData si existe (ya que lo extrajimos explícitamente al inicio)
+    // y está en el formulario 1, paso 1
+    let nombreActividadActual;
+    
+    if (parsedHoja === 1 && parsedPaso === 1 && formData.nombre_actividad) {
+      // Usar el valor actualizado de nombre_actividad
+      nombreActividadActual = formData.nombre_actividad;
+      console.log(`⭐ Actualizando nombre de actividad en ETAPAS: "${nombreActividadActual}"`);
+    } else {
+      // Usar el valor existente o el que viene en la solicitud
+      nombreActividadActual = filaExistente ? 
+        (filaExistente[6] || formData.nombre_actividad || 'N/A') : 
+        (formData.nombre_actividad || 'N/A');
+    }
 
     if (filaExistenteIndex === -1) {
       const fechaActual = dateUtils.getCurrentDate();
@@ -253,13 +270,16 @@ const createNewRequest = async (req, res) => {
     // 2. Extraer resto de datos del body (sin id_solicitud)
     const { fecha_solicitud, nombre_actividad, nombre_solicitante, dependencia_tipo, nombre_dependencia } = req.body;
     
+    // Asegurar que nombre_actividad tenga un valor, con un mensaje claro si no se proporciona
+    const activityName = nombre_actividad || 'Actividad sin nombre';
+    
     const client = sheetsService.getClient();
     const fechaActual = dateUtils.getCurrentDate();
     
     // 3. Crear entrada en SOLICITUDES
     const range = 'SOLICITUDES!A2:F2';
     // Importante: nombre_actividad y fecha_solicitud en orden correcto
-    const values = [[id_solicitud, fecha_solicitud, nombre_actividad, nombre_solicitante, dependencia_tipo, nombre_dependencia]];
+    const values = [[id_solicitud, fecha_solicitud, activityName, nombre_solicitante, dependencia_tipo, nombre_dependencia]];
 
     await client.spreadsheets.values.append({
       spreadsheetId: sheetsService.spreadsheetId,
@@ -277,6 +297,7 @@ const createNewRequest = async (req, res) => {
       "4": "En progreso" 
     };
     
+    // Usar el mismo nombre de actividad para ETAPAS que fue guardado en SOLICITUDES
     const nuevaFila = [
       id_solicitud,
       req.body.id_usuario || 'N/A',
@@ -284,7 +305,7 @@ const createNewRequest = async (req, res) => {
       req.body.name || 'N/A',
       1,                          // etapa_actual inicial
       'En progreso',              // estado inicial
-      nombre_actividad || 'Nueva solicitud', 
+      activityName,              // Usar la misma variable validada, no un valor por defecto
       1,                          // paso inicial
       JSON.stringify(estadoFormularios)
     ];
@@ -297,7 +318,7 @@ const createNewRequest = async (req, res) => {
       resource: { values: [nuevaFila] }
     });
 
-    console.log(`✅ Nueva solicitud guardada en Sheets con ID: ${id_solicitud}`);
+    console.log(`✅ Nueva solicitud "${activityName}" guardada en Sheets con ID: ${id_solicitud}`);
     
     // 5. Solo ahora enviamos la respuesta exitosa
     res.status(200).json({ success: true, id_solicitud });
@@ -390,10 +411,11 @@ const getActiveRequests = async (req, res) => {
           "4": "En progreso"
         };
         
+        // Intentar parsear el estado de formularios
         if (row[8]) {
           try {
             const parsed = JSON.parse(row[8]);
-            if (parsed && typeof parsed === 'object') {
+            if (parsed) {
               estadoFormularios = parsed;
             }
           } catch (e) {
@@ -1268,7 +1290,7 @@ const guardarForm2Paso2 = async (req, res) => {
       'total_gastos_imprevistos',
       'fondo_comun_porcentaje',
       'fondo_comun',
-      'facultadad_instituto',
+      'facultad_instituto',
       'escuela_departamento_porcentaje',
       'escuela_departamento',
       'total_recursos'
@@ -1378,15 +1400,14 @@ const guardarForm2Paso3 = async (req, res) => {
   try {
     const { 
       id_solicitud, 
-      id_usuario, 
+      id_usuario, // Capturar explícitamente id_usuario del request
+      name,       // Capturar explícitamente el nombre del request
       fondo_comun_porcentaje, 
       fondo_comun,
-      facultad_instituto_porcentaje,
       facultad_instituto, 
       escuela_departamento_porcentaje, 
       escuela_departamento,
       total_recursos,
-      // Incluir otros campos necesarios
       ingresos_cantidad,
       ingresos_vr_unit,
       total_ingresos,
@@ -1402,8 +1423,7 @@ const guardarForm2Paso3 = async (req, res) => {
     }
 
     // Establecer valores por defecto si no se proporcionan
-    const fondoComunPorcentaje = parseFloat(fondo_comun_porcentaje) || 30;
-    const facultadInstitutoPorcentaje = parseFloat(facultad_instituto_porcentaje) || 5;
+    const fondoComunPorcentaje = parseFloat(fondo_comun_porcentaje) || 0;
     const escuelaDepartamentoPorcentaje = parseFloat(escuela_departamento_porcentaje) || 0;
 
     // Recalcular valores si es necesario
@@ -1412,107 +1432,99 @@ const guardarForm2Paso3 = async (req, res) => {
       totalIngresos = parseFloat(ingresos_cantidad) * parseFloat(ingresos_vr_unit);
     }
 
-    let fondoComun = parseFloat(fondo_comun) || 0;
-    if (!fondoComun && totalIngresos) {
-      fondoComun = totalIngresos * (fondoComunPorcentaje / 100);
-    }
+    // Calcular valores derivados
+    const fondoComun = parseFloat(fondo_comun) || (totalIngresos * fondoComunPorcentaje / 100);
+    const facultadInstitutoValor = parseFloat(facultad_instituto) || (totalIngresos * 0.05); // 5% fijo
+    const escuelaDepartamentoValor = parseFloat(escuela_departamento) || (totalIngresos * escuelaDepartamentoPorcentaje / 100);
+    const totalRecursosValor = parseFloat(total_recursos) || (fondoComun + facultadInstitutoValor + escuelaDepartamentoValor);
 
-    let facultadInstituto = parseFloat(facultad_instituto) || 0;
-    if (!facultadInstituto && totalIngresos) {
-      facultadInstituto = totalIngresos * (facultadInstitutoPorcentaje / 100);
-    }
-
-    let escuelaDepartamento = parseFloat(escuela_departamento) || 0;
-    if (!escuelaDepartamento && totalIngresos) {
-      escuelaDepartamento = totalIngresos * (escuelaDepartamentoPorcentaje / 100);
-    }
-
-    let totalRecursos = parseFloat(total_recursos) || 0;
-    if (!totalRecursos) {
-      totalRecursos = fondoComun + facultadInstituto + escuelaDepartamento;
-    }
-
-    // Construir datos para Google Sheets
-    const formData = {
-      id_solicitud,
-      fondo_comun_porcentaje: fondoComunPorcentaje.toString(),
-      fondo_comun: fondoComun.toString(),
-      facultad_instituto_porcentaje: facultadInstitutoPorcentaje.toString(),
-      facultad_instituto: facultadInstituto.toString(),
-      escuela_departamento_porcentaje: escuelaDepartamentoPorcentaje.toString(),
-      escuela_departamento: escuelaDepartamento.toString(),
-      total_recursos: totalRecursos.toString(),
-      // Incluir otros campos si están disponibles
-      ingresos_cantidad: ingresos_cantidad || '0',
-      ingresos_vr_unit: ingresos_vr_unit || '0',
-      total_ingresos: totalIngresos.toString(),
-      subtotal_gastos: subtotal_gastos || '0',
-      imprevistos_3: imprevistos_3 || '0',
-      total_gastos_imprevistos: total_gastos_imprevistos || '0'
-    };
-
-    console.log('Datos procesados para guardar en SOLICITUDES2 (paso 3):', formData);
-
-    // Usar el método guardarProgreso para almacenar los datos en Google Sheets
-    const paso = 3;
-    const hoja = 2; // Corresponde a SOLICITUDES2
-    
-    // Obtener el servicio de Google Sheets
-    const SheetsService = require('../services/sheetsService');
-    const sheetsService = new SheetsService();
-    const models = require('../models/spreadsheetModels');
-    
-    // Obtener la definición de columnas para SOLICITUDES2
-    const solicitudes2Model = models.SOLICITUDES2;
-    const allFields = solicitudes2Model.fields;
-    const rangoColumnas = solicitudes2Model.stepRanges[paso];
-    
-    // Convertir letras a índices para definir el rango de columnas a actualizar
-    const colIndexInicial = solicitudes2Model.letterToColIndex(rangoColumnas[0]);
-    const colIndexFinal = solicitudes2Model.letterToColIndex(rangoColumnas[rangoColumnas.length - 1]);
-    
-    // Crear array de valores ordenados
-    let valoresOrdenados = [];
-    
-    // Llenar el array con valores vacíos para todas las columnas
-    for (let i = 0; i <= colIndexFinal - colIndexInicial; i++) {
-      valoresOrdenados.push('');
-    }
-    
-    // Iterar sobre el rango de columnas y asignar valores del formData
-    for (let colIndex = colIndexInicial; colIndex <= colIndexFinal; colIndex++) {
-      const letraColumna = solicitudes2Model.colIndexToLetter(colIndex);
-      // Buscar qué campo corresponde a esta columna
-      const fieldIndex = Object.keys(solicitudes2Model.stepRanges[paso]).find(
-        key => solicitudes2Model.stepRanges[paso][key] === letraColumna
-      );
-      
-      if (fieldIndex) {
-        const fieldName = allFields[fieldIndex - 1]; // -1 porque los arrays en JS son base 0
-        const value = formData[fieldName] || '';
-        valoresOrdenados[colIndex - colIndexInicial] = value;
-      }
-    }
-    
-    // Añadir id_solicitud como primer valor (columna A)
-    valoresOrdenados.unshift(id_solicitud);
-    
-    // Guardar en Google Sheets
     try {
-      // Añadir los datos a la hoja SOLICITUDES2
-      await sheetsService.appendDataToSheet('SOLICITUDES2', [valoresOrdenados]);
+      // 1. Encontrar o crear la fila para esta solicitud
+      const rowIndex = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
+      if (!rowIndex) {
+        throw new Error(`No se pudo encontrar o crear fila para solicitud ${id_solicitud}`);
+      }
+
+      // 2. Actualizar la hoja SOLICITUDES2 con los valores calculados
+      const valoresAportes = [
+        // Importante: mantener este orden según el modelo SOLICITUDES2
+        fondoComunPorcentaje.toString(),
+        fondoComun.toString(),
+        "5", // Porcentaje fijo de facultad_instituto_porcentaje (5%)
+        facultadInstitutoValor.toString(),
+        escuelaDepartamentoPorcentaje.toString(),
+        escuelaDepartamentoValor.toString(),
+        totalRecursosValor.toString(),
+      ];
+
+      console.log(`Actualizando datos de aportes en SOLICITUDES2 para la solicitud ${id_solicitud}: `, valoresAportes);
+
+      // 4. Actualizar la columna J a P (correspondiente a estos campos)
+      await sheetsService.updateRequestProgress({
+        sheetName: 'SOLICITUDES2',
+        rowIndex,
+        startColumn: 'J',    // Columna inicial para estos campos
+        endColumn: 'P',    // Columna final para estos campos
+        values: valoresAportes
+      });
       
-      // Actualizar también el progreso de la solicitud
-      const ProgressStateService = require('../services/progressStateService');
-      const progressService = new ProgressStateService();
-      await progressService.updateMaxAllowedStep(id_solicitud, 2, 3);
+      // 5. Actualizar el progreso global de la solicitud
+      await progressService.updateRequestProgress(id_solicitud, 2, 3); // Formulario 2, Paso 3 (completado)
       
-      console.log('✅ Datos del formulario 2 paso 3 guardados correctamente:', valoresOrdenados);
-      
+      // 7. Actualizar estado de formularios en ETAPAS
+      const etapasResponse = await sheetsService.getClient().spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'ETAPAS!A:I'
+      });
+      const etapasRows = etapasResponse.data.values || [];
+      const filaEtapaIndex = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
+      if (filaEtapaIndex !== -1) {
+        const filaEtapa = filaEtapaIndex + 1; // Ajustar a 1-based para Sheets
+        
+        // Obtener valores actuales para preservarlos
+        const currentUserId = etapasRows[filaEtapaIndex][1] || 'N/A';
+        const currentUserName = etapasRows[filaEtapaIndex][3] || 'N/A';
+        
+        // Usar los valores del request o mantener los existentes
+        const userIdToUpdate = id_usuario || currentUserId;
+        const nameToUpdate = name || currentUserName;
+        
+        let estadoFormularios = { 
+          "1": "Completado", 
+          "2": "Completado", 
+          "3": "En progreso",
+          "4": "En progreso" 
+        };
+        try {
+          if (etapasRows[filaEtapaIndex][8]) {
+            const parsedEstado = JSON.parse(etapasRows[filaEtapaIndex][8]);
+            if (parsedEstado) {
+              estadoFormularios = parsedEstado;
+              estadoFormularios["2"] = "Completado"; // Marcar formulario 2 como completado
+            }
+          }
+        } catch (e) {
+          console.error("Error al parsear estado_formularios:", e);
+        }
+        
+        // Actualizar etapa, estado formulario, y PRESERVAR id_usuario y name
+        await sheetsService.getClient().spreadsheets.values.batchUpdate({
+          spreadsheetId: sheetsService.spreadsheetId,
+          resource: {
+            data: [
+              { range: `ETAPAS!B${filaEtapa}`, values: [[userIdToUpdate]] }, // Preservar id_usuario
+              { range: `ETAPAS!D${filaEtapa}`, values: [[nameToUpdate]] },   // Preservar name
+              { range: `ETAPAS!E${filaEtapa}`, values: [[3]] }, // Avanzar a etapa 3
+              { range: `ETAPAS!I${filaEtapa}`, values: [[JSON.stringify(estadoFormularios)]] }
+            ],
+            valueInputOption: 'RAW'
+          }
+        });
+      }
+      console.log('✅ Datos del formulario 2 paso 3 guardados correctamente');
       res.status(200).json({
         success: true,
-        message: 'Datos de aportes guardados correctamente',
-        data: formData
+        message: 'Datos de aportes guardados correctamente'
       });
     } catch (sheetsError) {
       console.error('❌ Error al guardar datos en Google Sheets:', sheetsError);
