@@ -213,107 +213,131 @@ class SheetsService {
     }
   }
 
-  async saveGastos(idSolicitud, gastos) {
+  async saveGastos(idSolicitud, gastos, actualizarConceptos = true) { // Keep the actualizarConceptos parameter if needed elsewhere, but logic relies on it being true here
     try {
       const conceptosValidos = new Set();
       const conceptosSolicitudValidos = new Set();
-      const conceptosPadre = new Map();
-      // Validar conceptos
+      // const conceptosPadre = new Map(); // Might not be needed if we trust frontend data
+
+      // 1. Get existing concepts to avoid duplicates for the specific solicitud
       const conceptosResponse = await this.client.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: 'CONCEPTO$!A2:F' // Incluir las columnas adicionales
+        range: 'CONCEPTO$!A2:F' // Read ID, Desc, Padre, Nombre, Tipo, SolicitudID
       });
 
       (conceptosResponse.data.values || []).forEach(row => {
-        const concepto = String(row[0]);
-        const descripcion = row[1] || '';
-        const esPadre = row[2] === 'true' || row[2] === 'TRUE';
-        const idSolicitudConcepto = row[5] || '';
-        
-        conceptosValidos.add(concepto);
-        conceptosSolicitudValidos.add(`${concepto}:${idSolicitudConcepto}`);
-        conceptosPadre.set(concepto, {descripcion, esPadre});
-        
-        // Si es concepto padre, agregar subconceptos
-        if (esPadre) {
-          for (let i = 1; i <= 10; i++) {
-            conceptosValidos.add(`${concepto}.${i}`);
-          }
+        const conceptoId = String(row[0]);
+        const solicitudIdConcepto = String(row[5] || ''); // Solicitud ID from CONCEPTO$ sheet
+
+        // Add to sets for checking existence
+        conceptosValidos.add(conceptoId);
+        if (solicitudIdConcepto) {
+            conceptosSolicitudValidos.add(`${conceptoId}:${solicitudIdConcepto}`);
+        } else {
+            // Handle concepts that might not have a solicitud ID (older data?)
+             conceptosSolicitudValidos.add(`${conceptoId}:`); // Or handle as appropriate
         }
+        // conceptosPadre.set(conceptoId, {descripcion: row[1] || '', esPadre: row[2] === 'true' || row[2] === 'TRUE'});
       });
-  
-      // 3. Identificar TODOS los nuevos conceptos (tanto regulares como sub)
-      const nuevosConceptos = gastos
-        .filter(gasto => {
-          // Verificar si ya existe, sin filtrar por tipo
-          return !conceptosSolicitudValidos.has(`${gasto.id_conceptos}:${idSolicitud}`);
-        })
-        .map(gasto => {
-          const esSubconcepto = gasto.id_conceptos.includes('.');
-          const conceptoPadre = esSubconcepto ? gasto.id_conceptos.split('.')[0] : '';
-          
-          return [
-            gasto.id_conceptos.toString(),
-            gasto.concepto || (esSubconcepto ? `Subconcepto de ${conceptoPadre}` : gasto.id_conceptos),
-            esSubconcepto ? 'false' : 'true',
-            conceptoPadre,  // nombre_conceptos 
-            "gasto_dinamico", // tipo
-            idSolicitud  // id_solicitud
-          ];
-        });
-  
-      // 4. Guardar nuevos conceptos en CONCEPTO$
-      if (nuevosConceptos.length > 0) {
-        await this.client.spreadsheets.values.append({
-          spreadsheetId: this.spreadsheetId,
-          range: 'CONCEPTO$!A2:F',
-          valueInputOption: 'RAW',
-          resource: { values: nuevosConceptos }
-        });
-  
-        // 5. Actualizar conceptosValidos con los nuevos
-        nuevosConceptos.forEach(concepto => {
-          const idConcepto = concepto[0];
-          conceptosValidos.add(idConcepto);
-          conceptosSolicitudValidos.add(`${idConcepto}:${idSolicitud}`);
-        });
+
+      let nuevosConceptos = [];
+      if (actualizarConceptos) {
+        // 2. Identify ONLY the new concepts for THIS solicitud that need to be added to CONCEPTO$
+        nuevosConceptos = gastos
+          .filter(gasto => {
+            // Check if this specific concept for this specific solicitud already exists
+            // Ensure gasto.id_conceptos and idSolicitud are strings for comparison
+            const key = `${String(gasto.id_conceptos)}:${String(idSolicitud)}`;
+            return !conceptosSolicitudValidos.has(key);
+          })
+          .map(gasto => {
+            // Directly use the data sent from the frontend for the new concept row
+            // Ensure boolean es_padre is converted to string 'true'/'false'
+            const esPadreStr = (typeof gasto.es_padre === 'boolean') ? (gasto.es_padre ? 'true' : 'false') : 'false';
+
+            return [
+              String(gasto.id_conceptos), // Col A: id_conceptos
+              gasto.descripcion || gasto.nombre_conceptos || String(gasto.id_conceptos), // Col B: descripcion (use provided description/name)
+              esPadreStr, // Col C: es_padre (use provided boolean, converted to string)
+              gasto.nombre_conceptos || gasto.descripcion || String(gasto.id_conceptos), // Col D: nombre_conceptos (use provided name/label)
+              gasto.tipo || 'estándar', // Col E: tipo (use provided type, default to estándar)
+              String(idSolicitud) // Col F: id_solicitud
+            ];
+          });
+
+        // 3. Guardar nuevos conceptos en CONCEPTO$ if any exist
+        if (nuevosConceptos.length > 0) {
+          console.log(`Adding ${nuevosConceptos.length} new concepts to CONCEPTO$ for solicitud ${idSolicitud}`);
+          await this.client.spreadsheets.values.append({
+            spreadsheetId: this.spreadsheetId,
+            range: 'CONCEPTO$!A2:F', // Append to the end
+            valueInputOption: 'RAW', // Use RAW to prevent Sheets from interpreting values
+            insertDataOption: 'INSERT_ROWS',
+            resource: { values: nuevosConceptos }
+          });
+
+          // 4. Update the set of known concepts locally to avoid trying to add them again if saveGastos is called multiple times quickly
+          nuevosConceptos.forEach(conceptoRow => {
+            const idConcepto = conceptoRow[0];
+            const idSol = conceptoRow[5];
+            conceptosValidos.add(idConcepto);
+            conceptosSolicitudValidos.add(`${idConcepto}:${idSol}`);
+          });
+        } else {
+           console.log(`No new concepts to add to CONCEPTO$ for solicitud ${idSolicitud}`);
+        }
+      } else {
+         console.log("Skipping concept update based on actualizarConceptos flag.");
       }
-  
-      // Preparar filas válidas
+
+
+      // 5. Prepare rows for GASTOS sheet (always do this for all valid expenses)
       const rows = gastos
+        // Optional: Add filtering here again if you want to be extra sure only valid expenses go to GASTOS
+        // .filter(gasto => (parseFloat(gasto.cantidad) || 0) > 0 && (parseFloat(gasto.valor_unit) || 0) > 0)
         .map(gasto => {
           const cantidad = parseFloat(gasto.cantidad) || 0;
           const valor_unit = parseFloat(gasto.valor_unit) || 0;
-          const conceptoPadre = gasto.id_conceptos.includes('.') ? 
-            gasto.id_conceptos.split('.')[0] : gasto.id_conceptos;
-          
+          // Use COMMA as the separator for consistency when determining concepto_padre for GASTOS
+          const conceptoPadre = String(gasto.id_conceptos).includes(',') ?
+            String(gasto.id_conceptos).split(',')[0] : String(gasto.id_conceptos);
+
           return [
-            gasto.id_conceptos.toString(),
-            idSolicitud.toString(),
-            cantidad,
-            valor_unit,
-            cantidad * valor_unit,
-            conceptoPadre 
+            String(gasto.id_conceptos), // Col A: id_conceptos
+            String(idSolicitud),        // Col B: id_solicitud
+            cantidad,                   // Col C: cantidad
+            valor_unit,                 // Col D: valor_unit
+            cantidad * valor_unit,      // Col E: valor_total
+            conceptoPadre               // Col F: concepto_padre
           ];
-        })
-  
-      if (rows.length === 0) return false;
-  
-      // Insertar en GASTOS
+        });
+
+      // 6. Insert into GASTOS if there are rows to insert
+      if (rows.length === 0) {
+        console.log(`No valid expense rows to insert into GASTOS for solicitud ${idSolicitud}`);
+        return false; // Indicate nothing was saved if no valid rows
+      }
+
+      console.log(`Inserting ${rows.length} rows into GASTOS for solicitud ${idSolicitud}`);
       await this.client.spreadsheets.values.append({
         spreadsheetId: this.spreadsheetId,
-        range: 'GASTOS!A2:F',
-        valueInputOption: 'USER_ENTERED',
+        range: 'GASTOS!A2:F', // Append to the end
+        valueInputOption: 'USER_ENTERED', // Use USER_ENTERED for GASTOS if formulas/formatting are needed
+        insertDataOption: 'INSERT_ROWS',
         resource: { values: rows }
       });
-  
-      return true;
+
+      return true; // Indicate success
     } catch (error) {
-      console.error("Error en saveGastos:", error);
-      throw new Error('Error guardando gastos');
+      console.error("Error in saveGastos:", error);
+      // Log more details if available
+      if (error.response && error.response.data) {
+        console.error("Google API Error Details:", error.response.data.error);
+      }
+      throw new Error('Error guardando gastos'); // Re-throw for the controller to catch
     }
   }
-  
+
   /**
    * Obtiene todos los riesgos asociados a una solicitud
    * @param {string} solicitudId - ID de la solicitud 

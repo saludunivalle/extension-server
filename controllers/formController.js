@@ -561,7 +561,7 @@ const getFormDataForm2 = async (req, res) => {
 */
 const guardarGastos = async (req, res) => {
   try {
-    const { id_solicitud, gastos } = req.body;
+    const { id_solicitud, gastos, actualizarConceptos = true } = req.body;
 
     if (!id_solicitud || !gastos?.length) {
       return res.status(400).json({
@@ -570,8 +570,8 @@ const guardarGastos = async (req, res) => {
       });
     }
 
-    // Usar el servicio de sheetsService para guardar gastos
-    const success = await sheetsService.saveGastos(id_solicitud, gastos);
+    // Usar el servicio de sheetsService para guardar gastos - pasar el tercer parámetro
+    const success = await sheetsService.saveGastos(id_solicitud, gastos, actualizarConceptos);
     
     if (success) {
       res.status(200).json({ success: true });
