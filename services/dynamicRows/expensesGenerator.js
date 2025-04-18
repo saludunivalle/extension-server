@@ -59,43 +59,33 @@ const generateRows = (expenses) => {
     
     console.log(`🔄 Generating rows for ${expensesArray.length} expenses`);
     
-    // Filter to only include dynamic expenses (ID starts with '15.')
-    const gastosDinamicos = expensesArray.filter(gasto => {
-      // Check all possible ID field names to catch all dynamic expenses
-      const id = gasto.id_conceptos || gasto.id_concepto || gasto.id || '';
-      const isDynamic = typeof id === 'string' && id.startsWith('15.');
-      
-      // Log result for each item for debugging
-      if (isDynamic) {
-        console.log(`✅ Gasto dinámico identificado: ID=${id}, Descripción=${gasto.name || gasto.descripcion || gasto.concepto || ''}`);
-      } else {
-        console.log(`ℹ️ Gasto no dinámico: ID=${id}`);
-      }
-      
-      return isDynamic;
+    // Normalize property names to ensure compatibility with different formats
+    const normalizedExpenses = expensesArray.map(gasto => {
+      // Create a normalized expense object
+      return {
+        id: gasto.id || gasto.id_concepto || gasto.id_conceptos || '',
+        descripcion: gasto.descripcion || gasto.concepto || gasto.name || '',
+        cantidad: parseFloat(gasto.cantidad) || 0,
+        valorUnit: parseFloat(gasto.valorUnit || gasto.valor_unit) || 0,
+        valorTotal: parseFloat(gasto.valorTotal || gasto.valor_total) || 0,
+        valorUnit_formatted: gasto.valorUnit_formatted || gasto.valor_unit_formatted || '',
+        valorTotal_formatted: gasto.valorTotal_formatted || gasto.valor_total_formatted || ''
+      };
     });
     
-    if (gastosDinamicos.length === 0) {
-      console.log('⚠️ No hay gastos dinámicos para procesar (IDs que empiecen con 15.)');
-      return null;
-    }
-    
-    console.log(`Procesando ${gastosDinamicos.length} gastos dinámicos`);
-    
     // Map each expense to the format expected by the template
-    const rows = gastosDinamicos.map(gasto => {
+    const rows = normalizedExpenses.map(gasto => {
       const row = templateMapper.createRow(gasto);
-      console.log(`Fila mapeada para ${gasto.id || gasto.id_conceptos || gasto.id_concepto}: ${JSON.stringify(row)}`);
+      console.log(`Fila mapeada para ${gasto.id}: ${JSON.stringify(row)}`);
       return row;
     });
     
     // Return formatted object for API
     return {
-      gastos: gastosDinamicos,
+      gastos: normalizedExpenses,
       rows: rows,
       templateRow: templateMapper.defaultInsertLocation,
-      // Fixed value for insert location - critical for proper insertion in reports
-      insertStartRow: 45 
+      insertStartRow: 45 // Fixed default value 
     };
   } catch (error) {
     console.error('Error al generar filas dinámicas para gastos:', error);
@@ -105,123 +95,56 @@ const generateRows = (expenses) => {
 };
 
 /**
- * Insert dynamic expense rows into a Google Sheet
- * @param {String} fileId - ID of the Google Sheet
- * @param {Object} dynamicRowsData - Processed data with rows to insert
- * @returns {Promise<Boolean>} Success status
+ * Versión optimizada de insertDynamicRows en expensesGenerator.js
+ * con soporte para formato de ID con coma y corrección de celdas combinadas
  */
 const insertDynamicRows = async (fileId, dynamicRowsData) => {
   try {
-    if (!dynamicRowsData || !dynamicRowsData.rows || dynamicRowsData.rows.length === 0) {
+    if (!dynamicRowsData || !dynamicRowsData.gastos || dynamicRowsData.gastos.length === 0) {
       console.log('No hay datos para insertar filas dinámicas');
       return false;
     }
     
-    // Get template configuration
-    const config = dynamicRowsData.templateConfig || templateConfig;
+    // Verificar que tenemos acceso a las dependencias necesarias
+    if (!google || !jwtClient) {
+      console.error('Dependencias no disponibles: google o jwtClient');
+      return false;
+    }
     
-    // Use the configured template row range
-    const templateRange = config?.templateRow?.range || "A44:AK44";
-    const insertStartRow = config?.templateRow?.insertStartRow || 45;
-    const copyStyle = config?.templateRow?.copyStyle !== false; // Default to true
-    
-    const rowsData = dynamicRowsData.gastos; // Use original data for insertion
-    console.log(`Insertando ${rowsData.length} filas dinámicas basadas en template ${templateRange}`);
-    
-    // Initialize Google Sheets API
+    // Inicializar API de Google Sheets
     const sheets = google.sheets({version: 'v4', auth: jwtClient});
     
-    // 1. First, we need to add enough empty rows
-    await insertEmptyRows(sheets, fileId, insertStartRow, rowsData.length);
-    console.log(`✅ Insertadas ${rowsData.length} filas vacías en la posición ${insertStartRow}`);
+    // Extraer información esencial para inserción
+    const rowsData = dynamicRowsData.gastos; // Datos originales de gastos
+    const templateRange = dynamicRowsData.insertarEn || "A44:AK44"; // Rango de template
+    const insertStartRow = dynamicRowsData.insertStartRow || 45; // Fila para comenzar inserción
     
-    // 2. If we need to copy styles, copy the template row to each new row
-    if (copyStyle) {
-      await copyTemplateRowStyles(sheets, fileId, templateRange, insertStartRow, rowsData.length);
-      console.log(`✅ Copiados estilos del template para ${rowsData.length} filas`);
-    }
+    console.log(`Insertando ${rowsData.length} filas dinámicas en la hoja ${fileId}`);
+    console.log(`Configuración: templateRange=${templateRange}, insertStartRow=${insertStartRow}`);
     
-    // 3. Now insert the data into the specific starting cells for each field
-    const dataMapping = config?.dataMapping || {};
-    const columnDefs = config?.columns || {};
-    const requests = [];
-
-    for (let i = 0; i < rowsData.length; i++) {
-      const rowNum = insertStartRow + i;
-      const gasto = rowsData[i];
-
-      // Prepare data updates for each column defined in the template
-      Object.keys(columnDefs).forEach(colKey => {
-        const columnInfo = columnDefs[colKey];
-        const dataKey = dataMapping[colKey]; // Get the corresponding key in the gasto object
-        let valueToInsert = '';
-
-        if (dataKey && gasto[dataKey] !== undefined) {
-          valueToInsert = gasto[dataKey]?.toString() || '';
-        } else if (gasto[colKey] !== undefined) { // Fallback to direct key match
-          valueToInsert = gasto[colKey]?.toString() || '';
-        }
-        
-        // Extract the starting column letter (e.g., F from F:V)
-        const startColumnLetter = columnInfo.column.split(':')[0];
-        const cellRange = `${startColumnLetter}${rowNum}`;
-
-        // Add update request for this specific cell
-        requests.push({
-          range: cellRange,
-          values: [[valueToInsert]]
-        });
-      });
-    }
-    
-    // Execute batch update for cell values
-    if (requests.length > 0) {
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId: fileId,
-        resource: {
-          valueInputOption: 'USER_ENTERED',
-          data: requests
-        }
-      });
-      console.log(`✅ Insertados datos en ${rowsData.length} filas dinámicas en el reporte`);
-    } else {
-        console.log('No data update requests generated.');
-    }
-
-    return true;
-  } catch (error) {
-    console.error('Error al insertar filas dinámicas:', error);
-    if (error.response && error.response.data) {
-      console.error('Google API Error:', JSON.stringify(error.response.data, null, 2));
-    }
-    return false;
-  }
-};
-
-/**
- * Insert empty rows at specified position
- * @param {Object} sheets - Google Sheets API client
- * @param {String} fileId - Spreadsheet ID
- * @param {Number} startRowIndex - 1-based row index where to insert
- * @param {Number} rowCount - Number of rows to insert
- */
-async function insertEmptyRows(sheets, fileId, startRowIndex, rowCount) {
-  try {
-    // Get the spreadsheet to find the first sheet ID
+    // 1. PASO 1: Obtener información del documento
     const spreadsheet = await sheets.spreadsheets.get({
       spreadsheetId: fileId,
-      fields: 'sheets.properties'
+      includeGridData: true,
+      ranges: [templateRange]
     });
     
-    if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
-      throw new Error('No sheets found in the spreadsheet');
+    // Verificar que obtuvimos datos del documento
+    if (!spreadsheet.data || !spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
+      console.error('No se pudo obtener información de la hoja');
+      return false;
     }
     
-    // Use the first sheet ID
+    // Obtener ID de la primera hoja
     const sheetId = spreadsheet.data.sheets[0].properties.sheetId;
+    console.log(`ID de la hoja: ${sheetId}`);
     
-    // Insert rows (need to convert from 1-based to 0-based index)
-    await sheets.spreadsheets.batchUpdate({
+    // Extraer información sobre celdas combinadas
+    const merges = spreadsheet.data.sheets[0].merges || [];
+    console.log(`Encontradas ${merges.length} regiones combinadas en la hoja`);
+    
+    // 2. PASO 2: Insertar filas vacías
+    const insertRowsRequest = {
       spreadsheetId: fileId,
       resource: {
         requests: [{
@@ -229,153 +152,184 @@ async function insertEmptyRows(sheets, fileId, startRowIndex, rowCount) {
             range: {
               sheetId: sheetId,
               dimension: 'ROWS',
-              startIndex: startRowIndex - 1, // Convert to 0-based
-              endIndex: startRowIndex - 1 + rowCount
+              startIndex: insertStartRow - 1, // Convertir a 0-based
+              endIndex: (insertStartRow - 1) + rowsData.length
             },
             inheritFromBefore: true
           }
         }]
       }
-    });
+    };
     
-    return true;
-  } catch (error) {
-    console.error('Error inserting empty rows:', error);
-    throw error;
-  }
-}
-
-/**
- * Copy template row styles to newly inserted rows
- * @param {Object} sheets - Google Sheets API client
- * @param {String} fileId - Spreadsheet ID
- * @param {String} templateRange - Template row range (e.g., "A44:AK44")
- * @param {Number} startRowIndex - 1-based row index where rows were inserted
- * @param {Number} rowCount - Number of rows inserted
- */
-async function copyTemplateRowStyles(sheets, fileId, templateRange, startRowIndex, rowCount) {
-  try {
-    // Get the spreadsheet details including merged cells info
-    const spreadsheet = await sheets.spreadsheets.get({
+    await sheets.spreadsheets.batchUpdate(insertRowsRequest);
+    console.log(`✅ ${rowsData.length} filas vacías insertadas en la posición ${insertStartRow}`);
+    
+    // 3. PASO 3: Extraer información del rango template
+    const rangeMatch = /([A-Z]+)(\d+):([A-Z]+)(\d+)/.exec(templateRange);
+    if (!rangeMatch) {
+      throw new Error(`Formato de rango inválido: ${templateRange}`);
+    }
+    
+    const startCol = rangeMatch[1];
+    const endCol = rangeMatch[3];
+    const templateRowNum = parseInt(rangeMatch[2]);
+    
+    // Función auxiliar para convertir columna a índice
+    const colToIndex = (col) => {
+      let index = 0;
+      for (let i = 0; i < col.length; i++) {
+        index = index * 26 + col.charCodeAt(i) - 64;
+      }
+      return index - 1; // 0-based
+    };
+    
+    const startColIndex = colToIndex(startCol);
+    const endColIndex = colToIndex(endCol) + 1;
+    
+    // 4. PASO 4: Copiar formato de la fila template
+    await sheets.spreadsheets.batchUpdate({
       spreadsheetId: fileId,
-      fields: 'sheets.properties,sheets.merges'
+      resource: {
+        requests: [{
+          copyPaste: {
+            source: {
+              sheetId: sheetId,
+              startRowIndex: templateRowNum - 1, // Convertir a 0-based
+              endRowIndex: templateRowNum,
+              startColumnIndex: startColIndex,
+              endColumnIndex: endColIndex
+            },
+            destination: {
+              sheetId: sheetId,
+              startRowIndex: insertStartRow - 1, // Convertir a 0-based
+              endRowIndex: (insertStartRow - 1) + rowsData.length,
+              startColumnIndex: startColIndex,
+              endColumnIndex: endColIndex
+            },
+            pasteType: 'PASTE_FORMAT',
+            pasteOrientation: 'NORMAL'
+          }
+        }]
+      }
     });
     
-    if (!spreadsheet.data.sheets || spreadsheet.data.sheets.length === 0) {
-      throw new Error('No sheets found in the spreadsheet');
-    }
+    console.log(`✅ Formato copiado correctamente`);
     
-    // Use the first sheet ID
-    const sheetId = spreadsheet.data.sheets[0].properties.sheetId;
+    // 5. PASO 5: Recrear celdas combinadas en las nuevas filas
+    // Identificar las celdas combinadas que afectan a la fila de plantilla
+    const templateRowMerges = merges.filter(merge => {
+      return merge.startRowIndex === templateRowNum - 1 && merge.endRowIndex === templateRowNum;
+    });
     
-    // Parse the template range
-    const match = /([A-Z]+)(\d+):([A-Z]+)(\d+)/.exec(templateRange);
-    if (!match) {
-      throw new Error(`Invalid template range format: ${templateRange}`);
-    }
-    
-    const [_, startCol, startRow, endCol, endRow] = match;
-    const templateRowIndex = parseInt(startRow) - 1; // Convert to 0-based
-    
-    // Find merged cells in the template row
-    const templateMerges = [];
-    if (spreadsheet.data.sheets[0].merges) {
-      spreadsheet.data.sheets[0].merges.forEach(mergeInfo => {
-        if (mergeInfo.startRowIndex === templateRowIndex && 
-            mergeInfo.endRowIndex === templateRowIndex + 1) {
-          templateMerges.push(mergeInfo);
-        }
-      });
-    }
-    
-    console.log(`Found ${templateMerges.length} merged cell ranges in template row`);
-    
-    // Create copy paste and merge requests for each target row
-    const requests = [];
-    
-    // For each new row
-    for (let i = 0; i < rowCount; i++) {
-      const targetRowIndex = startRowIndex - 1 + i; // Convert to 0-based
+    if (templateRowMerges.length > 0) {
+      console.log(`Encontradas ${templateRowMerges.length} celdas combinadas en la fila plantilla`);
       
-      // 1. First copy all formatting and styles
-      requests.push({
-        copyPaste: {
-          source: {
-            sheetId: sheetId,
-            startRowIndex: templateRowIndex,
-            endRowIndex: templateRowIndex + 1,
-            startColumnIndex: columnToIndex(startCol),
-            endColumnIndex: columnToIndex(endCol) + 1
-          },
-          destination: {
-            sheetId: sheetId,
-            startRowIndex: targetRowIndex,
-            endRowIndex: targetRowIndex + 1,
-            startColumnIndex: columnToIndex(startCol),
-            endColumnIndex: columnToIndex(endCol) + 1
-          },
-          pasteType: 'PASTE_FORMAT',
-          pasteOrientation: 'NORMAL'
-        }
-      });
+      const mergeCellRequests = [];
       
-      // 2. Create the same merged cells in the destination row
-      templateMerges.forEach(merge => {
-        requests.push({
-          mergeCells: {
-            range: {
-              sheetId: sheetId,
-              startRowIndex: targetRowIndex,
-              endRowIndex: targetRowIndex + 1,
-              startColumnIndex: merge.startColumnIndex,
-              endColumnIndex: merge.endColumnIndex
-            },
-            mergeType: 'MERGE_ALL'
+      // Para cada fila insertada
+      for (let i = 0; i < rowsData.length; i++) {
+        // Para cada combinación de celdas en la plantilla
+        templateRowMerges.forEach(merge => {
+          mergeCellRequests.push({
+            mergeCells: {
+              range: {
+                sheetId: sheetId,
+                startRowIndex: insertStartRow - 1 + i,
+                endRowIndex: insertStartRow + i,
+                startColumnIndex: merge.startColumnIndex,
+                endColumnIndex: merge.endColumnIndex
+              },
+              mergeType: 'MERGE_ALL'
+            }
+          });
+        });
+      }
+      
+      if (mergeCellRequests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: fileId,
+          resource: {
+            requests: mergeCellRequests
           }
         });
+        console.log(`✅ Creadas ${mergeCellRequests.length} celdas combinadas en las nuevas filas`);
+      }
+    }
+    
+    // 6. PASO 6: Insertar datos en las celdas
+    const valueRequests = [];
+    
+    for (let i = 0; i < rowsData.length; i++) {
+      const rowIndex = insertStartRow + i;
+      const gasto = rowsData[i];
+      
+      // Manejar ambos formatos de ID (con coma o con punto)
+      let idValue = gasto.id || gasto.id_conceptos || `15,${i+1}`;
+      
+      // Convertir formato a coma si viene con punto
+      if (idValue.includes('.')) {
+        idValue = idValue.replace('.', ',');
+      }
+      
+      // Extraer valores con manejo de diferentes nombres de propiedades
+      const descripcionValue = gasto.descripcion || gasto.concepto || '';
+      const cantidadValue = gasto.cantidad?.toString() || '0';
+      const valorUnitValue = gasto.valorUnit_formatted || gasto.valor_unit_formatted || `$${gasto.valorUnit || gasto.valor_unit || 0}`;
+      const valorTotalValue = gasto.valorTotal_formatted || gasto.valor_total_formatted || `$${gasto.valorTotal || gasto.valor_total || 0}`;
+      
+      // Log para depuración
+      console.log(`Fila ${rowIndex}, ID: ${idValue}, Descripción: ${descripcionValue}`);
+      
+      // Añadir solicitudes para cada celda
+      valueRequests.push({
+        range: `E${rowIndex}`, // ID
+        values: [[idValue]]
+      });
+      
+      valueRequests.push({
+        range: `F${rowIndex}`, // Descripción
+        values: [[descripcionValue]]
+      });
+      
+      valueRequests.push({
+        range: `X${rowIndex}`, // Cantidad
+        values: [[cantidadValue]]
+      });
+      
+      valueRequests.push({
+        range: `Z${rowIndex}`, // Valor unitario
+        values: [[valorUnitValue]]
+      });
+      
+      valueRequests.push({
+        range: `AC${rowIndex}`, // Valor total
+        values: [[valorTotalValue]]
       });
     }
     
-    // Execute the batch update
-    if (requests.length > 0) {
-      await sheets.spreadsheets.batchUpdate({
+    // Enviar solicitud de actualización de valores
+    if (valueRequests.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
         spreadsheetId: fileId,
-        resource: { requests }
+        resource: {
+          valueInputOption: 'USER_ENTERED',
+          data: valueRequests
+        }
       });
+      console.log(`✅ Datos insertados correctamente en las celdas`);
+    } else {
+      console.log('⚠️ No hay datos para insertar');
     }
     
     return true;
   } catch (error) {
-    console.error('Error copying template styles:', error);
-    throw error;
+    console.error('Error al insertar filas dinámicas:', error);
+    if (error.response && error.response.data) {
+      console.error('Detalles del error Google Sheets API:', error.response.data);
+    }
+    return false;
   }
-}
-
-/**
- * Extract column range from a cell range like "A44:AK44"
- * @param {String} range - Cell range
- * @returns {Array} Array with start and end column letters
- */
-function extractColumnRange(range) {
-  const match = /([A-Z]+)\d+:([A-Z]+)\d+/.exec(range);
-  if (!match) {
-    return ['A', 'Z']; // Default fallback
-  }
-  return [match[1], match[2]];
-}
-
-/**
- * Convert column letter to index (0-based)
- * @param {String} column - Column letter (e.g., "A", "BC")
- * @returns {Number} Column index (0-based)
- */
-function columnToIndex(column) {
-  let result = 0;
-  for (let i = 0; i < column.length; i++) {
-    result = result * 26 + (column.charCodeAt(i) - 64);
-  }
-  return result - 1; // Convert to 0-based index
-}
+};
 
 module.exports = {
   generateRows,

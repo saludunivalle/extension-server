@@ -91,95 +91,230 @@ class DriveService {
   }
 
   /**
-   * Procesa un archivo XLSX sustituyendo marcadores con datos
-   * @param {String} templateId - ID de la plantilla
-   * @param {Object} data - Datos para reemplazar marcadores
-   * @param {String} fileName - Nombre del archivo resultante
-   * @returns {Promise<String>} - URL del archivo resultante
+   * Versión mejorada de processXLSXWithStyles en driveService.js 
+   * para manejar correctamente filas dinámicas
    */
-
   async processXLSXWithStyles(templateId, data, fileName) {
     try {
       console.log(`Descargando la plantilla: ${templateId}`);
-      const fileResponse = await this.drive.files.get(
-        { fileId: templateId, alt: 'media' },
-        { responseType: 'stream' }
-      );
-  
-      // Cargar el libro desde el stream
-      const workbook = await excelUtils.loadWorkbookFromStream(fileResponse.data);
-      console.log('Libro cargado desde stream correctamente');
-  
-      // Store the dynamic rows data for later processing
+      
+      // 1. Primero, verificar el tipo de archivo de la plantilla
+      const fileInfo = await this.drive.files.get({
+        fileId: templateId,
+        fields: 'mimeType,name'
+      });
+      
+      const isGoogleSheet = fileInfo.data.mimeType === 'application/vnd.google-apps.spreadsheet';
+      console.log(`Tipo de plantilla: ${fileInfo.data.mimeType} (${isGoogleSheet ? 'Google Sheet' : 'XLSX/Excel'})`);
+      
+      let fileId;
+      
+      // 2. Extraer y guardar datos dinámicos para procesamiento posterior
       const dynamicRowsData = data['__FILAS_DINAMICAS__'];
+      console.log('Datos dinámicos:', dynamicRowsData ? `${dynamicRowsData.gastos?.length || 0} gastos` : 'Ninguno');
       
       // Extraer campos de gastos individuales antes de eliminar __FILAS_DINAMICAS__
       const gastoFields = {};
       if (dynamicRowsData && dynamicRowsData.gastos) {
+        console.log(`Procesando ${dynamicRowsData.gastos.length} gastos dinámicos para marcadores`);
         dynamicRowsData.gastos.forEach((gasto, index) => {
-          // Crear marcadores individuales para cada gasto (con coma y con punto)
-          const idConComa = gasto.id?.replace('.', ',') || `1,${index + 1}`;
-          const idConPunto = gasto.id?.replace(',', '.') || `1.${index + 1}`;
+          // Manejar ambos formatos de ID (con coma o con punto)
+          let idConComa = gasto.id || `15,${index + 1}`;
+          let idConPunto = gasto.id || `15.${index + 1}`;
+          
+          // Asegurar que tenemos ambas versiones
+          if (idConComa.includes('.')) {
+            idConComa = idConComa.replace('.', ',');
+          }
+          
+          if (idConPunto.includes(',')) {
+            idConPunto = idConPunto.replace(',', '.');
+          }
           
           // Versión con coma para Excel
           gastoFields[`gasto_${idConComa}_cantidad`] = gasto.cantidad?.toString() || '0';
-          gastoFields[`gasto_${idConComa}_valor_unit`] = gasto.valorUnit_formatted || '0';
-          gastoFields[`gasto_${idConComa}_valor_total`] = gasto.valorTotal_formatted || '0';
-          gastoFields[`gasto_${idConComa}_descripcion`] = gasto.descripcion || '';
+          gastoFields[`gasto_${idConComa}_valor_unit`] = gasto.valorUnit_formatted || gasto.valor_unit_formatted || '0';
+          gastoFields[`gasto_${idConComa}_valor_total`] = gasto.valorTotal_formatted || gasto.valor_total_formatted || '0';
+          gastoFields[`gasto_${idConComa}_descripcion`] = gasto.descripcion || gasto.concepto || '';
           
           // Versión con punto (más estándar)
           gastoFields[`gasto_${idConPunto}_cantidad`] = gasto.cantidad?.toString() || '0';
-          gastoFields[`gasto_${idConPunto}_valor_unit`] = gasto.valorUnit_formatted || '0';
-          gastoFields[`gasto_${idConPunto}_valor_total`] = gasto.valorTotal_formatted || '0';
-          gastoFields[`gasto_${idConPunto}_descripcion`] = gasto.descripcion || '';
+          gastoFields[`gasto_${idConPunto}_valor_unit`] = gasto.valorUnit_formatted || gasto.valor_unit_formatted || '0';
+          gastoFields[`gasto_${idConPunto}_valor_total`] = gasto.valorTotal_formatted || gasto.valor_total_formatted || '0';
+          gastoFields[`gasto_${idConPunto}_descripcion`] = gasto.descripcion || gasto.concepto || '';
+          
+          console.log(`Marcadores creados para gasto ${idConComa}`);
         });
       }
       
-      // Remove special field to avoid processing it as a normal marker
-      delete data['__FILAS_DINAMICAS__'];
-  
-      // Incorporar los campos individuales de gastos al objeto data
-      Object.assign(data, gastoFields);
-      
-      // Log the data before replacing markers for debugging
-      console.log('Datos para reemplazar marcadores:', Object.keys(data));
-      
-      // Reemplazar marcadores con opción de depuración
-      excelUtils.replaceMarkers(workbook, data, true);
-      console.log('Marcadores reemplazados correctamente');
-  
-      // Guardar a archivo temporal
-      const tempFilePath = await excelUtils.saveToTempFile(workbook, fileName);
-      console.log(`Archivo guardado temporalmente en ${tempFilePath}`);
-  
-      // Subir a Google Drive
-      const uploadResponse = await this.drive.files.create({
-        requestBody: {
-          name: fileName,
-          parents: [this.templateFolderId],
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        },
-        media: {
-          mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          body: fs.createReadStream(tempFilePath),
-        },
-      });
-  
-      const fileId = uploadResponse.data.id;
-      await this.makeFilePublic(fileId);
-      
-      // Insertar filas dinámicas si es necesario
-      if (dynamicRowsData && dynamicRowsData.rows && dynamicRowsData.rows.length > 0) {
-        await expensesGenerator.insertDynamicRows(fileId, dynamicRowsData);
+      // DIFERENTE FLUJO SEGÚN EL TIPO DE PLANTILLA
+      if (isGoogleSheet) {
+        // ==== FLUJO PARA PLANTILLA DE GOOGLE SHEET ====
+        console.log('Usando flujo para plantilla Google Sheet');
+        
+        // Duplicar la hoja de Google ya existente
+        const copyResponse = await this.drive.files.copy({
+          fileId: templateId,
+          requestBody: {
+            name: fileName,
+            parents: [this.templateFolderId]
+          }
+        });
+        
+        fileId = copyResponse.data.id;
+        await this.makeFilePublic(fileId);
+        console.log(`Plantilla Google Sheet duplicada con ID: ${fileId}`);
+        
+        // Crear una copia de los datos sin dinamicRowsData
+        const processData = { ...data };
+        delete processData['__FILAS_DINAMICAS__'];
+        
+        // Incorporar los campos individuales de gastos
+        Object.assign(processData, gastoFields);
+        
+        // Reemplazar marcadores en el Sheet
+        const sheets = google.sheets({ version: 'v4', auth: jwtClient });
+        
+        // Obtener todos los datos actuales de la hoja para buscar marcadores
+        const sheetData = await sheets.spreadsheets.values.get({
+          spreadsheetId: fileId,
+          range: 'A1:AZ1000' // Rango amplio para cubrir todos los posibles marcadores
+        });
+        
+        const values = sheetData.data.values || [];
+        const updates = [];
+        
+        // Buscar marcadores y reemplazarlos
+        for (let r = 0; r < values.length; r++) {
+          const row = values[r];
+          for (let c = 0; c < row.length; c++) {
+            const cell = row[c];
+            
+            // Si la celda contiene un marcador
+            if (typeof cell === 'string' && cell.includes('{{') && cell.includes('}}')) {
+              const matches = cell.match(/\{\{([^}]+)\}\}/g);
+              
+              if (matches) {
+                let replacedValue = cell;
+                
+                matches.forEach(match => {
+                  const key = match.slice(2, -2); // Extraer el nombre del marcador: {{nombre_actividad}} -> nombre_actividad
+                  if (processData[key] !== undefined) {
+                    replacedValue = replacedValue.replace(match, processData[key]);
+                  }
+                });
+                
+                // Si se realizó algún reemplazo, añadir a las actualizaciones
+                if (replacedValue !== cell) {
+                  const colLetter = String.fromCharCode(65 + c); // A, B, C, ...
+                  updates.push({
+                    range: `${colLetter}${r + 1}`,
+                    values: [[replacedValue]]
+                  });
+                }
+              }
+            }
+          }
+        }
+        
+        // Aplicar todos los reemplazos en una sola operación
+        if (updates.length > 0) {
+          await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: fileId,
+            resource: {
+              valueInputOption: 'RAW',
+              data: updates
+            }
+          });
+          console.log(`✅ Reemplazados ${updates.length} marcadores en Google Sheet`);
+        }
+        
+      } else {
+        // ==== FLUJO PARA PLANTILLA XLSX ====
+        console.log('Usando flujo para plantilla XLSX');
+        
+        // Descargar plantilla XLSX
+        const fileResponse = await this.drive.files.get(
+          { fileId: templateId, alt: 'media' },
+          { responseType: 'stream' }
+        );
+        
+        // Cargar el libro desde el stream
+        const workbook = await excelUtils.loadWorkbookFromStream(fileResponse.data);
+        console.log('Libro XLSX cargado desde stream correctamente');
+        
+        // Hacer copia de los datos sin dinamicRowsData
+        const processData = { ...data };
+        delete processData['__FILAS_DINAMICAS__'];
+        
+        // Incorporar los campos individuales de gastos
+        Object.assign(processData, gastoFields);
+        
+        // Reemplazar marcadores
+        excelUtils.replaceMarkers(workbook, processData, true);
+        console.log('Marcadores reemplazados correctamente en XLSX');
+        
+        // Guardar a archivo temporal
+        const tempFilePath = await excelUtils.saveToTempFile(workbook, fileName);
+        console.log(`Archivo XLSX guardado temporalmente en ${tempFilePath}`);
+        
+        // Subir a Google Drive como Google Sheets directamente
+        const uploadResponse = await this.drive.files.create({
+          requestBody: {
+            name: fileName,
+            parents: [this.templateFolderId],
+            mimeType: 'application/vnd.google-apps.spreadsheet', // Subir directamente como Sheet
+          },
+          media: {
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            body: fs.createReadStream(tempFilePath),
+          },
+        });
+        
+        fileId = uploadResponse.data.id;
+        await this.makeFilePublic(fileId);
+        console.log(`Archivo XLSX convertido a Google Sheet con ID: ${fileId}`);
+        
+        // Limpiar archivos temporales
+        excelUtils.cleanupTempFiles([tempFilePath]);
       }
-
-      // Limpiar archivos temporales
-      excelUtils.cleanupTempFiles([tempFilePath]);
-  
-      return `https://drive.google.com/file/d/${fileId}/view`;
+      
+      // INDEPENDIENTEMENTE DEL TIPO DE PLANTILLA INICIAL
+      // Si hay filas dinámicas, insertarlas en el Sheet final
+      if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
+        try {
+          console.log('Iniciando proceso para insertar filas dinámicas...');
+          
+          // Importar el generador de filas dinámicas
+          const { insertDynamicRows } = require('./dynamicRows/expensesGenerator');
+          
+          // Asegurarse que dynamicRowsData tiene el formato correcto
+          const preparedData = {
+            ...dynamicRowsData,
+            insertarEn: dynamicRowsData.insertarEn || "A44:AK44",
+            insertStartRow: dynamicRowsData.insertStartRow || 45
+          };
+          
+          // Insertar filas dinámicas 
+          const result = await insertDynamicRows(fileId, preparedData);
+          
+          if (result) {
+            console.log('✅ Filas dinámicas insertadas correctamente');
+          } else {
+            console.log('⚠️ No se pudieron insertar las filas dinámicas');
+          }
+        } catch (error) {
+          console.error('Error al procesar filas dinámicas:', error);
+          console.error('Stack:', error.stack);
+        }
+      }
+      
+      // Devolver URL del documento Google Sheet
+      return `https://docs.google.com/spreadsheets/d/${fileId}/edit?usp=sharing`;
     } catch (error) {
-      console.error('Error al procesar archivo XLSX:', error);
-      throw new Error(`Error al procesar archivo XLSX: ${error.message}`);
+      console.error('Error al procesar archivo:', error);
+      console.error('Stack:', error.stack);
+      throw new Error(`Error al procesar archivo: ${error.message}`);
     }
   }
 
