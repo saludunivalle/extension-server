@@ -6,7 +6,7 @@ const { generateExpenseRows } = require('../services/dynamicRows');
  */
 const report2Config = {
   title: 'Formulario de Presupuesto - F-05-MP-05-01-02',
-  templateId: '1JY-4IfJqEWLqZ_wrq_B_bfIlI9MeVzgF',
+  templateId: '1nWY2gYKtJuXQnGLsdN7RID_2QmrHKRtOwcQsaTsOOm8',
   requiresAdditionalData: true,
   requiresGastos: true, // Budget form needs expense data
   
@@ -351,23 +351,48 @@ const report2Config = {
       if (gastosDinamicos && gastosDinamicos.length > 0) {
         console.log(`Procesando ${gastosDinamicos.length} gastos dinámicos para el reporte`);
         
-        // Use the dynamic rows service to generate the rows data
-        const dynamicRowsData = generateExpenseRows(gastosDinamicos);
-        
-        if (dynamicRowsData) {
-          // IMPORTANTE: Asegurarnos que las filas dinámicas se inserten en la fila 45
-          console.log(`⚠️ CRÍTICO: Configurando inserción de filas dinámicas a partir de la fila 45`);
+        // Asegurarnos de que los gastos tienen el formato correcto para la inserción
+        const gastosProcesados = gastosDinamicos.map(gasto => {
+          // Asegurarse de que tenemos el ID en formato correcto (con punto)
+          const id = gasto.id?.replace(',', '.') || 
+                     gasto.id_conceptos?.replace(',', '.') || '';
           
-          // Add special field for dynamic expenses with rows data
-          transformedData['__FILAS_DINAMICAS__'] = {
-            gastos: dynamicRowsData.gastos,
-            rows: dynamicRowsData.rows,
-            insertarEn: "A44:AK44", // Template row range
-            insertStartRow: 45 // FIXED VALUE: Always insert at row 45
+          // Formatear valores monetarios si no están formateados
+          const formatCurrency = (value) => {
+            if (!value && value !== 0) return '$0';
+            const numValue = parseFloat(value);
+            return isNaN(numValue) ? '$0' : 
+              new Intl.NumberFormat('es-CO', {
+                style: 'currency',
+                currency: 'COP',
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 0
+              }).format(numValue);
           };
           
-          console.log(`✅ Configuración de filas dinámicas completada con insertStartRow=45`);
-        }
+          return {
+            id: id,
+            id_conceptos: id,
+            descripcion: gasto.descripcion || gasto.concepto || '',
+            concepto: gasto.descripcion || gasto.concepto || '',
+            cantidad: gasto.cantidad?.toString() || '0',
+            valorUnit: gasto.valorUnit || gasto.valor_unit || 0,
+            valorUnit_formatted: gasto.valorUnit_formatted || gasto.valor_unit_formatted || 
+                                 formatCurrency(gasto.valorUnit || gasto.valor_unit || 0),
+            valorTotal: gasto.valorTotal || gasto.valor_total || 0,
+            valorTotal_formatted: gasto.valorTotal_formatted || gasto.valor_total_formatted || 
+                                  formatCurrency(gasto.valorTotal || gasto.valor_total || 0)
+          };
+        });
+        
+        // Configurar el objeto especial con la información necesaria
+        transformedData['__FILAS_DINAMICAS__'] = {
+          gastos: gastosProcesados,
+          insertarEn: "A44:AK44",
+          insertStartRow: 45
+        };
+        
+        console.log(`✅ Configurados ${gastosDinamicos.length} gastos dinámicos para inserción en el reporte`);
       }
       
       // IMPORTANTE: Asegurarse que los valores de subtotal_gastos e imprevistos son correctos
