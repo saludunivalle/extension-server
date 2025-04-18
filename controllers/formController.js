@@ -561,6 +561,7 @@ const getFormDataForm2 = async (req, res) => {
 */
 const guardarGastos = async (req, res) => {
   try {
+    console.log('📝 Payload en guardarGastos:', JSON.stringify(req.body, null,2));
     const { id_solicitud, gastos, actualizarConceptos = true } = req.body;
 
     if (!id_solicitud || !gastos?.length) {
