@@ -213,129 +213,286 @@ class SheetsService {
     }
   }
 
-  async saveGastos(idSolicitud, gastos, actualizarConceptos = true) { // Keep the actualizarConceptos parameter if needed elsewhere, but logic relies on it being true here
+  async saveGastos(idSolicitud, gastos, actualizarConceptos = true) {
     try {
+      console.log(`🔄 Iniciando saveGastos para solicitud ${idSolicitud}. actualizarConceptos=${actualizarConceptos}`);
+      console.log(`   Recibidos ${gastos.length} gastos del frontend.`);
+
       const conceptosValidos = new Set();
       const conceptosSolicitudValidos = new Set();
-      // const conceptosPadre = new Map(); // Might not be needed if we trust frontend data
 
-      // 1. Get existing concepts to avoid duplicates for the specific solicitud
+      // 1. Get existing concepts
+      console.log('   Paso 1: Obteniendo conceptos existentes de CONCEPTO$...');
       const conceptosResponse = await this.client.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
         range: 'CONCEPTO$!A2:F' // Read ID, Desc, Padre, Nombre, Tipo, SolicitudID
       });
 
-      (conceptosResponse.data.values || []).forEach(row => {
-        const conceptoId = String(row[0]);
-        const solicitudIdConcepto = String(row[5] || ''); // Solicitud ID from CONCEPTO$ sheet
+      const existingConceptRows = conceptosResponse.data.values || [];
+      console.log(`   Encontrados ${existingConceptRows.length} conceptos existentes en total.`);
 
-        // Add to sets for checking existence
-        conceptosValidos.add(conceptoId);
-        if (solicitudIdConcepto) {
-            conceptosSolicitudValidos.add(`${conceptoId}:${solicitudIdConcepto}`);
-        } else {
-            // Handle concepts that might not have a solicitud ID (older data?)
-             conceptosSolicitudValidos.add(`${conceptoId}:`); // Or handle as appropriate
+      existingConceptRows.forEach(row => {
+        // Normalizar formato de ID para asegurar consistencia (reemplazar comas y puntos)
+        const conceptoId = String(row[0] || '').trim(); // Col A: id_conceptos
+        const solicitudIdConcepto = String(row[5] || '').trim(); // Col F: id_solicitud
+
+        // Solo añadir si ambos IDs son válidos para la comparación
+        if (conceptoId && solicitudIdConcepto) {
+            // Crear clave normalizada para buscar coincidencias independiente del formato
+            // Normalizar formato: convertir tanto puntos como comas a un formato común (usamos punto)
+            const normalizedId = conceptoId.replace(/,/g, '.');
+            const key = `${normalizedId}:${solicitudIdConcepto}`;
+            conceptosSolicitudValidos.add(key);
+            conceptosValidos.add(normalizedId); // También mantener un set de IDs normalizados
         }
-        // conceptosPadre.set(conceptoId, {descripcion: row[1] || '', esPadre: row[2] === 'true' || row[2] === 'TRUE'});
       });
+      console.log(`   Total de claves únicas 'concepto:solicitud' cacheadas: ${conceptosSolicitudValidos.size}`);
 
-      let nuevosConceptos = [];
-      if (actualizarConceptos) {
-        // 2. Identify ONLY the new concepts for THIS solicitud that need to be added to CONCEPTO$
-        nuevosConceptos = gastos
-          .filter(gasto => {
-            // Check if this specific concept for this specific solicitud already exists
-            // Ensure gasto.id_conceptos and idSolicitud are strings for comparison
-            const key = `${String(gasto.id_conceptos)}:${String(idSolicitud)}`;
-            return !conceptosSolicitudValidos.has(key);
-          })
-          .map(gasto => {
-            // Directly use the data sent from the frontend for the new concept row
-            // Ensure boolean es_padre is converted to string 'true'/'false'
-            const esPadreStr = (typeof gasto.es_padre === 'boolean') ? (gasto.es_padre ? 'true' : 'false') : 'false';
-
-            return [
-              String(gasto.id_conceptos), // Col A: id_conceptos
-              gasto.descripcion || gasto.nombre_conceptos || String(gasto.id_conceptos), // Col B: descripcion (use provided description/name)
-              esPadreStr, // Col C: es_padre (use provided boolean, converted to string)
-              gasto.nombre_conceptos || gasto.descripcion || String(gasto.id_conceptos), // Col D: nombre_conceptos (use provided name/label)
-              gasto.tipo || 'estándar', // Col E: tipo (use provided type, default to estándar)
-              String(idSolicitud) // Col F: id_solicitud
-            ];
-          });
-
-        // 3. Guardar nuevos conceptos en CONCEPTO$ if any exist
-        if (nuevosConceptos.length > 0) {
-          console.log(`Adding ${nuevosConceptos.length} new concepts to CONCEPTO$ for solicitud ${idSolicitud}`);
-          await this.client.spreadsheets.values.append({
-            spreadsheetId: this.spreadsheetId,
-            range: 'CONCEPTO$!A2:F', // Append to the end
-            valueInputOption: 'RAW', // Use RAW to prevent Sheets from interpreting values
-            insertDataOption: 'INSERT_ROWS',
-            resource: { values: nuevosConceptos }
-          });
-
-          // 4. Update the set of known concepts locally to avoid trying to add them again if saveGastos is called multiple times quickly
-          nuevosConceptos.forEach(conceptoRow => {
-            const idConcepto = conceptoRow[0];
-            const idSol = conceptoRow[5];
-            conceptosValidos.add(idConcepto);
-            conceptosSolicitudValidos.add(`${idConcepto}:${idSol}`);
-          });
-        } else {
-           console.log(`No new concepts to add to CONCEPTO$ for solicitud ${idSolicitud}`);
-        }
-      } else {
-         console.log("Skipping concept update based on actualizarConceptos flag.");
-      }
-
-
-      // 5. Prepare rows for GASTOS sheet (always do this for all valid expenses)
-      const rows = gastos
-        // Optional: Add filtering here again if you want to be extra sure only valid expenses go to GASTOS
-        // .filter(gasto => (parseFloat(gasto.cantidad) || 0) > 0 && (parseFloat(gasto.valor_unit) || 0) > 0)
+      // Siempre actualizar conceptos, independientemente del parámetro actualizarConceptos
+      console.log('   Paso 2: Identificando NUEVOS conceptos para esta solicitud...');
+      
+      // 2. Identify ALL concepts (not just new ones) to ensure CONCEPTO$ is updated
+      const todoConceptos = gastos
+        .filter(gasto => {
+          // Asegurarse de que el gasto tiene un ID válido
+          const idConceptoGasto = String(gasto.id_conceptos || '').trim();
+          if (!idConceptoGasto) {
+            console.warn(`      -> Omitiendo gasto sin id_conceptos:`, gasto);
+            return false; // Ignorar gastos sin ID
+          }
+          return true; // Incluir todos los gastos con ID válido
+        })
         .map(gasto => {
-          const cantidad = parseFloat(gasto.cantidad) || 0;
-          const valor_unit = parseFloat(gasto.valor_unit) || 0;
-          // Use COMMA as the separator for consistency when determining concepto_padre for GASTOS
-          const conceptoPadre = String(gasto.id_conceptos).includes(',') ?
-            String(gasto.id_conceptos).split(',')[0] : String(gasto.id_conceptos);
+          // 3. Formatear la fila para CONCEPTO$
+          // Normalizar formato para asegurar consistencia (unificar comas y puntos a punto)
+          const idConceptoStr = String(gasto.id_conceptos || '').trim();
+          const normalizedId = idConceptoStr.replace(/,/g, '.');
+          
+          // Determinar si es un gasto dinámico (verificando AMBOS formatos: punto y coma)
+          const esDinamico = normalizedId.startsWith('15.') || idConceptoStr.startsWith('15,');
+          
+          // Determinar si es padre (concepto principal sin subíndice)
+          const esPadre = typeof gasto.es_padre === 'boolean' 
+            ? gasto.es_padre 
+            : !(normalizedId.includes('.')); // Si no tiene punto después de normalizar, es un concepto padre
+          
+          const esPadreStr = esPadre ? 'true' : 'false';
+          
+          // Usar descripción o nombre de concepto proporcionado, o el ID como último recurso
+          const descripcion = gasto.descripcion || gasto.nombre_conceptos || normalizedId;
+          
+          // Para gastos dinámicos, el nombre_conceptos debe ser igual a descripción
+          const nombreConcepto = esDinamico ? descripcion : (gasto.nombre_conceptos || descripcion);
+          
+          // Tipo debe ser "particular" para gastos extras, "estándar" para el resto
+          const tipo = esDinamico ? 'particular' : 'estándar';
+          
+          console.log(`      * Preparando concepto: ID=${normalizedId}, Tipo=${tipo}, EsPadre=${esPadreStr}, Desc=${descripcion}`);
 
           return [
-            String(gasto.id_conceptos), // Col A: id_conceptos
-            String(idSolicitud),        // Col B: id_solicitud
-            cantidad,                   // Col C: cantidad
-            valor_unit,                 // Col D: valor_unit
-            cantidad * valor_unit,      // Col E: valor_total
-            conceptoPadre               // Col F: concepto_padre
+            normalizedId,                            // Col A: id_conceptos (normalizado con puntos)
+            descripcion,                            // Col B: descripcion
+            esPadreStr,                             // Col C: es_padre
+            nombreConcepto,                         // Col D: nombre_conceptos
+            tipo,                                   // Col E: tipo
+            String(idSolicitud)                     // Col F: id_solicitud
           ];
         });
 
-      // 6. Insert into GASTOS if there are rows to insert
-      if (rows.length === 0) {
-        console.log(`No valid expense rows to insert into GASTOS for solicitud ${idSolicitud}`);
-        return false; // Indicate nothing was saved if no valid rows
-      }
-
-      console.log(`Inserting ${rows.length} rows into GASTOS for solicitud ${idSolicitud}`);
-      await this.client.spreadsheets.values.append({
-        spreadsheetId: this.spreadsheetId,
-        range: 'GASTOS!A2:F', // Append to the end
-        valueInputOption: 'USER_ENTERED', // Use USER_ENTERED for GASTOS if formulas/formatting are needed
-        insertDataOption: 'INSERT_ROWS',
-        resource: { values: rows }
+      // Filtrar conceptos que ya existen en CONCEPTO$
+      const nuevosConceptos = todoConceptos.filter(conceptoRow => {
+        const idConcepto = conceptoRow[0]; // Normalizado con puntos
+        const key = `${idConcepto}:${String(idSolicitud)}`;
+        return !conceptosSolicitudValidos.has(key);
       });
 
-      return true; // Indicate success
-    } catch (error) {
-      console.error("Error in saveGastos:", error);
-      // Log more details if available
-      if (error.response && error.response.data) {
-        console.error("Google API Error Details:", error.response.data.error);
+      console.log(`   Identificados ${nuevosConceptos.length} nuevos conceptos para añadir a CONCEPTO$.`);
+
+      // 4. Guardar nuevos conceptos en CONCEPTO$ (siempre, eliminando la condición redundante)
+      if (nuevosConceptos.length > 0) {
+        console.log(`   Paso 4: Guardando ${nuevosConceptos.length} nuevos conceptos en CONCEPTO$...`);
+        try {
+          await this.client.spreadsheets.values.append({
+            spreadsheetId: this.spreadsheetId,
+            range: 'CONCEPTO$!A2:F', // Append to the end
+            valueInputOption: 'RAW',
+            insertDataOption: 'INSERT_ROWS',
+            resource: { values: nuevosConceptos }
+          });
+          console.log(`   ✅ ${nuevosConceptos.length} nuevos conceptos añadidos a CONCEPTO$.`);
+
+          // Actualizar el caché local para evitar añadirlos de nuevo inmediatamente
+          nuevosConceptos.forEach(conceptoRow => {
+            const idConcepto = conceptoRow[0];
+            const idSol = conceptoRow[5];
+            const key = `${idConcepto}:${idSol}`;
+            conceptosValidos.add(idConcepto);
+            conceptosSolicitudValidos.add(key);
+          });
+
+        } catch (appendError) {
+          console.error(`   ❌ ERROR al añadir nuevos conceptos a CONCEPTO$:`, appendError.message);
+          throw appendError; // Re-lanzar para asegurar que se detecte el problema
+        }
+      } else {
+         console.log(`   No hay nuevos conceptos para añadir a CONCEPTO$ para la solicitud ${idSolicitud}.`);
       }
-      throw new Error('Error guardando gastos'); // Re-throw for the controller to catch
+
+      // 5. Prepare rows for GASTOS sheet (always do this for all valid expenses)
+      console.log('   Paso 5: Preparando filas para la hoja GASTOS...');
+      const rowsGastos = gastos
+        .filter(gasto => {
+            const cantidad = parseFloat(gasto.cantidad) || 0;
+            const valor_unit = parseFloat(gasto.valor_unit) || 0;
+            const isValid = cantidad > 0 || valor_unit > 0; // Guardar si hay cantidad o valor unitario
+            return isValid;
+        })
+        .map(gasto => {
+          const cantidad = parseFloat(gasto.cantidad) || 0;
+          const valor_unit = parseFloat(gasto.valor_unit) || 0;
+          const idConceptoStr = String(gasto.id_conceptos || '').trim();
+          // Normalizar para consistencia en GASTOS también
+          const normalizedId = idConceptoStr.replace(/,/g, '.');
+          // Para concepto_padre, extraer la parte antes del punto 
+          const conceptoPadre = normalizedId.includes('.') ?
+             normalizedId.split('.')[0] : normalizedId;
+
+          return [
+            normalizedId,                        // Col A: id_conceptos (normalizado)
+            String(idSolicitud),                // Col B: id_solicitud
+            cantidad,                           // Col C: cantidad
+            valor_unit,                         // Col D: valor_unit
+            cantidad * valor_unit,              // Col E: valor_total (Calculado siempre)
+            conceptoPadre                       // Col F: concepto_padre
+          ];
+        });
+      console.log(`   Preparadas ${rowsGastos.length} filas para GASTOS.`);
+
+      // 6. Insert into GASTOS if there are rows to insert
+      if (rowsGastos.length > 0) {
+        console.log(`   Paso 6: Guardando ${rowsGastos.length} filas en GASTOS...`);
+        try {
+            console.log(`      -> Buscando y eliminando gastos existentes para solicitud ${idSolicitud} en GASTOS...`);
+            const deleteSuccess = await this.deleteGastosBySolicitud(idSolicitud);
+            if (deleteSuccess) {
+                console.log(`      -> Gastos anteriores eliminados de GASTOS.`);
+            } else {
+                console.warn(`      -> No se pudieron eliminar gastos anteriores o no existían.`);
+            }
+
+            await this.client.spreadsheets.values.append({
+                spreadsheetId: this.spreadsheetId,
+                range: 'GASTOS!A2:F', // Append to the end
+                valueInputOption: 'RAW',
+                insertDataOption: 'INSERT_ROWS',
+                resource: { values: rowsGastos }
+            });
+            console.log(`   ✅ ${rowsGastos.length} filas guardadas en GASTOS.`);
+            return true; // Indicar éxito general
+        } catch (gastosError) {
+            console.error(`   ❌ ERROR al guardar filas en GASTOS:`, gastosError.message);
+            throw gastosError; // Re-lanzar para que el controlador lo maneje
+        }
+      } else {
+        console.log(`   No hay filas válidas para insertar en GASTOS para la solicitud ${idSolicitud}.`);
+        return true;
+      }
+
+    } catch (error) {
+      console.error(`❌ Error CRÍTICO en saveGastos para solicitud ${idSolicitud}:`, error);
+      throw error; // Re-lanzar el error para que el controlador lo capture
     }
+  }
+
+  /**
+   * Elimina todas las filas de la hoja GASTOS que coincidan con un id_solicitud.
+   * @param {string} idSolicitud - El ID de la solicitud cuyos gastos se eliminarán.
+   * @returns {Promise<boolean>} - True si la operación fue exitosa o no había nada que borrar, false si hubo un error.
+   */
+  async deleteGastosBySolicitud(idSolicitud) {
+    try {
+        const sheetName = 'GASTOS';
+        const range = `${sheetName}!A:F`;
+
+        const response = await this.client.spreadsheets.values.get({
+            spreadsheetId: this.spreadsheetId,
+            range: range,
+            majorDimension: 'ROWS',
+        });
+
+        const rows = response.data.values || [];
+        if (rows.length < 2) {
+            console.log(`      -> No hay datos en ${sheetName} para eliminar.`);
+            return true;
+        }
+
+        const deleteRequests = [];
+        for (let i = rows.length - 1; i >= 1; i--) {
+            const row = rows[i];
+            if (row && row[1] === String(idSolicitud)) {
+                deleteRequests.push({
+                    deleteDimension: {
+                        range: {
+                            sheetId: await this.getSheetIdByName(sheetName),
+                            dimension: 'ROWS',
+                            startIndex: i,
+                            endIndex: i + 1
+                        }
+                    }
+                });
+            }
+        }
+
+        if (deleteRequests.length > 0) {
+            console.log(`      -> Preparando para eliminar ${deleteRequests.length} filas de ${sheetName} para solicitud ${idSolicitud}.`);
+            await this.client.spreadsheets.batchUpdate({
+                spreadsheetId: this.spreadsheetId,
+                resource: { requests: deleteRequests }
+            });
+            console.log(`      -> ${deleteRequests.length} filas eliminadas exitosamente.`);
+        } else {
+            console.log(`      -> No se encontraron filas para eliminar en ${sheetName} para solicitud ${idSolicitud}.`);
+        }
+
+        return true;
+    } catch (error) {
+        console.error(`      -> Error al eliminar gastos por solicitud ${idSolicitud}:`, error.message);
+        return false;
+    }
+  }
+
+  /**
+   * Obtiene el ID numérico de una hoja por su nombre. Cachea el resultado.
+   * @param {string} sheetName - Nombre de la hoja.
+   * @returns {Promise<number|null>} - ID numérico de la hoja o null si no se encuentra.
+   */
+  async getSheetIdByName(sheetName) {
+      if (!this.sheetIdsCache) {
+          this.sheetIdsCache = new Map();
+      }
+      if (this.sheetIdsCache.has(sheetName)) {
+          return this.sheetIdsCache.get(sheetName);
+      }
+
+      try {
+          const response = await this.client.spreadsheets.get({
+              spreadsheetId: this.spreadsheetId,
+              fields: 'sheets(properties(sheetId,title))'
+          });
+          const sheets = response.data.sheets || [];
+          for (const sheet of sheets) {
+              if (sheet.properties && sheet.properties.title === sheetName) {
+                  const sheetId = sheet.properties.sheetId;
+                  this.sheetIdsCache.set(sheetName, sheetId);
+                  return sheetId;
+              }
+          }
+          console.error(`Sheet ID not found for name: ${sheetName}`);
+          return null;
+      } catch (error) {
+          console.error(`Error getting sheet ID for name ${sheetName}:`, error.message);
+          return null;
+      }
   }
 
   /**
