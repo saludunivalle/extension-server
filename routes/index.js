@@ -51,6 +51,12 @@ router.use('/report', reportRoutes);
 // Rutas de usuario
 router.use('/user', userRoutes);
 
+// Añadir antes de las líneas que definen router.use('/risk', riskRoutes)
+router.get('/riesgos', require('../controllers/riskController').getRiesgos);
+router.post('/riesgos', require('../controllers/riskController').addRiesgo);
+router.put('/riesgos', require('../controllers/riskController').updateRiesgo);
+router.delete('/riesgos/:id_riesgo', require('../controllers/riskController').deleteRiesgo);
+
 // Rutas de riesgo
 router.use('/risk', riskRoutes);
 
