@@ -159,7 +159,7 @@ const guardarProgreso = async (req, res) => {
     console.log(`✅ Progreso guardado para ${sheetName}, Solicitud ${id_solicitud}, Paso ${parsedPaso}`);
 
     // --- Lógica para actualizar ETAPAS (sin cambios) ---
-    const maxPasos = { 1: 5, 2: 3, 3: 5, 4: 5 };
+    const maxPasos = { 1: 5, 2: 3, 3: 6, 4: 5 };
     const estadoGlobal = (parsedHoja === 4 && parsedPaso >= maxPasos[4]) ? 'Completado' : 'En progreso'; // >= para el último paso
     let estadoFormularios = {};
 
