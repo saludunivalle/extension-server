@@ -1,10 +1,11 @@
 const { google } = require('googleapis');
 const { jwtClient } = require('../config/google');
-const excelUtils = require('../utils/excelUtils');
-const ExcelJS = require('exceljs');
+// --- FIX: Add required utilities ---
+const excelUtils = require('../utils/excelUtils'); 
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+// --- End FIX ---
 const { generateExpenseRows } = require('./dynamicRows');
 const expensesGenerator = require('./dynamicRows/expensesGenerator');
 const riskReportService = require('./riskReportService');
@@ -23,7 +24,7 @@ class DriveService {
     this.templateIds = {
       1: '1xsz9YSnYEOng56eNKGV9it9EgTn0mZw1', //Plantilla de formulario 1
       2: '1nWY2gYKtJuXQnGLsdN7RID_2QmrHKRtOwcQsaTsOOm8', //Plantilla de formulario 2
-      3: '1WoPUZYusNl2u3FpmZ1qiO5URBUqHIwKF', //Plantilla de formulario 3
+      3: '1Tq-V2BSoe17-xjOeWeqaq4Hm6bU1dLx0TG-bcIhnS_4', //Plantilla de formulario 3
       4: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0', //Plantilla de formulario 4
     };
   }
@@ -150,7 +151,7 @@ class DriveService {
       
       // DIFERENTE FLUJO SEGÚN EL TIPO DE PLANTILLA
       if (isGoogleSheet) {
-        // ==== FLUJO PARA PLANTILLA DE GOOGLE SHEET ====
+        // ==== FLUJO PARA PLANTILLA DE GOOGLE SHEET === =
         console.log('Usando flujo para plantilla Google Sheet');
         
         // Duplicar la hoja de Google ya existente
@@ -231,7 +232,7 @@ class DriveService {
         }
         
       } else {
-        // ==== FLUJO PARA PLANTILLA XLSX ====
+        // ==== FLUJO PARA PLANTILLA XLSX === =
         console.log('Usando flujo para plantilla XLSX');
         
         // Descargar plantilla XLSX
@@ -415,59 +416,129 @@ class DriveService {
 
       // --- Extract dynamic data early ---
       const dynamicRowsData = data['__FILAS_DINAMICAS__'];
-      // Create a copy for static placeholder replacement
+      // Extract risk data separately for form 3
+      const riskDynamicData = {};
+      Object.keys(data).forEach(key => {
+        if (key.startsWith('__FILAS_DINAMICAS_')) {
+          riskDynamicData[key] = data[key];
+          // Keep it in data for now, riskReportService expects it
+          // delete data[key]; // Don't delete yet
+        }
+      });
+      // Create a copy for static placeholder replacement (excluding all dynamic rows)
       const staticData = { ...data };
       delete staticData['__FILAS_DINAMICAS__']; 
+      Object.keys(riskDynamicData).forEach(key => delete staticData[key]);
+
 
       // Log inicial 
       if (dynamicRowsData) {
-        console.log(`Detectadas ${dynamicRowsData.gastos?.length || 0} filas dinámicas para el reporte (pre-procesamiento)`);
+        console.log(`Detectadas ${dynamicRowsData.gastos?.length || 0} filas dinámicas de GASTOS (pre-procesamiento)`);
       }
+      if (Object.keys(riskDynamicData).length > 0) {
+        console.log(`Detectadas ${Object.keys(riskDynamicData).length} secciones de filas dinámicas de RIESGOS (pre-procesamiento)`);
+      }
+
 
       const fileName = `Formulario${formNumber}_${solicitudId}`;
 
       // 1. Duplicar la plantilla
       console.log(`Duplicando plantilla: ${templateId} con nombre: ${fileName}`);
-      const newFileId = await this.duplicateTemplate(templateId, fileName);
+      let originalCopyId = await this.duplicateTemplate(templateId, fileName); // Store the ID of the initial copy
+      let finalFileId = originalCopyId; // This might change if we convert XLSX
 
       // 2. Determinar tipo de documento y usar el método adecuado
       const fileMetadata = await this.drive.files.get({
-        fileId: newFileId,
+        fileId: originalCopyId, // Check the type of the duplicated file
         fields: 'mimeType'
       });
 
       const mimeType = fileMetadata.data.mimeType;
-      console.log(`Tipo de archivo: ${mimeType}`);
+      console.log(`Tipo de archivo duplicado: ${mimeType}`);
 
       // 3. Procesar los datos estáticos (reemplazar marcadores) según el tipo
       if (mimeType === 'application/vnd.google-apps.document') {
-        await this.replaceDocPlaceholders(newFileId, staticData);
+        await this.replaceDocPlaceholders(finalFileId, staticData);
+      } else if (mimeType === 'application/vnd.google-apps.spreadsheet') {
+        // --- It's a Google Sheet, use the Sheets API ---
+        console.log('🔄 Reemplazando marcadores usando API de Google Sheets...');
+        await this.replacePlaceholders(finalFileId, staticData); // This uses sheets.spreadsheets.values.batchUpdate
+      } else if (mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
+        // --- FIX: Handle XLSX MIME type ---
+        console.log('🔄 Archivo detectado como XLSX. Usando excelUtils para marcadores y convirtiendo a Google Sheet...');
+        
+        // Descargar el archivo XLSX duplicado
+        const fileResponse = await this.drive.files.get(
+          { fileId: originalCopyId, alt: 'media' },
+          { responseType: 'stream' }
+        );
+
+        // Cargar en exceljs
+        const workbook = await excelUtils.loadWorkbookFromStream(fileResponse.data);
+        console.log('Libro XLSX cargado desde stream correctamente');
+
+        // Reemplazar marcadores usando excelUtils
+        excelUtils.replaceMarkers(workbook, staticData, true); // Enable debug logging in replaceMarkers
+        console.log('Marcadores reemplazados en XLSX usando excelUtils');
+
+        // Guardar a archivo temporal
+        const tempFilePath = await excelUtils.saveToTempFile(workbook, `${fileName}.xlsx`);
+        console.log(`Archivo XLSX modificado guardado temporalmente en ${tempFilePath}`);
+
+        // Eliminar la copia XLSX original de Drive
+        console.log(`🗑️ Eliminando copia XLSX original de Drive (ID: ${originalCopyId})...`);
+        await this.deleteFile(originalCopyId); // Use the deleteFile method
+
+        // Subir el archivo modificado a Google Drive, convirtiéndolo a Google Sheets
+        console.log(`⬆️ Subiendo archivo modificado y convirtiendo a Google Sheet...`);
+        const uploadResponse = await this.drive.files.create({
+          requestBody: {
+            name: fileName, // Use the desired final name
+            parents: [this.templateFolderId], // Ensure it's in the correct folder
+            mimeType: 'application/vnd.google-apps.spreadsheet', // Convert to Google Sheet on upload
+          },
+          media: {
+            mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            body: fs.createReadStream(tempFilePath),
+          },
+          fields: 'id' // Get the ID of the newly created Google Sheet
+        });
+
+        finalFileId = uploadResponse.data.id; // Update finalFileId to the new Google Sheet ID
+        await this.makeFilePublic(finalFileId);
+        console.log(`✅ Archivo XLSX convertido a Google Sheet con nuevo ID: ${finalFileId}`);
+
+        // Limpiar archivos temporales
+        excelUtils.cleanupTempFiles([tempFilePath]);
+        // --- End FIX ---
       } else {
-        await this.replacePlaceholders(newFileId, staticData);
+         // --- Handle other unexpected mime types ---
+         console.warn(`Tipo de archivo no soportado directamente para reemplazo de marcadores: ${mimeType}. Intentando como Google Sheet.`);
+         // Fallback: Try replacing as if it were a Google Sheet, might fail.
+         await this.replacePlaceholders(finalFileId, staticData);
       }
 
-      // --- Add detailed logging ---
-      console.log('🔄 Verificando datos para filas dinámicas ANTES del IF...');
-      console.log('   Tiene dynamicRowsData?', !!dynamicRowsData);
 
-      // --- FIX: Move the property checks INSIDE the if(dynamicRowsData) block ---
-      if (dynamicRowsData) { // Check if dynamicRowsData exists FIRST
+      // --- Add detailed logging for dynamic rows ---
+      // (Logging code remains the same)
+      console.log('🔄 Verificando datos para filas dinámicas ANTES del IF...');
+      console.log('   Tiene dynamicRowsData (gastos)?', !!dynamicRowsData);
+      if (dynamicRowsData) {
           console.log('   Tiene .gastos?', dynamicRowsData.hasOwnProperty('gastos'));
           if (dynamicRowsData.hasOwnProperty('gastos')) {
               console.log('   Es array?', Array.isArray(dynamicRowsData.gastos));
-              // Use optional chaining here too for extra safety, although hasOwnProperty should suffice
               console.log('   Longitud de .gastos:', dynamicRowsData.gastos?.length);
           }
       } else {
-          // Optional: Log that dynamicRowsData was indeed undefined
-          console.log('   dynamicRowsData es undefined o falsy.');
+          console.log('   dynamicRowsData (gastos) es undefined o falsy.');
       }
+      console.log('   Tiene riskDynamicData (riesgos)?', Object.keys(riskDynamicData).length > 0);
 
-      // 4. Procesar filas dinámicas si existen (using the extracted variable)
+
+      // 4. Procesar filas dinámicas de GASTOS si existen (using the extracted variable)
       //    The existing check here is already robust and correct
       if (dynamicRowsData && dynamicRowsData.gastos && dynamicRowsData.gastos.length > 0) {
-        // ... (rest of the if block remains the same) ...
-        console.log(`✅ CONDICIÓN CUMPLIDA: Procesando ${dynamicRowsData.gastos.length} gastos dinámicos`);
+        console.log(`✅ CONDICIÓN CUMPLIDA (GASTOS): Procesando ${dynamicRowsData.gastos.length} gastos dinámicos en ${finalFileId}`);
 
         const dinamicConfig = {
           gastos: dynamicRowsData.gastos,
@@ -475,10 +546,15 @@ class DriveService {
           insertStartRow: dynamicRowsData.insertStartRow || 45 // Default start row
         };
 
-        await this.insertarFilasDinamicas(newFileId, dinamicConfig);
+        // --- FIX: Use the dedicated expensesGenerator ---
+        // await this.insertarFilasDinamicas(finalFileId, dinamicConfig); // Old method
+        await expensesGenerator.insertDynamicRows(finalFileId, dinamicConfig);
+        console.log(`✅ Filas dinámicas de GASTOS procesadas.`);
+        // --- End FIX ---
       } else {
           // Log why the condition failed (this existing block is good)
-          console.log('⚠️ CONDICIÓN NO CUMPLIDA para insertar filas dinámicas.');
+          console.log('⚠️ CONDICIÓN NO CUMPLIDA para insertar filas dinámicas de GASTOS.');
+          // (Reason logging remains the same)
           if (!dynamicRowsData) {
               console.log('   Razón: dynamicRowsData no existe o es falsy.');
           } else if (!dynamicRowsData.gastos) {
@@ -490,36 +566,38 @@ class DriveService {
           }
       }
       
-      // Después de completar el reporte básico, verificar si es un reporte tipo 3 con riesgos dinámicos
-      if (formNumber === 3) {
-        // Buscar secciones de riesgos dinámicos
-        const tieneRiesgosDinamicos = Object.keys(data).some(key => 
-          key.startsWith('__FILAS_DINAMICAS_'));
-        
-        if (tieneRiesgosDinamicos) {
-          console.log('🔄 Detectadas secciones de riesgos dinámicos, procesando...');
-          
-          // Usar el servicio específico para riesgos
-          await riskReportService.generateReportWithRisks(newFileId, data);
-        }
+      // 5. Procesar filas dinámicas de RIESGOS si existen (Formulario 3)
+      if (formNumber === 3 && Object.keys(riskDynamicData).length > 0) {
+        console.log(`✅ CONDICIÓN CUMPLIDA (RIESGOS): Procesando secciones de riesgos dinámicos en ${finalFileId}`);
+        // Pass the finalFileId (which should now be a Google Sheet ID)
+        // Pass only the risk-related dynamic data extracted earlier
+        await riskReportService.generateReportWithRisks(finalFileId, riskDynamicData); 
+        console.log(`✅ Filas dinámicas de RIESGOS procesadas.`);
+      } else if (formNumber === 3) {
+         console.log('⚠️ CONDICIÓN NO CUMPLIDA para insertar filas dinámicas de RIESGOS.');
       }
 
-      // 5. Construir y devolver el enlace
-      let reportLink = `https://drive.google.com/file/d/${newFileId}/view`;
 
-      // Si se solicita el modo "edit", modificamos el enlace
-      if (mode === 'edit') {
-        if (mimeType === 'application/vnd.google-apps.spreadsheet') {
-          reportLink = `https://docs.google.com/spreadsheets/d/${newFileId}/edit`;
-        } else if (mimeType === 'application/vnd.google-apps.document') {
-          reportLink = `https://docs.google.com/document/d/${newFileId}/edit`;
-        }
+      // 6. Construir y devolver el enlace (using finalFileId)
+      // --- FIX: Determine link based on the FINAL file type (should be Google Sheet now) ---
+      let reportLink = `https://docs.google.com/spreadsheets/d/${finalFileId}/edit?usp=sharing`; // Assume Sheet by default now
+      if (mode === 'view') {
+         reportLink = `https://docs.google.com/spreadsheets/d/${finalFileId}/view?usp=sharing`;
       }
+      // If the original was a Doc, the mimeType check at the start would have handled it
+      // We don't need to re-check the mimeType here as we forced conversion to Sheet for XLSX
+      // --- End FIX ---
+
 
       console.log(`✅ Reporte generado exitosamente. Link: ${reportLink}`);
       return reportLink;
     } catch (error) {
       console.error('Error al generar reporte:', error);
+      // Log specific Google API errors if available
+      if (error.response && error.response.data && error.response.data.error) {
+          console.error('Google API Error:', JSON.stringify(error.response.data.error, null, 2));
+      }
+      console.error('Stack:', error.stack);
       throw new Error(`Error al generar reporte: ${error.message}`);
     }
   }
