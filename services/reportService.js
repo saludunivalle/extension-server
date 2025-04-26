@@ -242,6 +242,14 @@ class ReportGenerationService {
         return datos;
       }
       
+      // Procesar riesgos si el reporte lo requiere (formulario 3)
+      if (reportConfig.requiresRiesgos) {
+        console.log(`🔄 Procesando riesgos para solicitud ${solicitudId}...`);
+        const datos = await this.processRiesgosData(solicitudId);
+        console.log(`✅ Riesgos procesados: ${datos.riesgos?.length || 0} registros`);
+        return datos;
+      }
+      
       // Otros tipos de datos adicionales pueden ser procesados aquí
       console.log('ℹ️ No hay procesamiento adicional definido');
       return {};
@@ -362,6 +370,116 @@ class ReportGenerationService {
       console.error(`❌ Error al procesar gastos para solicitud ${solicitudId}:`, error.message);
       console.error('📚 Stack de error:', error.stack);
       return {};
+    }
+  }
+
+  /**
+   * Procesa datos de riesgos para una solicitud
+   * @param {String} solicitudId - ID de la solicitud
+   * @returns {Promise<Object>} Datos de riesgos procesados
+   */
+  async processRiesgosData(solicitudId) {
+    try {
+      if (!sheetsService || typeof sheetsService.getClient !== 'function') {
+        throw new Error('sheetsService no está configurado correctamente');
+      }
+      
+      const client = sheetsService.getClient();
+      console.log(`🔄 Obteniendo datos de riesgos desde Sheets para solicitud ${solicitudId}...`);
+      
+      // Verificar si tenemos acceso al ID de la hoja
+      if (!sheetsService.spreadsheetId) {
+        throw new Error('No se encontró el ID de la hoja de cálculo');
+      }
+      
+      // Obtener riesgos desde Google Sheets
+      const riesgosResponse = await client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'RIESGOS!A2:F500'
+      });
+      
+      // Procesar los datos de riesgos
+      const riesgosRows = riesgosResponse.data.values || [];
+      console.log(`ℹ️ Registros obtenidos: ${riesgosRows.length} riesgos`);
+      
+      // Filtrar riesgos de la solicitud actual
+      const solicitudRiesgos = riesgosRows.filter(row => row[4] === solicitudId);
+      console.log(`✅ Encontrados ${solicitudRiesgos.length} riesgos para la solicitud ${solicitudId}`);
+      
+      // Si no hay riesgos, retornar objeto vacío
+      if (solicitudRiesgos.length === 0) {
+        return { riesgos: [], riesgosPorCategoria: {} };
+      }
+      
+      // Procesar riesgos para crear objetos con datos normalizados
+      const riesgos = [];
+      const riesgosPorCategoria = {
+        diseno: [],
+        locacion: [],
+        desarrollo: [],
+        cierre: [],
+        otros: []
+      };
+      
+      solicitudRiesgos.forEach(row => {
+        // Extraer datos básicos
+        const id = row[0] || '';
+        const nombreRiesgo = row[1] || '';
+        const aplica = row[2] || 'No';
+        const mitigacion = row[3] || '';
+        const idSolicitud = row[4] || '';
+        const categoria = (row[5] || 'otros').toLowerCase();
+        
+        // Crear objeto normalizado
+        const riesgoObj = {
+          id_riesgo: id,
+          nombre_riesgo: nombreRiesgo,
+          aplica: aplica,
+          mitigacion: mitigacion,
+          id_solicitud: idSolicitud,
+          categoria: categoria,
+          
+          // Campos adicionales para el templateMapper
+          id: id,
+          descripcion: nombreRiesgo,
+          impacto: aplica === 'Sí' || aplica === 'Si' ? 'Alto' : 'Bajo',
+          probabilidad: aplica === 'Sí' || aplica === 'Si' ? 'Alta' : 'Baja',
+          estrategia: mitigacion
+        };
+        
+        // Añadir a la lista principal
+        riesgos.push(riesgoObj);
+        
+        // Clasificar por categoría
+        let categoriaAsignada = 'otros';
+        
+        if (categoria.includes('dise')) {
+          categoriaAsignada = 'diseno';
+        } else if (categoria.includes('loca')) {
+          categoriaAsignada = 'locacion';
+        } else if (categoria.includes('desa')) {
+          categoriaAsignada = 'desarrollo';
+        } else if (categoria.includes('cier')) {
+          categoriaAsignada = 'cierre';
+        }
+        
+        // Añadir a la categoría asignada
+        riesgosPorCategoria[categoriaAsignada].push(riesgoObj);
+      });
+      
+      console.log(`📊 Riesgos procesados y categorizados:`);
+      Object.keys(riesgosPorCategoria).forEach(cat => {
+        console.log(`- ${cat}: ${riesgosPorCategoria[cat].length} riesgos`);
+      });
+      
+      return { 
+        riesgos: riesgos,
+        riesgosPorCategoria: riesgosPorCategoria
+      };
+    } catch (error) {
+      console.error(`❌ Error al procesar riesgos para solicitud ${solicitudId}:`, error.message);
+      console.error('📚 Stack de error:', error.stack);
+      return { riesgos: [], riesgosPorCategoria: {} };
     }
   }
 }

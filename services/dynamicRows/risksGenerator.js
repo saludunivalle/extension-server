@@ -9,19 +9,19 @@ const templateMapper = require('./templateMapperRiesgos');
 const { google } = require('googleapis');
 const { jwtClient } = require('../../config/google');
 
-// Load template configuration
-let templateConfig;
+// Cargar configuración de template base
+let baseTemplateConfig;
 try {
   const templateFile = path.join(__dirname, '../../templates/risks.json');
-  templateConfig = JSON.parse(fs.readFileSync(templateFile, 'utf8'));
-  console.log('Template configuration loaded successfully for risks');
+  baseTemplateConfig = JSON.parse(fs.readFileSync(templateFile, 'utf8'));
+  console.log('Base template configuration loaded successfully for risks');
 } catch (error) {
-  console.error('Error loading template configuration for risks:', error);
-  templateConfig = {
+  console.error('Error loading base template configuration for risks:', error);
+  baseTemplateConfig = {
     templateRow: {
-      range: "B44:H44",
+      range: "B18:H18",
       copyStyle: true,
-      insertStartRow: 45
+      insertStartRow: 19
     },
     columns: {
       id: { column: "B" },
@@ -33,31 +33,98 @@ try {
   };
 }
 
+// Configuración específica para cada categoría de riesgos
+const categoriaConfig = {
+  diseno: {
+    templateRow: {
+      range: "B18:H18",
+      insertStartRow: 19,
+      copyStyle: true
+    }
+  },
+  locacion: {
+    templateRow: {
+      range: "B24:H24",
+      insertStartRow: 25,
+      copyStyle: true
+    }
+  },
+  desarrollo: {
+    templateRow: {
+      range: "B35:H35",
+      insertStartRow: 36,
+      copyStyle: true
+    }
+  },
+  cierre: {
+    templateRow: {
+      range: "B38:H38",
+      insertStartRow: 39,
+      copyStyle: true
+    }
+  },
+  otros: {
+    templateRow: {
+      range: "B41:H41",
+      insertStartRow: 42,
+      copyStyle: true
+    }
+  }
+};
+
 /**
  * Generate formatted rows from risk data
  * @param {Array} riesgos - Array of risk objects
+ * @param {String} categoria - Risk category (diseno, locacion, desarrollo, cierre, otros)
  * @param {String} insertLocation - Optional custom insert location
  * @returns {Object} Formatted data for dynamic rows
  */
-const generateRows = (riesgos, insertLocation = null) => {
+const generateRows = (riesgos, categoria = null, insertLocation = null) => {
   if (!riesgos || !Array.isArray(riesgos) || riesgos.length === 0) {
     console.log('No hay riesgos para generar filas dinámicas');
     return null;
   }
   
-  console.log(`Generando ${riesgos.length} filas dinámicas para riesgos`);
+  console.log(`Generando ${riesgos.length} filas dinámicas para riesgos ${categoria ? `de categoría ${categoria}` : ''}`);
+  
+  // Determinar la configuración a usar
+  let templateConfig = { ...baseTemplateConfig };
+  
+  if (categoria && categoriaConfig[categoria.toLowerCase()]) {
+    templateConfig = {
+      ...templateConfig,
+      templateRow: { 
+        ...templateConfig.templateRow, 
+        ...categoriaConfig[categoria.toLowerCase()].templateRow 
+      }
+    };
+    console.log(`Usando configuración específica para categoría: ${categoria}`);
+  } else if (insertLocation) {
+    // Si se proporciona una ubicación de inserción personalizada
+    const match = /([A-Z]+)(\d+):([A-Z]+)(\d+)/.exec(insertLocation);
+    if (match) {
+      const row = parseInt(match[2]);
+      templateConfig.templateRow.range = insertLocation;
+      templateConfig.templateRow.insertStartRow = row + 1;
+      console.log(`Usando ubicación de inserción personalizada: ${insertLocation} -> fila ${row + 1}`);
+    }
+  }
   
   // Map each risk to the format expected by the template
   const rows = riesgos.map(riesgo => templateMapper.createRow(riesgo));
   
-  // Default insert location from template config if available
-  const defaultInsert = templateConfig?.templateRow?.range || templateMapper.defaultInsertLocation;
+  // Default insert location from template config
+  const insertarEn = insertLocation || templateConfig.templateRow.range;
+  const insertStartRow = templateConfig.templateRow.insertStartRow;
+  
+  console.log(`Configuración final: insertarEn=${insertarEn}, insertStartRow=${insertStartRow}`);
   
   return {
-    insertarEn: insertLocation || defaultInsert,
+    insertarEn: insertarEn,
     riesgos: riesgos,
     rows: rows,
-    templateConfig: templateConfig // Include template config for styling
+    templateConfig: templateConfig, // Include template config for styling
+    insertStartRow: insertStartRow // Explicitly include the start row
   };
 };
 
@@ -75,15 +142,15 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
     }
     
     // Get template configuration
-    const config = dynamicRowsData.templateConfig || templateConfig;
+    const config = dynamicRowsData.templateConfig || baseTemplateConfig;
     
     // Use the configured template row range
-    const templateRange = config?.templateRow?.range || "B44:H44";
-    const insertStartRow = config?.templateRow?.insertStartRow || 45;
+    const templateRange = dynamicRowsData.insertarEn || config?.templateRow?.range || "B18:H18";
+    const insertStartRow = dynamicRowsData.insertStartRow || config?.templateRow?.insertStartRow || 19;
     const copyStyle = config?.templateRow?.copyStyle !== false; // Default to true
     
     const rowsData = dynamicRowsData.riesgos; // Use original data for insertion
-    console.log(`Insertando ${rowsData.length} filas dinámicas de riesgos basadas en template ${templateRange}`);
+    console.log(`Insertando ${rowsData.length} filas dinámicas de riesgos basadas en template ${templateRange} desde la fila ${insertStartRow}`);
     
     // Initialize Google Sheets API
     const sheets = google.sheets({version: 'v4', auth: jwtClient});
@@ -110,10 +177,10 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
       // Prepare data updates for each column defined in the template
       Object.keys(columnDefs).forEach(colKey => {
         const columnInfo = columnDefs[colKey];
-        const dataKey = dataMapping[colKey]; // Get the corresponding key in the riesgo object
+        const dataKey = dataMapping[colKey] || colKey; // Get the corresponding key in the riesgo object
         let valueToInsert = '';
 
-        if (dataKey && riesgo[dataKey] !== undefined) {
+        if (riesgo[dataKey] !== undefined) {
           valueToInsert = riesgo[dataKey]?.toString() || '';
         } else if (riesgo[colKey] !== undefined) { // Fallback to direct key match
           valueToInsert = riesgo[colKey]?.toString() || '';
@@ -128,6 +195,9 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
           range: cellRange,
           values: [[valueToInsert]]
         });
+        
+        // Debug log
+        console.log(`Row ${rowNum}, Column ${startColumnLetter}: ${valueToInsert}`);
       });
     }
     
@@ -206,7 +276,7 @@ async function insertEmptyRows(sheets, fileId, startRowIndex, rowCount) {
  * Copy template row styles to newly inserted rows
  * @param {Object} sheets - Google Sheets API client
  * @param {String} fileId - Spreadsheet ID
- * @param {String} templateRange - Template row range (e.g., "B44:H44")
+ * @param {String} templateRange - Template row range (e.g., "B18:H18")
  * @param {Number} startRowIndex - 1-based row index where rows were inserted
  * @param {Number} rowCount - Number of rows inserted
  */
@@ -306,19 +376,6 @@ async function copyTemplateRowStyles(sheets, fileId, templateRange, startRowInde
     console.error('Error copying template styles:', error);
     throw error;
   }
-}
-
-/**
- * Extract column range from a cell range like "B44:H44"
- * @param {String} range - Cell range
- * @returns {Array} Array with start and end column letters
- */
-function extractColumnRange(range) {
-  const match = /([A-Z]+)\d+:([A-Z]+)\d+/.exec(range);
-  if (!match) {
-    return ['B', 'H']; // Default fallback
-  }
-  return [match[1], match[2]];
 }
 
 /**

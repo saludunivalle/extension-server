@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const { generateExpenseRows } = require('./dynamicRows');
 const expensesGenerator = require('./dynamicRows/expensesGenerator');
+const riskReportService = require('./riskReportService');
 
 /**
  * Servicio para manejar operaciones con Google Drive
@@ -397,12 +398,12 @@ class DriveService {
   }
 
   /**
-   * Genera un reporte basado en plantilla y datos
+   * Genera un reporte basado en los datos proporcionados
    * @param {Number} formNumber - Número de formulario (1-4)
    * @param {String} solicitudId - ID de la solicitud
-   * @param {Object} data - Datos para rellenar la plantilla
-   * @param {String} mode - Modo de visualización (view/edit)
-   * @returns {Promise<String>} - URL del reporte generado
+   * @param {Object} data - Datos para el reporte
+   * @param {String} mode - Modo de acceso al documento (view, edit)
+   * @returns {Promise<String>} - URL del documento generado
    */
   async generateReport(formNumber, solicitudId, data, mode = 'view') {
     try {
@@ -412,13 +413,13 @@ class DriveService {
         throw new Error(`Plantilla no encontrada para formulario ${formNumber}`);
       }
 
-      // --- SOLUTION 1: Extract dynamic data early ---
+      // --- Extract dynamic data early ---
       const dynamicRowsData = data['__FILAS_DINAMICAS__'];
-      // Create a copy for static placeholder replacement to avoid modifying original 'data'
+      // Create a copy for static placeholder replacement
       const staticData = { ...data };
-      delete staticData['__FILAS_DINAMICAS__']; // Remove from the copy
+      delete staticData['__FILAS_DINAMICAS__']; 
 
-      // Log inicial (using the extracted variable)
+      // Log inicial 
       if (dynamicRowsData) {
         console.log(`Detectadas ${dynamicRowsData.gastos?.length || 0} filas dinámicas para el reporte (pre-procesamiento)`);
       }
@@ -439,22 +440,20 @@ class DriveService {
       console.log(`Tipo de archivo: ${mimeType}`);
 
       // 3. Procesar los datos estáticos (reemplazar marcadores) según el tipo
-      //    Use the 'staticData' copy here
       if (mimeType === 'application/vnd.google-apps.document') {
         await this.replaceDocPlaceholders(newFileId, staticData);
       } else {
         await this.replacePlaceholders(newFileId, staticData);
       }
 
-      // --- SOLUTION 2: Add detailed logging and check length ---
+      // --- Add detailed logging ---
       console.log('🔄 Verificando datos para filas dinámicas ANTES del IF...');
       console.log('   Tiene dynamicRowsData?', !!dynamicRowsData);
 
       // --- FIX: Move the property checks INSIDE the if(dynamicRowsData) block ---
       if (dynamicRowsData) { // Check if dynamicRowsData exists FIRST
-          console.log('   Tiene .gastos?', dynamicRowsData.hasOwnProperty('gastos')); // Safe now
+          console.log('   Tiene .gastos?', dynamicRowsData.hasOwnProperty('gastos'));
           if (dynamicRowsData.hasOwnProperty('gastos')) {
-              console.log('   Tipo de .gastos:', typeof dynamicRowsData.gastos);
               console.log('   Es array?', Array.isArray(dynamicRowsData.gastos));
               // Use optional chaining here too for extra safety, although hasOwnProperty should suffice
               console.log('   Longitud de .gastos:', dynamicRowsData.gastos?.length);
@@ -477,7 +476,6 @@ class DriveService {
         };
 
         await this.insertarFilasDinamicas(newFileId, dinamicConfig);
-
       } else {
           // Log why the condition failed (this existing block is good)
           console.log('⚠️ CONDICIÓN NO CUMPLIDA para insertar filas dinámicas.');
@@ -490,6 +488,20 @@ class DriveService {
           } else if (dynamicRowsData.gastos.length === 0) {
               console.log('   Razón: dynamicRowsData.gastos está vacío.');
           }
+      }
+      
+      // Después de completar el reporte básico, verificar si es un reporte tipo 3 con riesgos dinámicos
+      if (formNumber === 3) {
+        // Buscar secciones de riesgos dinámicos
+        const tieneRiesgosDinamicos = Object.keys(data).some(key => 
+          key.startsWith('__FILAS_DINAMICAS_'));
+        
+        if (tieneRiesgosDinamicos) {
+          console.log('🔄 Detectadas secciones de riesgos dinámicos, procesando...');
+          
+          // Usar el servicio específico para riesgos
+          await riskReportService.generateReportWithRisks(newFileId, data);
+        }
       }
 
       // 5. Construir y devolver el enlace
@@ -504,7 +516,7 @@ class DriveService {
         }
       }
 
-      console.log(`✅ Reporte generado exitosamente. Link: ${reportLink}`); // Moved log here
+      console.log(`✅ Reporte generado exitosamente. Link: ${reportLink}`);
       return reportLink;
     } catch (error) {
       console.error('Error al generar reporte:', error);

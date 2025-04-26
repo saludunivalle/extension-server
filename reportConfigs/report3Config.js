@@ -1,13 +1,15 @@
 const dateUtils = require('../utils/dateUtils');
+const { generateRiskRows } = require('../services/dynamicRows');
 
 /**
  * Configuración específica para el reporte del Formulario 3 - Matriz de Riesgos
  */
 const report3Config = {
   title: 'F-08-MP-05-01-01 - Riesgos Potenciales',
-  templateId: '1WoPUZYusNl2u3FpmZ1qiO5URBUqHIwKF', // Reemplazar con el ID correcto de la plantilla
-  requiresAdditionalData: false,
+  templateId: '1Tq-V2BSoe17-xjOeWeqaq4Hm6bU1dLx0TG-bcIhnS_4', // Reemplazar con el ID correcto de la plantilla
+  requiresAdditionalData: true,
   requiresGastos: false,
+  requiresRiesgos: true, // Nuevo indicador para procesar riesgos
   
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
@@ -32,27 +34,32 @@ const report3Config = {
         // Cierre
         'aplicaCierre1', 'aplicaCierre2', 'aplicaCierre3'
       ]
+    },
+    RIESGOS: {
+      range: 'RIESGOS!A2:F',
+      fields: [
+        'id_riesgo', 'nombre_riesgo', 'aplica', 'mitigacion', 'id_solicitud', 'categoria'
+      ]
     }
   },
   
   transformData: function(allData) {
     try {
       console.log("🔎 DATOS RECIBIDOS EN TRANSFORMDATA PARA FORMULARIO 3:");
-      console.log("- DATOS COMPLETOS:", JSON.stringify(allData, null, 2));
+      console.log("- DATOS COMPLETOS:", Object.keys(allData));
       
       // Extraer datos de las fuentes
       const solicitudData = allData.SOLICITUDES || {}; 
       const formData = allData.SOLICITUDES3 || {};
       
+      // Obtener datos de riesgos si están disponibles
+      const riesgosData = allData.riesgos || [];
+      const riesgosPorCategoria = allData.riesgosPorCategoria || {};
+      
       console.log("- SOLICITUDES:", JSON.stringify(solicitudData, null, 2));
       console.log("- SOLICITUDES3:", JSON.stringify(formData, null, 2));
-      console.log("- Campo 'programa':", formData.programa);
-      console.log("- Campos diseño:", {
-        aplicaDiseno1: formData.aplicaDiseno1,
-        aplicaDiseno2: formData.aplicaDiseno2,
-        aplicaDiseno3: formData.aplicaDiseno3,
-        aplicaDiseno4: formData.aplicaDiseno4
-      });
+      console.log("- RIESGOS:", riesgosData.length);
+      console.log("- RIESGOS POR CATEGORÍA:", Object.keys(riesgosPorCategoria));
       
       // Crear un objeto combinado con todas las fuentes
       const combinedData = {
@@ -132,9 +139,6 @@ const report3Config = {
           // Si no es afirmativo o está vacío, considerarlo como "No aplica"
           transformedData[campo] = 'No aplica';
         }
-        
-        // Imprimir para depuración
-        console.log(`Campo ${campo}: valor original = "${valor}", transformado = "${transformedData[campo]}"`);
       });
       
       // Valores por defecto para campos críticos
@@ -142,7 +146,57 @@ const report3Config = {
       if (!transformedData.comentario) transformedData.comentario = 'No especificado';
       if (!transformedData.programa) transformedData.programa = 'No especificado';
       
-      console.log("⭐ DATOS TRANSFORMADOS FINALES - FORM 3:", transformedData);
+      // Procesar RIESGOS DINÁMICOS para cada categoría
+      if (riesgosPorCategoria && Object.keys(riesgosPorCategoria).length > 0) {
+        console.log("📊 Procesando riesgos dinámicos por categoría");
+        
+        // Definición de las posiciones de inserción para cada categoría
+        const posiciones = {
+          diseno: 'B18:H18',
+          locacion: 'B24:H24',
+          desarrollo: 'B35:H35',
+          cierre: 'B38:H38',
+          otros: 'B41:H41'
+        };
+        
+        // Generar filas dinámicas para cada categoría
+        Object.keys(riesgosPorCategoria).forEach(categoria => {
+          const riesgosCat = riesgosPorCategoria[categoria] || [];
+          if (riesgosCat.length > 0) {
+            const insertarEn = posiciones[categoria] || posiciones.otros;
+            
+            console.log(`🔄 Generando filas dinámicas para ${riesgosCat.length} riesgos de categoría ${categoria} en ${insertarEn}`);
+            
+            // Usar generateRiskRows para esta categoría específica
+            const dynamicRowsData = generateRiskRows(riesgosCat, categoria, insertarEn);
+            
+            if (dynamicRowsData) {
+              const fieldName = `__FILAS_DINAMICAS_${categoria.toUpperCase()}__`;
+              transformedData[fieldName] = dynamicRowsData;
+              
+              console.log(`✅ Configuración de filas dinámicas para ${categoria} completada: ${dynamicRowsData.rows.length} filas`);
+            } else {
+              console.log(`❌ Error al generar filas dinámicas para categoría ${categoria}`);
+            }
+          } else {
+            console.log(`⚠️ No hay riesgos para la categoría ${categoria}`);
+          }
+        });
+      } else if (riesgosData && riesgosData.length > 0) {
+        console.log("📊 Procesando riesgos sin categorización");
+        
+        // Si tenemos riesgos pero no están categorizados, los ponemos todos como 'otros'
+        const dynamicRowsData = generateRiskRows(riesgosData, 'otros', 'B41:H41');
+        
+        if (dynamicRowsData) {
+          transformedData['__FILAS_DINAMICAS_OTROS__'] = dynamicRowsData;
+          console.log(`✅ Configuración de filas dinámicas para riesgos sin categoría completada: ${dynamicRowsData.rows.length} filas`);
+        }
+      } else {
+        console.log("⚠️ No se encontraron riesgos para generar filas dinámicas");
+      }
+      
+      console.log("⭐ DATOS TRANSFORMADOS FINALES - FORM 3:", Object.keys(transformedData));
       return transformedData;
     } catch (error) {
       console.error('Error en transformación de datos para formulario 3:', error);
