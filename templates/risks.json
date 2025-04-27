@@ -1,25 +1,23 @@
 {
-  "templateRow": {
-    "range": "B17:D17",
+  "templateRow": { // Plantilla para copiar estilo B:E
+    "range": "B17:E17", 
     "copyStyle": true,
-    "insertStartRow": 18,
-    "description": "Template row for risk items that should be copied for dynamic rows"
+    "insertStartRow": 18 
+    // ...
   },
-  "columns": {
-    "descripcion": {
-      "column": "B",
-      "description": "Descripción del riesgo"
-    },
-    "aplica": {
-      "column": "C", 
-      "description": "Si aplica o no el riesgo"
-    },
-    "mitigacion": {
-      "column": "D",
-      "description": "Estrategia de mitigación"
-    }
+  "columns": { // Mapeo de datos a columnas B, C, D:E
+    "descripcion": { "column": "B" },
+    "aplica": { "column": "C" },
+    "mitigacion": { "column": "D:E", "span": 2 }
   },
-  "dataMapping": {
+  "mergedCells": { // Rangos PREDETERMINADOS para la columna A
+    "diseno": { "range": "A14:A17", "startRow": 14, "endRow": 17 },
+    "locacion": { "range": "A19:A24", "startRow": 19, "endRow": 24 },
+    "desarrollo": { "range": "A25:A35", "startRow": 25, "endRow": 35 },
+    "cierre": { "range": "A36:A38", "startRow": 36, "endRow": 38 },
+    "otros": { "range": "A39:A39", "startRow": 39, "endRow": 39 } 
+  },
+  "dataMapping": { // Mapeo de nombres de campo
     "descripcion": "nombre_riesgo",
     "aplica": "aplica",
     "mitigacion": "mitigacion"
