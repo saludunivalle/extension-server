@@ -13,49 +13,47 @@ try {
   templateConfig = JSON.parse(fs.readFileSync(templateFile, 'utf8'));
 } catch (error) {
   console.error('Warning: Could not load risks template configuration in mapper');
-  templateConfig = null;
+  templateConfig = null; // Fallback handled below
 }
 
 const templateMapperRiesgos = {
-  // Default location where rows should be inserted
-  defaultInsertLocation: templateConfig?.templateRow?.range || 'B44:H44',
+  // Default location (fallback if config fails or category doesn't specify)
+  defaultInsertLocation: templateConfig?.templateRow?.range || 'B43:D43', 
   
-  // Column mappings (zero-based index from the start column)
+  // Column mappings (zero-based index from the start column B)
   columns: {
-    id: columnConfig('id', 'B', 0),               // Column B - ID of risk
-    descripcion: columnConfig('description', 'C', 1), // Column C - Description of risk
-    impacto: columnConfig('impact', 'E', 3),        // Column E - Impact level
-    probabilidad: columnConfig('probability', 'F', 4), // Column F - Probability
-    estrategia: columnConfig('strategy', 'G', 5)     // Column G - Strategy to mitigate
+    // Use columnConfig helper to read from risks.json or use defaults
+    descripcion: columnConfig('descripcion', 'B', 0), // Column B -> index 0
+    aplica: columnConfig('aplica', 'C', 1),           // Column C -> index 1
+    mitigacion: columnConfig('mitigacion', 'D', 2)    // Column D -> index 2
   },
   
-  // Number of columns to span in the template
-  columnSpan: 7,        // From B to H (7 columns)
+  // Number of columns to span in the template (B to D = 3 columns)
+  columnSpan: 3,        
   
   // Function to format data before insertion
   formatData: function(riesgo) {
+    // Use getDataValue to handle potential missing fields and mapping
     return {
-      id: getDataValue(riesgo, 'id'),
-      descripcion: getDataValue(riesgo, 'descripcion'),
-      impacto: getDataValue(riesgo, 'impacto'),
-      probabilidad: getDataValue(riesgo, 'probabilidad'),
-      estrategia: getDataValue(riesgo, 'estrategia')
+      // Prioritize specific fields, provide fallbacks
+      descripcion: getDataValue(riesgo, 'descripcion') || getDataValue(riesgo, 'nombre_riesgo') || '',
+      // Ensure 'aplica' is 'Sí' or 'No' (or similar expected values)
+      aplica: getDataValue(riesgo, 'aplica') === 'Sí' ? 'Sí' : 'No', 
+      mitigacion: getDataValue(riesgo, 'mitigacion') || ''
     };
   },
   
-  // Function to create a row with the correct structure
+  // Function to create a row with the correct structure (B, C, D)
   createRow: function(riesgo) {
     const formattedData = this.formatData(riesgo);
     
-    // Create a row with empty cells spanning the full width
+    // Create a row with 3 empty cells (for columns B, C, D)
     const row = new Array(this.columnSpan).fill('');
     
-    // Fill specific cells with data
-    row[this.columns.id.index] = formattedData.id;
-    row[this.columns.descripcion.index] = formattedData.descripcion;
-    row[this.columns.impacto.index] = formattedData.impacto;
-    row[this.columns.probabilidad.index] = formattedData.probabilidad;
-    row[this.columns.estrategia.index] = formattedData.estrategia;
+    // Fill specific cells with data based on index
+    row[this.columns.descripcion.index] = formattedData.descripcion; // Index 0 -> Col B
+    row[this.columns.aplica.index] = formattedData.aplica;           // Index 1 -> Col C
+    row[this.columns.mitigacion.index] = formattedData.mitigacion;     // Index 2 -> Col D
     
     return row;
   },
@@ -66,22 +64,28 @@ const templateMapperRiesgos = {
   }
 };
 
+// --- Helper Functions (Keep as they are, but ensure they handle the new config) ---
+
 /**
  * Helper function to get column configuration
- * @param {String} key - Column key in the config
- * @param {String} defaultColumn - Default column letter if config not available
- * @param {Number} defaultIndex - Default column index if config not available
+ * @param {String} key - Column key in the config ('descripcion', 'aplica', 'mitigacion')
+ * @param {String} defaultColumn - Default column letter (B, C, D)
+ * @param {Number} defaultIndex - Default column index (0, 1, 2)
  * @returns {Object} Column configuration object
  */
 function columnConfig(key, defaultColumn, defaultIndex) {
+  // Check if config loaded and has the specific column definition
   if (templateConfig && templateConfig.columns && templateConfig.columns[key]) {
+    const configCol = templateConfig.columns[key].column || defaultColumn;
     return {
-      column: templateConfig.columns[key].column || defaultColumn,
-      index: columnToIndex(templateConfig.columns[key].column) || defaultIndex,
-      span: templateConfig.columns[key].span || 1
+      column: configCol,
+      // Calculate index based on the column letter (relative to the start of the range)
+      index: columnToIndex(configCol) - columnToIndex(templateConfig.columns.descripcion.column || 'B'), // Index relative to start column B
+      span: templateConfig.columns[key].span || 1 // Span is likely 1 for these columns
     };
   }
   
+  // Fallback if config is missing
   return {
     column: defaultColumn,
     index: defaultIndex,
@@ -92,14 +96,18 @@ function columnConfig(key, defaultColumn, defaultIndex) {
 /**
  * Convert column letter to index (0-based)
  * @param {String} column - Column letter (e.g., "A", "BC")
- * @returns {Number} Column index (0-based)
+ * @returns {Number|null} Column index (0-based) or null if invalid
  */
 function columnToIndex(column) {
-  if (!column) return null;
+  if (!column || typeof column !== 'string') return null;
+  // Handle simple case first
+  const colLetter = column.split(':')[0].toUpperCase(); // Use only the start column if range (e.g., F from F:V)
   
   let result = 0;
-  for (let i = 0; i < column.length; i++) {
-    result = result * 26 + (column.charCodeAt(i) - 64);
+  for (let i = 0; i < colLetter.length; i++) {
+    const charCode = colLetter.charCodeAt(i);
+    if (charCode < 65 || charCode > 90) return null; // Ensure it's A-Z
+    result = result * 26 + (charCode - 64);
   }
   return result - 1; // Convert to 0-based index
 }
@@ -107,41 +115,42 @@ function columnToIndex(column) {
 /**
  * Get data value using mapping if available
  * @param {Object} data - Data object
- * @param {String} key - Key to get from data
+ * @param {String} key - Key to get from data ('descripcion', 'aplica', 'mitigacion')
  * @param {String} defaultValue - Default value if not found
  * @returns {String} Data value
  */
 function getDataValue(data, key, defaultValue = '') {
-  // Try direct access first
-  if (data[key] !== undefined) {
-    return data[key]?.toString() || defaultValue;
-  }
+  let mappedKey = key;
   
-  // Try using data mapping from template config
-  if (templateConfig && templateConfig.dataMapping) {
-    const mappedKey = templateConfig.dataMapping[key];
-    if (mappedKey && data[mappedKey] !== undefined) {
+  // 1. Try using data mapping from template config first
+  if (templateConfig && templateConfig.dataMapping && templateConfig.dataMapping[key]) {
+    mappedKey = templateConfig.dataMapping[key];
+    if (data[mappedKey] !== undefined && data[mappedKey] !== null) {
       return data[mappedKey]?.toString() || defaultValue;
     }
   }
   
-  // Try alternative keys based on common patterns
+  // 2. Try direct access using the original key if mapping failed or didn't exist
+  if (data[key] !== undefined && data[key] !== null) {
+    return data[key]?.toString() || defaultValue;
+  }
+
+  // 3. (Optional but good) Try common alternative keys as a fallback
   const alternatives = {
-    id: ['id', 'codigo'],
-    descripcion: ['descripcion', 'description'],
-    impacto: ['impacto', 'impact'],
-    probabilidad: ['probabilidad', 'probability'],
-    estrategia: ['estrategia', 'mitigacion', 'strategy']
+    descripcion: ['nombre_riesgo', 'description'],
+    aplica: ['aplica'], // Already specific
+    mitigacion: ['mitigacion', 'estrategia', 'strategy']
   };
-  
+
   if (alternatives[key]) {
     for (const alt of alternatives[key]) {
-      if (data[alt] !== undefined) {
+      if (data[alt] !== undefined && data[alt] !== null) {
         return data[alt]?.toString() || defaultValue;
       }
     }
   }
   
+  // Return default if nothing found
   return defaultValue;
 }
 
