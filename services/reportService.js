@@ -402,58 +402,42 @@ class ReportGenerationService {
       // Procesar los datos de riesgos
       const riesgosRows = riesgosResponse.data.values || [];
       console.log(`ℹ️ Registros obtenidos: ${riesgosRows.length} riesgos`);
-      
-      // Filtrar riesgos de la solicitud actual
-      const solicitudRiesgos = riesgosRows.filter(row => row[4] === solicitudId);
+      const solicitudRiesgos = riesgosRows.filter(row => row[4] === solicitudId); // Suponiendo que la columna E (índice 4) es id_solicitud
       console.log(`✅ Encontrados ${solicitudRiesgos.length} riesgos para la solicitud ${solicitudId}`);
-      
-      // Si no hay riesgos, retornar objeto vacío
+
       if (solicitudRiesgos.length === 0) {
+        console.log(`⚠️ No se encontraron riesgos para la solicitud ${solicitudId}.`);
         return { riesgos: [], riesgosPorCategoria: {} };
       }
-      
-      // Procesar riesgos para crear objetos con datos normalizados
+
       const riesgos = [];
       const riesgosPorCategoria = {
-        diseno: [],
-        locacion: [],
-        desarrollo: [],
-        cierre: [],
-        otros: []
+        diseno: [], locacion: [], desarrollo: [], cierre: [], otros: []
       };
-      
+
       solicitudRiesgos.forEach(row => {
-        // Extraer datos básicos
         const id = row[0] || '';
         const nombreRiesgo = row[1] || '';
         const aplica = row[2] || 'No';
         const mitigacion = row[3] || '';
         const idSolicitud = row[4] || '';
-        const categoria = (row[5] || 'otros').toLowerCase();
-        
-        // Crear objeto normalizado
+        // Por defecto a 'otros' si falta o está vacía la categoría (columna F, índice 5)
+        const categoria = (row[5] || 'otros').trim().toLowerCase();
+
         const riesgoObj = {
-          id_riesgo: id,
-          nombre_riesgo: nombreRiesgo,
-          aplica: aplica,
-          mitigacion: mitigacion,
-          id_solicitud: idSolicitud,
-          categoria: categoria,
-          
+          id_riesgo: id, nombre_riesgo: nombreRiesgo, aplica: aplica, mitigacion: mitigacion,
+          id_solicitud: idSolicitud, categoria: categoria,
           // Campos adicionales para el templateMapper
-          id: id,
-          descripcion: nombreRiesgo,
-          impacto: aplica === 'Sí' || aplica === 'Si' ? 'Alto' : 'Bajo',
-          probabilidad: aplica === 'Sí' || aplica === 'Si' ? 'Alta' : 'Baja',
+          id: id, descripcion: nombreRiesgo,
+          impacto: (aplica === 'Sí' || aplica === 'Si') ? 'Alto' : 'Bajo',
+          probabilidad: (aplica === 'Sí' || aplica === 'Si') ? 'Alta' : 'Baja',
           estrategia: mitigacion
         };
-        
-        // Añadir a la lista principal
+
         riesgos.push(riesgoObj);
-        
-        // Clasificar por categoría
-        let categoriaAsignada = 'otros';
-        
+
+        // Clasificar
+        let categoriaAsignada = 'otros'; // Asignación por defecto
         if (categoria.includes('dise')) {
           categoriaAsignada = 'diseno';
         } else if (categoria.includes('loca')) {
@@ -463,24 +447,25 @@ class ReportGenerationService {
         } else if (categoria.includes('cier')) {
           categoriaAsignada = 'cierre';
         }
-        
-        // Añadir a la categoría asignada
+        // Si ninguno coincide, permanece en 'otros'
+
         riesgosPorCategoria[categoriaAsignada].push(riesgoObj);
+        // console.log(`Riesgo "${nombreRiesgo}" (Cat: ${categoria}) asignado a: ${categoriaAsignada}`); // Log detallado opcional
       });
-      
+
       console.log(`📊 Riesgos procesados y categorizados:`);
       Object.keys(riesgosPorCategoria).forEach(cat => {
         console.log(`- ${cat}: ${riesgosPorCategoria[cat].length} riesgos`);
       });
-      
-      return { 
+
+      return {
         riesgos: riesgos,
         riesgosPorCategoria: riesgosPorCategoria
       };
     } catch (error) {
       console.error(`❌ Error al procesar riesgos para solicitud ${solicitudId}:`, error.message);
       console.error('📚 Stack de error:', error.stack);
-      return { riesgos: [], riesgosPorCategoria: {} };
+      return { riesgos: [], riesgosPorCategoria: {} }; // Retornar estructura vacía en caso de error
     }
   }
 }

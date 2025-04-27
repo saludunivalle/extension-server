@@ -916,64 +916,63 @@ class DriveService {
   }
 
   /**
-   * Inserta filas de gastos dinámicos en el documento
+   * Inserta filas dinámicas en el documento
    * @param {String} fileId - ID del documento
-   * @param {Object} gastosDinamicos - Datos de gastos dinámicos y coordenadas
+   * @param {Object} dynamicRowsData - Datos de filas dinámicas
    */
-  async insertarFilasGastosDinamicos(fileId, gastosDinamicos) {
+  async insertDynamicRowsInDoc(fileId, dynamicRowsData) {
     try {
-      const { insertarEn, gastos } = gastosDinamicos;
-      if (!gastos || gastos.length === 0) {
-        console.log('No hay gastos dinámicos para insertar');
-        return;
+      if (!dynamicRowsData || !dynamicRowsData.gastos || dynamicRowsData.gastos.length === 0) {
+        console.log('No hay datos de filas dinámicas para insertar');
+        return false;
       }
-      
-      console.log(`Insertando ${gastos.length} gastos dinámicos en ${insertarEn}`);
-      
+
+      console.log(`Insertando ${dynamicRowsData.gastos.length} filas dinámicas en el documento (fileId: ${fileId})`);
+
       // 1. Obtener el documento y encontrar la tabla objetivo
       const docResponse = await this.docs.documents.get({
         documentId: fileId
       });
-      
+
       const document = docResponse.data;
       const tablas = this.encontrarTablas(document);
-      
+
       if (tablas.length === 0) {
         console.error('No se encontraron tablas en el documento');
         return;
       }
-      
+
       // Encontrar la tabla correcta (normalmente será la que tenga una celda con "Concepto")
       let tablaObjetivo = null;
       let indiceTabla = -1;
-      
+
       for (let i = 0; i < tablas.length; i++) {
         const tabla = tablas[i];
         // Buscar una celda que contenga "Concepto" o similar
         const tieneCabecera = this.buscarTextoEnTabla(document, tabla, ["concepto", "descripción", "descripcion"]);
-        
+
         if (tieneCabecera) {
           tablaObjetivo = tabla;
           indiceTabla = i;
           break;
         }
       }
-      
+
       if (!tablaObjetivo) {
         console.error('No se encontró la tabla de gastos en el documento');
         return;
       }
-      
+
       console.log(`Encontrada tabla objetivo (#${indiceTabla})`);
-      
+
       // 2. Preparar las solicitudes para insertar filas
       const requests = [];
-      
+
       // Determinar la posición de inserción (la última fila después de los gastos existentes)
       const filaInsercion = Math.max(1, tablaObjetivo.rows - 1); // -1 para no contar el encabezado
-      
+
       // Insertar una fila para cada gasto
-      gastos.forEach((gasto, index) => {
+      dynamicRowsData.gastos.forEach((gasto, index) => {
         requests.push({
           insertTableRow: {
             tableStartLocation: {
@@ -983,7 +982,7 @@ class DriveService {
             rowIndex: filaInsercion + index
           }
         });
-        
+
         // Llenar las celdas con los datos del gasto
         const celdas = [
           { texto: gasto.concepto || "Concepto sin nombre" },
@@ -991,7 +990,7 @@ class DriveService {
           { texto: gasto.valorUnit_formatted },
           { texto: gasto.valorTotal_formatted }
         ];
-        
+
         celdas.forEach((celda, celdaIndex) => {
           requests.push({
             insertText: {
@@ -1005,7 +1004,7 @@ class DriveService {
           });
         });
       });
-      
+
       // 3. Ejecutar las solicitudes
       if (requests.length > 0) {
         await this.docs.documents.batchUpdate({
@@ -1014,13 +1013,13 @@ class DriveService {
             requests: requests
           }
         });
-        
-        console.log(`Insertadas ${gastos.length} filas de gastos dinámicos`);
+
+        console.log(`Insertadas ${dynamicRowsData.gastos.length} filas dinámicas en el documento`);
       }
-      
+
       return true;
     } catch (error) {
-      console.error('Error al insertar gastos dinámicos:', error);
+      console.error('Error al insertar filas dinámicas en el documento:', error);
       throw error;
     }
   }
