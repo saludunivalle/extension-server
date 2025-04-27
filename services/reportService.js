@@ -90,7 +90,8 @@ class ReportGenerationService {
       const reportLink = await driveService.generateReport(
         formNum,
         solicitudId,
-        transformedData
+        transformedData,
+        additionalData.riesgosPorCategoria // Pasar riesgos categorizados para procesamiento dinámico
       );
       
       if (!reportLink) {

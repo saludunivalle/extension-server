@@ -36,13 +36,13 @@ try {
   };
 }
 
-// Configuración específica para la *inserción* de filas (B:E)
+// Configuración específica para la *inserción* de filas (B:E) y copia de estilos
 const categoriaConfigInsercion = {
-  diseno: { templateRow: { range: "B17:E17", insertStartRow: 18, copyStyle: true } },
-  locacion: { templateRow: { range: "B24:E24", insertStartRow: 25, copyStyle: true } },
-  desarrollo: { templateRow: { range: "B35:E35", insertStartRow: 36, copyStyle: true } },
-  cierre: { templateRow: { range: "B39:E39", insertStartRow: 40, copyStyle: true } }, // Ajustado a B39:E39 y fila 40
-  otros: { templateRow: { range: "B43:E43", insertStartRow: 44, copyStyle: true } } // Ajustado a B43:E43 y fila 44
+  diseno: { templateRow: { range: "B17:E17", insertStartRow: 18, copyStyle: true } },     // Template fila 17, inserta @ 18
+  locacion: { templateRow: { range: "B24:E24", insertStartRow: 25, copyStyle: true } },   // Template fila 24, inserta @ 25
+  desarrollo: { templateRow: { range: "B35:E35", insertStartRow: 36, copyStyle: true } }, // Template fila 35, inserta @ 36
+  cierre: { templateRow: { range: "B38:E38", insertStartRow: 39, copyStyle: true } },     // CORREGIDO: Template fila 38, inserta @ 39
+  otros: { templateRow: { range: "B39:E39", insertStartRow: 40, copyStyle: true } }      // CORREGIDO: Template fila 39, inserta @ 40 (default, se ajusta si cierre tiene filas)
 };
 
 
@@ -392,7 +392,7 @@ async function copyTemplateRowStyles(sheets, fileId, sheetId, currentMerges, tem
 /**
  * Handle merging cells in column A for a specific category section.
  * Unmerges existing overlaps first, then creates the new merge.
- * Handles the special case for 'otros' if rowCount is 0.
+ * Handles special cases for 'cierre' and 'otros'.
  * @param {Object} sheets - Google Sheets API client
  * @param {String} fileId - Spreadsheet ID
  * @param {Number} sheetId - Sheet ID
@@ -409,59 +409,52 @@ async function handleColumnAMerges(sheets, fileId, sheetId, currentMerges, categ
 
   // --- Special Case: "otros" with no dynamic rows ---
   if (categoriaKey === 'otros' && dynamicRowCount === 0) {
-    console.log(`Categoría 'otros' sin filas dinámicas. Borrando contenido de A${sectionStartRow}.`);
-    requests.push({
-      updateCells: {
-        range: {
-          sheetId: sheetId,
-          startRowIndex: sectionStartRow - 1, // 0-based
-          endRowIndex: sectionStartRow,       // Exclusive
-          startColumnIndex: 0,                // Column A
-          endColumnIndex: 1                   // Exclusive
-        },
-        rows: [{ values: [{ userEnteredValue: { stringValue: '' } }] }], // Clear content
-        fields: 'userEnteredValue' // Only update the value
-      }
-    });
-     // Also unmerge A39:A39 just in case it was previously merged
-     await unmergeColumnACells(sheets, fileId, sheetId, currentMerges, sectionStartRow, sectionStartRow);
-
-  } else {
-    // --- Normal Case: Calculate the final merge range for Column A ---
-    let finalEndRow; // 1-based
-    if (dynamicRowCount > 0) {
-      // Merge down to the last inserted dynamic row
-      finalEndRow = dynamicInsertStartRow + dynamicRowCount - 1;
-    } else {
-      // No dynamic rows, merge down to the default end row
-      finalEndRow = sectionDefaultEndRow;
-    }
-
-    // Ensure start row is not after end row (can happen if default end < start)
-    if (finalEndRow < sectionStartRow) {
-        console.warn(`La fila final calculada (${finalEndRow}) es menor que la inicial (${sectionStartRow}) para ${categoria}. No se combinará la columna A.`);
-        return; // Do nothing
-    }
-
-    console.log(`Preparando combinación para Columna A (${categoria}): A${sectionStartRow}:A${finalEndRow}`);
-
-    // 1. Unmerge existing overlaps in Column A for the *entire potential range*
-    await unmergeColumnACells(sheets, fileId, sheetId, currentMerges, sectionStartRow, finalEndRow);
-
-    // 2. Create the new merge request for Column A
-    requests.push({
-      mergeCells: {
-        range: {
-          sheetId: sheetId,
-          startRowIndex: sectionStartRow - 1,   // 0-based start
-          endRowIndex: finalEndRow,             // 0-based end (exclusive, so finalEndRow works)
-          startColumnIndex: 0,                  // Column A
-          endColumnIndex: 1                     // Exclusive
-        },
-        mergeType: 'MERGE_COLUMNS' // Merge vertically in the column
-      }
-    });
+    console.log(`Categoría 'otros' sin filas dinámicas. No se realizarán cambios en Columna A.`);
+    // IMPORTANTE: No hacer nada. No borrar, no combinar, no descombinar.
+    // Si previamente existía una combinación A39:A39, se deja como está o se maneja manualmente.
+    // Opcionalmente, podríamos descombinar explícitamente A39 si siempre debe quedar descombinado en este caso.
+    // await unmergeColumnACells(sheets, fileId, sheetId, currentMerges, sectionStartRow, sectionStartRow); // Descomentar si se quiere descombinar A39
+    return; // Salir de la función para 'otros' sin filas
   }
+
+  // --- Normal Case / Cierre / Otros con filas ---
+
+  // Calculate the final end row for the merge (1-based)
+  let finalEndRow;
+  if (dynamicRowCount > 0) {
+    // If there are dynamic rows, always merge down to the last one
+    finalEndRow = dynamicInsertStartRow + dynamicRowCount - 1;
+  } else {
+    // No dynamic rows (and not 'otros'), use the default end row
+    finalEndRow = sectionDefaultEndRow;
+  }
+
+  // Ensure start row is not after end row
+  if (finalEndRow < sectionStartRow) {
+      console.warn(`La fila final calculada (${finalEndRow}) es menor que la inicial (${sectionStartRow}) para ${categoria}. No se combinará la columna A.`);
+      return; // Do nothing
+  }
+
+  console.log(`Preparando combinación para Columna A (${categoria}): A${sectionStartRow}:A${finalEndRow}`);
+
+  // 1. Unmerge existing overlaps in Column A for the *entire potential range*
+  // Esto es importante para evitar errores al intentar combinar celdas ya combinadas de forma diferente.
+  await unmergeColumnACells(sheets, fileId, sheetId, currentMerges, sectionStartRow, finalEndRow);
+
+  // 2. Create the new merge request for Column A
+  requests.push({
+    mergeCells: {
+      range: {
+        sheetId: sheetId,
+        startRowIndex: sectionStartRow - 1,   // 0-based start
+        endRowIndex: finalEndRow,             // 0-based end (exclusive, so finalEndRow works)
+        startColumnIndex: 0,                  // Column A
+        endColumnIndex: 1                     // Exclusive
+      },
+      mergeType: 'MERGE_COLUMNS' // Merge vertically in the column
+    }
+  });
+
 
   // Execute batch update if there are requests
   if (requests.length > 0) {
@@ -470,9 +463,12 @@ async function handleColumnAMerges(sheets, fileId, sheetId, currentMerges, categ
         spreadsheetId: fileId,
         resource: { requests }
       });
-      console.log(`✅ Combinación/limpieza de Columna A para categoría ${categoria} completada.`);
+      console.log(`✅ Combinación de Columna A para categoría ${categoria} (A${sectionStartRow}:A${finalEndRow}) completada.`);
     } catch (error) {
       console.error(`Error en batchUpdate para ${categoria} (Columna A):`, error);
+      if (error.response && error.response.data) {
+        console.error('Google API Error:', JSON.stringify(error.response.data, null, 2));
+      }
       // Decide if you want to throw or just log
     }
   }
@@ -490,11 +486,17 @@ async function handleColumnAMerges(sheets, fileId, sheetId, currentMerges, categ
  */
 async function unmergeColumnACells(sheets, fileId, sheetId, currentMerges, targetStartRow, targetEndRow) {
   const requests = [];
-  if (!currentMerges) return; // No merges exist
+  if (!currentMerges || currentMerges.length === 0) {
+      console.log("No hay combinaciones existentes para verificar.");
+      return; // No merges exist
+  }
+
 
   // Convert target range to 0-based for comparison
   const targetStartRowIndex = targetStartRow - 1;
   const targetEndRowIndex = targetEndRow; // Exclusive
+
+  console.log(`Buscando combinaciones existentes en Col A para descombinar en rango ${targetStartRow}-${targetEndRow}`);
 
   for (const merge of currentMerges) {
     // Check if it's in the correct sheet and is a Column A merge
@@ -514,7 +516,7 @@ async function unmergeColumnACells(sheets, fileId, sheetId, currentMerges, targe
             }
           }
         });
-        console.log(`Deshaciendo combinación existente A${merge.startRowIndex + 1}:A${merge.endRowIndex -1}`);
+        console.log(`-> Deshaciendo combinación existente A${merge.startRowIndex + 1}:A${merge.endRowIndex -1}`);
       }
     }
   }
@@ -526,11 +528,16 @@ async function unmergeColumnACells(sheets, fileId, sheetId, currentMerges, targe
         spreadsheetId: fileId,
         resource: { requests }
       });
-      console.log(`Deshizo ${requests.length} combinaciones existentes en columna A para el rango ${targetStartRow}-${targetEndRow}`);
+      console.log(`✅ Deshizo ${requests.length} combinaciones existentes en columna A para el rango ${targetStartRow}-${targetEndRow}`);
     } catch (error) {
       console.error('Error al deshacer combinaciones existentes en Columna A:', error);
+      if (error.response && error.response.data) {
+        console.error('Google API Error (unmerge):', JSON.stringify(error.response.data, null, 2));
+      }
       // Log the error but continue, maybe the merge will still work
     }
+  } else {
+      console.log("No se encontraron combinaciones superpuestas en Col A para deshacer.");
   }
 }
 
@@ -555,5 +562,4 @@ function columnToIndex(column) {
 module.exports = {
   generateRows,
   insertDynamicRows
-  // No necesitamos exportar handleColumnAMerges si solo se usa internamente en insertDynamicRows
 };
