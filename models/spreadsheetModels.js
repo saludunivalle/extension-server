@@ -60,14 +60,15 @@ class SpreadsheetModel {
       'correo_coordinador', 'tel_coordinador', 'pefil_competencia', 'formas_evaluacion',
       'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion',
       'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
-      'becas_total', 'becas_otros', 'periodicidad_oferta', 'fechas_actividad', 'organizacion_actividad'
+      'becas_otros', 'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act',
+      'extension_solidaria', 'costo_extension_solidaria', 'pieza_grafica', 'personal_externo'
     ],
     {
       1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
       2: ['J', 'K', 'L', 'M', 'N'],
       3: ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'],
       4: ['Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH'],
-      5: ['AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU']
+      5: ['AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV']
     }
   );
   
