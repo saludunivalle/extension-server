@@ -9,12 +9,10 @@ const reportService = require('../services/reportService');
 const generateReport = async (req, res) => {
   try {
     const { solicitudId, formNumber } = req.body;
-    console.log("Datos recibidos en generateReport:");
-    console.log("solicitudId:", solicitudId);
-    console.log("formNumber:", formNumber);
+    console.log("[INICIO] generateReport: solicitudId=", solicitudId, "formNumber=", formNumber);
   
     if (!solicitudId || !formNumber) {
-      console.error('Error: Los parámetros solicitudId y formNumber son requeridos');
+      console.error('[ERROR] Parámetros faltantes: solicitudId o formNumber');
       return res.status(400).json({ error: 'Los parámetros solicitudId y formNumber son requeridos' });
     }
 
@@ -22,15 +20,16 @@ const generateReport = async (req, res) => {
     const startTime = Date.now();
 
     try {
-      // Usar el servicio de reportes para generar el informe
+      console.log("[PASO] Llamando a reportService.generateReport...");
       const result = await reportService.generateReport(solicitudId, formNumber);
-      
       const endTime = Date.now();
-      console.log(`✅ Reporte generado en ${(endTime - startTime)/1000} segundos`);
-      
+      console.log(`[OK] Reporte generado en ${(endTime - startTime)/1000} segundos`);
       res.status(200).json(result);
     } catch (error) {
-      console.error('Error al generar el reporte:', error);
+      const failTime = Date.now();
+      console.error('[ERROR] Error al generar el reporte:', error.message);
+      console.error('[ERROR] Stack:', error.stack);
+      console.error(`[ERROR] Tiempo transcurrido: ${(failTime - startTime)/1000} segundos`);
       res.status(500).json({ 
         error: 'Error al generar el reporte', 
         details: error.message,
@@ -38,7 +37,8 @@ const generateReport = async (req, res) => {
       });
     }
   } catch (error) {
-    console.error('Error en el controlador generateReport:', error);
+    console.error('[ERROR] Error en el controlador generateReport:', error.message);
+    console.error('[ERROR] Stack:', error.stack);
     res.status(500).json({ 
       error: 'Error en el controlador', 
       details: error.message 

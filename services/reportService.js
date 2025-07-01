@@ -348,8 +348,8 @@ class ReportGenerationService {
           descripcion: concepto
         };
         
-        // Determinar si es un gasto dinámico (empieza con 15.)
-        if (idConcepto.startsWith('15.')) {
+        // Determinar si es un gasto dinámico (empieza con 8.)
+        if (idConcepto.startsWith('8.')) {
           gastosDinamicos.push(gastoObj);
         } else {
           gastosNormales.push(gastoObj);

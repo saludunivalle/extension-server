@@ -121,8 +121,8 @@ class DriveService {
         console.log(`Procesando ${dynamicRowsData.gastos.length} gastos dinámicos para marcadores`);
         dynamicRowsData.gastos.forEach((gasto, index) => {
           // Manejar ambos formatos de ID (con coma o con punto)
-          let idConComa = gasto.id || `15,${index + 1}`;
-          let idConPunto = gasto.id || `15.${index + 1}`;
+          let idConComa = gasto.id || `8,${index + 1}`;
+          let idConPunto = gasto.id || `8.${index + 1}`;
           
           // Asegurar que tenemos ambas versiones
           if (idConComa.includes('.')) {

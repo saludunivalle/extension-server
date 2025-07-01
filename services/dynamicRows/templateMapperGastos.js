@@ -22,7 +22,7 @@ const templateMapperGastos = {
   
   // Column mappings (zero-based index from the start column)
   columns: {
-    id: columnConfig('id', 'E', 0),               // Column E - ID of expense concept (e.g. "15.1")
+    id: columnConfig('id', 'E', 0),               // Column E - ID of expense concept (e.g. "8.1")
     descripcion: columnConfig('description', 'F', 1),  // Column F - Description text
     cantidad: columnConfig('quantity', 'X', 23),    // Column X - Quantity
     valorUnit: columnConfig('unitValue', 'Z', 25),  // Column Z - Unit value

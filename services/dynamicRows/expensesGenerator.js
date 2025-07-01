@@ -264,7 +264,7 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
       const gasto = rowsData[i];
       
       // Manejar ambos formatos de ID (con coma o con punto)
-      let idValue = gasto.id || gasto.id_conceptos || `15,${i+1}`;
+      let idValue = gasto.id || gasto.id_conceptos || `8,${i+1}`;
       
       // Convertir formato a coma si viene con punto
       if (idValue.includes('.')) {

@@ -1,8 +1,8 @@
 {
   "templateRow": {
-    "range": "A44:AK44",
+    "range": "A42:AK42",
     "copyStyle": true,
-    "insertStartRow": 45,
+    "insertStartRow": 43,
     "description": "Template row for expense items that should be copied for dynamic rows"
   },
   "columns": {

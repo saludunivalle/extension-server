@@ -1405,6 +1405,7 @@ const guardarForm2Paso3 = async (req, res) => {
       name,       // Capturar explícitamente el nombre del request
       fondo_comun_porcentaje, 
       fondo_comun,
+      facultad_instituto_porcentaje, // Campo editable
       facultad_instituto, 
       escuela_departamento_porcentaje, 
       escuela_departamento,
@@ -1414,7 +1415,9 @@ const guardarForm2Paso3 = async (req, res) => {
       total_ingresos,
       subtotal_gastos,
       imprevistos_3,
-      total_gastos_imprevistos
+      total_gastos_imprevistos,
+      diferencia, // Campo de diferencia
+      observaciones // Campo de observaciones
     } = req.body;
 
     console.log('Datos recibidos en guardarForm2Paso3:', req.body);
@@ -1425,6 +1428,7 @@ const guardarForm2Paso3 = async (req, res) => {
 
     // Establecer valores por defecto si no se proporcionan
     const fondoComunPorcentaje = parseFloat(fondo_comun_porcentaje) || 0;
+    const facultadInstitutoPorcentaje = parseFloat(facultad_instituto_porcentaje) || 5; // Ahora editable
     const escuelaDepartamentoPorcentaje = parseFloat(escuela_departamento_porcentaje) || 0;
 
     // Recalcular valores si es necesario
@@ -1435,9 +1439,13 @@ const guardarForm2Paso3 = async (req, res) => {
 
     // Calcular valores derivados
     const fondoComun = parseFloat(fondo_comun) || (totalIngresos * fondoComunPorcentaje / 100);
-    const facultadInstitutoValor = parseFloat(facultad_instituto) || (totalIngresos * 0.05); // 5% fijo
+    const facultadInstitutoValor = parseFloat(facultad_instituto) || (totalIngresos * facultadInstitutoPorcentaje / 100); // Usar porcentaje editable
     const escuelaDepartamentoValor = parseFloat(escuela_departamento) || (totalIngresos * escuelaDepartamentoPorcentaje / 100);
     const totalRecursosValor = parseFloat(total_recursos) || (fondoComun + facultadInstitutoValor + escuelaDepartamentoValor);
+    
+    // Asegurar que diferencia y observaciones tengan valores
+    const diferenciaValor = parseFloat(diferencia) || 0;
+    const observacionesValor = observaciones || '';
 
     try {
       // 1. Encontrar o crear la fila para esta solicitud
@@ -1449,23 +1457,25 @@ const guardarForm2Paso3 = async (req, res) => {
       // 2. Actualizar la hoja SOLICITUDES2 con los valores calculados
       const valoresAportes = [
         // Importante: mantener este orden según el modelo SOLICITUDES2
-        fondoComunPorcentaje.toString(),
-        fondoComun.toString(),
-        "5", // Porcentaje fijo de facultad_instituto_porcentaje (5%)
-        facultadInstitutoValor.toString(),
-        escuelaDepartamentoPorcentaje.toString(),
-        escuelaDepartamentoValor.toString(),
-        totalRecursosValor.toString(),
+        diferenciaValor.toString(), // Columna J: diferencia
+        fondoComunPorcentaje.toString(), // Columna K: fondo_comun_porcentaje
+        fondoComun.toString(), // Columna L: fondo_comun
+        facultadInstitutoPorcentaje.toString(), // Columna M: facultad_instituto_porcentaje (editable)
+        facultadInstitutoValor.toString(), // Columna N: facultad_instituto
+        escuelaDepartamentoPorcentaje.toString(), // Columna O: escuela_departamento_porcentaje
+        escuelaDepartamentoValor.toString(), // Columna P: escuela_departamento
+        totalRecursosValor.toString(), // Columna Q: total_recursos
+        observacionesValor // Columna R: observaciones
       ];
 
       console.log(`Actualizando datos de aportes en SOLICITUDES2 para la solicitud ${id_solicitud}: `, valoresAportes);
 
-      // 4. Actualizar la columna J a P (correspondiente a estos campos)
+      // 4. Actualizar la columna J a R (correspondiente a estos campos)
       await sheetsService.updateRequestProgress({
         sheetName: 'SOLICITUDES2',
         rowIndex,
         startColumn: 'J',    // Columna inicial para estos campos
-        endColumn: 'P',    // Columna final para estos campos
+        endColumn: 'R',    // Columna final para estos campos
         values: valoresAportes
       });
       

@@ -271,7 +271,7 @@ class SheetsService {
         }
 
         const normalizedId = idConceptoStr.replace(/,/g, '.');
-        const esDinamico = normalizedId.startsWith('15.') || idConceptoStr.startsWith('15,');
+        const esDinamico = normalizedId.startsWith('8.') || idConceptoStr.startsWith('8,');
         const esPadre = typeof gasto.es_padre === 'boolean' 
           ? gasto.es_padre 
           : !(normalizedId.includes('.')); // Si no tiene punto después de normalizar, es un concepto padre

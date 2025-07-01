@@ -13,15 +13,12 @@ const report2Config = {
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES2: {
-      range: 'SOLICITUDES2!A2:M',
+      range: 'SOLICITUDES2!A2:R',
       fields: [
         'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
-        'subtotal_gastos', 'imprevistos_3', 'imprevistos_3%', 'total_gastos_imprevistos',
+        'subtotal_gastos', 'imprevistos_3', 'total_gastos_imprevistos', 'diferencia',
         'fondo_comun_porcentaje', 'fondo_comun', 'facultad_instituto_porcentaje', 'facultad_instituto',
-        'escuela_departamento_porcentaje', 'escuela_departamento', 'total_recursos',
-        'subtotal_costos_directos', 'costos_indirectos_cantidad', 
-        'administracion_cantidad', 'descuentos_cantidad',
-        'total_costo_actividad', 'excedente_cantidad', 'valor_inscripcion_individual'
+        'escuela_departamento_porcentaje', 'escuela_departamento', 'total_recursos', 'observaciones'
       ]
     },
     SOLICITUDES: {
@@ -175,9 +172,14 @@ const report2Config = {
       
       // Pre-initialize placeholders for expenses
       const conceptosGastos = [
-        '1', '1,1', '1,2', '1,3', '2', '3', '4', '5', '6', '7', '7,1', '7,2', 
-        '7,3', '7,4', '7,5', '8', '8,1', '8,2', '8,3', '8,4', '9', '9,1', '9,2', 
-        '9,3', '10', '11', '12', '13', '14', '15'
+        '1', '1,1', '1,2', '1,3',
+        '2', '2,1', '2,2', '2,3',
+        '3', '3,1', '3,2',
+        '4', '4,1', '4,2', '4,3', '4,4',
+        '5', '5,1', '5,2', '5,3',
+        '6', '6,1', '6,2',
+        '7', '7,1', '7,2', '7,3',
+        '8' // Gastos dinámicos 8,1; 8,2; ...
       ];
       
       conceptosGastos.forEach(concepto => {
@@ -407,12 +409,15 @@ const report2Config = {
       const totalGastosImprevistos = subtotalGastos + imprevistos3;
       transformedData.total_gastos_imprevistos = totalGastosImprevistos.toString();
       
-      // Calcular los valores monetarios a partir de los porcentajes para el fondo común, facultad e instituto, y escuela
+      // Calcular la diferencia (Ingresos - Gastos)
       const totalIngresos = parseFloat(transformedData.total_ingresos) || 0;
+      const diferencia = totalIngresos - totalGastosImprevistos;
+      transformedData.diferencia = diferencia.toString();
       
+      // Calcular los valores monetarios a partir de los porcentajes para el fondo común, facultad e instituto, y escuela
       // Obtener porcentajes (usar valores por defecto si no existen)
       const fondoComunPorcentaje = parseFloat(transformedData.fondo_comun_porcentaje) || 30;
-      const facultadInstitutoPorcentaje = 5; // Fijo en 5%
+      const facultadInstitutoPorcentaje = parseFloat(transformedData.facultad_instituto_porcentaje) || 5; // Ahora editable
       const escuelaDepartamentoPorcentaje = parseFloat(transformedData.escuela_departamento_porcentaje) || 0;
       
       // Calcular valores monetarios
@@ -432,7 +437,12 @@ const report2Config = {
       // Guardar también el porcentaje de facultad_instituto para referencia
       transformedData.facultad_instituto_porcentaje = facultadInstitutoPorcentaje.toString();
       
-      console.log(`✅ Cálculos de gastos: subtotal=${subtotalGastos}, imprevistos(3%)=${imprevistos3}, total=${totalGastosImprevistos}`);
+      // Asegurar que el campo observaciones esté presente
+      if (!transformedData.observaciones) {
+        transformedData.observaciones = '';
+      }
+      
+      console.log(`✅ Cálculos de gastos: subtotal=${subtotalGastos}, imprevistos(3%)=${imprevistos3}, total=${totalGastosImprevistos}, diferencia=${diferencia}`);
       console.log(`✅ Cálculos de aportes: fondo_comun(${fondoComunPorcentaje}%)=${fondoComun}, facultad(${facultadInstitutoPorcentaje}%)=${facultadInstituto}, escuela(${escuelaDepartamentoPorcentaje}%)=${escuelaDepartamento}, total=${totalRecursos}`);
       
       // IMPORTANTE: Eliminar marcadores no reemplazados
