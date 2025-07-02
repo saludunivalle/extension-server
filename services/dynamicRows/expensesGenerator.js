@@ -19,9 +19,9 @@ try {
   console.error('Error loading template configuration for expenses:', error);
   templateConfig = {
     templateRow: {
-      range: "A44:AK44",
+      range: "A42:AK42",
       copyStyle: true,
-      insertStartRow: 45
+      insertStartRow: 43
     },
     columns: {
       id: { column: "E" },
@@ -61,8 +61,18 @@ const generateRows = (expenses) => {
     
     // Normalize property names to ensure compatibility with different formats
     const normalizedExpenses = expensesArray.map(gasto => {
+      // Log original data for debugging
+      console.log(`🔍 DATOS ORIGINALES del gasto:`, {
+        id: gasto.id,
+        concepto: gasto.concepto,
+        descripcion: gasto.descripcion,
+        cantidad: gasto.cantidad,
+        valorUnit: gasto.valorUnit,
+        valorTotal: gasto.valorTotal
+      });
+      
       // Create a normalized expense object
-      return {
+      const normalized = {
         id: gasto.id || gasto.id_concepto || gasto.id_conceptos || '',
         descripcion: gasto.descripcion || gasto.concepto || gasto.name || '',
         cantidad: parseFloat(gasto.cantidad) || 0,
@@ -71,6 +81,11 @@ const generateRows = (expenses) => {
         valorUnit_formatted: gasto.valorUnit_formatted || gasto.valor_unit_formatted || '',
         valorTotal_formatted: gasto.valorTotal_formatted || gasto.valor_total_formatted || ''
       };
+      
+      // Log normalized data for debugging
+      console.log(`✅ DATOS NORMALIZADOS del gasto:`, normalized);
+      
+      return normalized;
     });
     
     // Map each expense to the format expected by the template
@@ -85,7 +100,7 @@ const generateRows = (expenses) => {
       gastos: normalizedExpenses,
       rows: rows,
       templateRow: templateMapper.defaultInsertLocation,
-      insertStartRow: 45 // Fixed default value 
+      insertStartRow: 43 // Fixed default value - updated to match template
     };
   } catch (error) {
     console.error('Error al generar filas dinámicas para gastos:', error);
@@ -116,8 +131,8 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
     
     // Extraer información esencial para inserción
     const rowsData = dynamicRowsData.gastos; // Datos originales de gastos
-    const templateRange = dynamicRowsData.insertarEn || "A44:AK44"; // Rango de template
-    const insertStartRow = dynamicRowsData.insertStartRow || 45; // Fila para comenzar inserción
+    const templateRange = dynamicRowsData.insertarEn || "A42:AK42"; // Rango de template
+    const insertStartRow = dynamicRowsData.insertStartRow || 43; // Fila para comenzar inserción
     
     console.log(`Insertando ${rowsData.length} filas dinámicas en la hoja ${fileId}`);
     console.log(`Configuración: templateRange=${templateRange}, insertStartRow=${insertStartRow}`);
@@ -278,7 +293,7 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
       const valorTotalValue = gasto.valorTotal_formatted || gasto.valor_total_formatted || `$${gasto.valorTotal || gasto.valor_total || 0}`;
       
       // Log para depuración
-      console.log(`Fila ${rowIndex}, ID: ${idValue}, Descripción: ${descripcionValue}`);
+      console.log(`Fila ${rowIndex}, ID: ${idValue}, Descripción: ${descripcionValue}, Cantidad: ${cantidadValue}, ValorUnit: ${valorUnitValue}, ValorTotal: ${valorTotalValue}`);
       
       // Añadir solicitudes para cada celda
       valueRequests.push({

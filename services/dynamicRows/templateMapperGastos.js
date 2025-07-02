@@ -18,7 +18,7 @@ try {
 
 const templateMapperGastos = {
   // Default location where rows should be inserted
-  defaultInsertLocation: templateConfig?.templateRow?.range || 'A44:AK44',
+  defaultInsertLocation: templateConfig?.templateRow?.range || 'A42:AK42',
   
   // Column mappings (zero-based index from the start column)
   columns: {
@@ -47,6 +47,16 @@ const templateMapperGastos = {
   createRow: function(gasto) {
     const formattedData = this.formatData(gasto);
     
+    // Log formatted data for debugging
+    console.log(`🔍 DATOS FORMATEADOS en createRow:`, formattedData);
+    console.log(`🔍 INDICES de columnas:`, {
+      id: this.columns.id.index,
+      descripcion: this.columns.descripcion.index,
+      cantidad: this.columns.cantidad.index,
+      valorUnit: this.columns.valorUnit.index,
+      valorTotal: this.columns.valorTotal.index
+    });
+    
     // Create a row with empty cells spanning the full width
     const row = new Array(this.columnSpan).fill('');
     
@@ -56,6 +66,8 @@ const templateMapperGastos = {
     row[this.columns.cantidad.index] = formattedData.cantidad;
     row[this.columns.valorUnit.index] = formattedData.valorUnit;
     row[this.columns.valorTotal.index] = formattedData.valorTotal;
+    
+    console.log(`✅ FILA CREADA:`, row);
     
     return row;
   },
@@ -112,8 +124,11 @@ function columnToIndex(column) {
  * @returns {String} Data value
  */
 function getDataValue(data, key, defaultValue = '') {
+  console.log(`🔍 getDataValue - Buscando '${key}' en:`, data);
+  
   // Try direct access first
   if (data[key] !== undefined) {
+    console.log(`✅ Encontrado valor directo para '${key}': ${data[key]}`);
     return data[key]?.toString() || defaultValue;
   }
   
@@ -121,6 +136,7 @@ function getDataValue(data, key, defaultValue = '') {
   if (templateConfig && templateConfig.dataMapping) {
     const mappedKey = templateConfig.dataMapping[key];
     if (mappedKey && data[mappedKey] !== undefined) {
+      console.log(`✅ Encontrado valor mapeado para '${key}' -> '${mappedKey}': ${data[mappedKey]}`);
       return data[mappedKey]?.toString() || defaultValue;
     }
   }
@@ -137,11 +153,13 @@ function getDataValue(data, key, defaultValue = '') {
   if (alternatives[key]) {
     for (const alt of alternatives[key]) {
       if (data[alt] !== undefined) {
+        console.log(`✅ Encontrado valor alternativo para '${key}' -> '${alt}': ${data[alt]}`);
         return data[alt]?.toString() || defaultValue;
       }
     }
   }
   
+  console.log(`⚠️ No se encontró valor para '${key}', usando valor por defecto: '${defaultValue}'`);
   return defaultValue;
 }
 

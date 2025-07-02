@@ -357,18 +357,18 @@ const report2Config = {
         const dynamicRowsData = generateExpenseRows(gastosDinamicos);
         
         if (dynamicRowsData) {
-          // IMPORTANT: Ensure dynamic rows are inserted at row 45
-          console.log(`⚠️ CRÍTICO: Configurando inserción de filas dinámicas a partir de la fila 45`);
+          // IMPORTANT: Ensure dynamic rows are inserted at row 43
+          console.log(`⚠️ CRÍTICO: Configurando inserción de filas dinámicas a partir de la fila 43`);
           
           // Add special field for dynamic rows with complete structure
           transformedData['__FILAS_DINAMICAS__'] = {
             gastos: dynamicRowsData.gastos,
             rows: dynamicRowsData.rows,
-            insertarEn: "A44:AK44", // Template row range
-            insertStartRow: 45 // FIXED VALUE: Always insert at row 45
+            insertarEn: "A42:AK42", // Template row range (usar fila 42 como template)
+            insertStartRow: 43 // FIXED VALUE: Always insert at row 43
           };
           
-          console.log(`✅ Configuración de filas dinámicas completada con insertStartRow=45`);
+          console.log(`✅ Configuración de filas dinámicas completada con insertStartRow=43`);
           console.log(`Estructura __FILAS_DINAMICAS__ generada:`, JSON.stringify(transformedData['__FILAS_DINAMICAS__'], null, 2));
         } else {
           console.log(`⚠️ No se pudo generar la estructura de filas dinámicas`);
