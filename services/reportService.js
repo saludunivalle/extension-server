@@ -76,10 +76,39 @@ class ReportGenerationService {
         camposRecibidos: Object.keys(additionalData).length
       });
   
-      // Combinar datos de la solicitud con datos adicionales
-      const combinedData = { ...solicitudData, ...additionalData };
+            // APLANAR los datos anidados por hoja en un solo objeto antes de combinar
+      console.log(`🔄 Aplanando datos anidados por hoja...`);
+      let flattenedSolicitudData = {};
+      if (typeof solicitudData === 'object' && solicitudData !== null) {
+        // Si los datos vienen anidados por hoja (SOLICITUDES, SOLICITUDES2, etc.)
+        Object.keys(solicitudData).forEach(hoja => {
+          if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+          }
+        });
+        
+        // Si no hay datos anidados, usar los datos tal como vienen
+        if (Object.keys(flattenedSolicitudData).length === 0) {
+          flattenedSolicitudData = solicitudData;
+        }
+      } else {
+        flattenedSolicitudData = solicitudData;
+      }
+      
+      console.log(`✅ Datos aplanados: ${Object.keys(flattenedSolicitudData).length} campos`);
+      console.log(`🔍 Campos críticos aplanados:`, {
+        extension_solidaria: flattenedSolicitudData.extension_solidaria,
+        costo_extension_solidaria: flattenedSolicitudData.costo_extension_solidaria,
+        pieza_grafica: flattenedSolicitudData.pieza_grafica,
+        personal_externo: flattenedSolicitudData.personal_externo,
+        tipo: flattenedSolicitudData.tipo,
+        modalidad: flattenedSolicitudData.modalidad
+      });
+
+      // Combinar datos aplanados con datos adicionales
+      const combinedData = { ...flattenedSolicitudData, ...additionalData };
       console.log(`✅ Datos combinados: ${Object.keys(combinedData).length} campos totales`);
-  
+
       // Transformar datos utilizando la función específica de la configuración del reporte
       console.log(`🔄 Transformando datos para el reporte...`);
       const transformedData = reportConfig.transformData(combinedData);
@@ -136,7 +165,24 @@ class ReportGenerationService {
       
       const solicitudData = await this.getSolicitudData(solicitudId, reportConfig.sheetDefinitions);
       const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
-      const combinedData = { ...solicitudData, ...additionalData };
+      
+      // APLANAR los datos anidados por hoja en un solo objeto antes de combinar
+      let flattenedSolicitudData = {};
+      if (typeof solicitudData === 'object' && solicitudData !== null) {
+        Object.keys(solicitudData).forEach(hoja => {
+          if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+          }
+        });
+        
+        if (Object.keys(flattenedSolicitudData).length === 0) {
+          flattenedSolicitudData = solicitudData;
+        }
+      } else {
+        flattenedSolicitudData = solicitudData;
+      }
+      
+      const combinedData = { ...flattenedSolicitudData, ...additionalData };
       const transformedData = reportConfig.transformData(combinedData);
       
       // Generar usando el modo especificado

@@ -54,7 +54,7 @@ class SpreadsheetModel {
     [
       'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'nombre_solicitante', 'dependencia_tipo',
       'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia',
-      'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'descripcion', 'alcance', 'metodologia', 'tipo',
+      'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo',
       'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
       'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador',
       'correo_coordinador', 'tel_coordinador', 'pefil_competencia', 'formas_evaluacion',
@@ -65,8 +65,8 @@ class SpreadsheetModel {
     ],
     {
       1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
-      2: ['J', 'K', 'L', 'M', 'N', 'O', 'P'],
-      3: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'],
+      2: ['J', 'K', 'L', 'M', 'N'],
+      3: ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'],
       4: ['Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH'],
       5: ['AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV']
     }
@@ -97,8 +97,8 @@ class SpreadsheetModel {
     ],
     {
       1: ['B', 'C'], // Step 1: nombre_actividad, fecha_solicitud
-      2: ['D', 'E', 'F', 'G', 'H', 'I'], // Step 2: Ingresos y Gastos Totales
-      3: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'] // Step 3: Aportes y Resumen (J to R)
+      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J'], // Step 2: Ingresos, Gastos Totales y Diferencia
+      3: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'] // Step 3: Aportes y Resumen (K to R)
     }
   );
   

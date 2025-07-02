@@ -140,6 +140,56 @@ const guardarProgreso = async (req, res) => {
     console.log(`  Rango de columnas: ${columnaInicialLetra} a ${columnaFinalLetra} (Índices ${columnaInicialIndex} a ${columnaFinalIndex})`);
     console.log('  Valores ordenados para enviar:', valoresOrdenados);
 
+    // DEBUG: Log específico para paso 2 y metodología
+    if (parsedPaso === 2) {
+      console.log('🔍 DEBUG PASO 2:');
+      console.log('  allFields completo:', allFields);
+      console.log('  metodologia en posición:', allFields.indexOf('metodologia'));
+      console.log('  formData recibido:', formData);
+      console.log('  Mapeo detallado por índice:');
+      for (let i = columnaInicialIndex; i <= columnaFinalIndex; i++) {
+        const fieldName = allFields[i];
+        const value = formData.hasOwnProperty(fieldName) ? formData[fieldName] : '[NO ENCONTRADO]';
+        console.log(`    Índice ${i} -> Campo '${fieldName}' -> Valor: '${value}'`);
+      }
+    }
+
+    // DEBUG: Log específico para paso 3 y cupos
+    if (parsedPaso === 3) {
+      console.log('🔍 DEBUG PASO 3:');
+      console.log('  allFields completo:', allFields);
+      console.log('  cupo_min en posición:', allFields.indexOf('cupo_min'));
+      console.log('  cupo_max en posición:', allFields.indexOf('cupo_max'));
+      console.log('  formData recibido:', formData);
+      console.log('  Campos específicos:');
+      console.log('    cupo_min:', formData.cupo_min);
+      console.log('    cupo_max:', formData.cupo_max);
+      console.log('  Mapeo detallado por índice:');
+      for (let i = columnaInicialIndex; i <= columnaFinalIndex; i++) {
+        const fieldName = allFields[i];
+        const value = formData.hasOwnProperty(fieldName) ? formData[fieldName] : '[NO ENCONTRADO]';
+        console.log(`    Índice ${i} -> Campo '${fieldName}' -> Valor: '${value}'`);
+      }
+    }
+
+    // DEBUG: Log específico para paso 5 y campos AU/AV
+    if (parsedPaso === 5) {
+      console.log('🔍 DEBUG PASO 5:');
+      console.log('  allFields completo:', allFields);
+      console.log('  pieza_grafica en posición:', allFields.indexOf('pieza_grafica'));
+      console.log('  personal_externo en posición:', allFields.indexOf('personal_externo'));
+      console.log('  formData recibido:', formData);
+      console.log('  Campos específicos:');
+      console.log('    pieza_grafica:', formData.pieza_grafica);
+      console.log('    personal_externo:', formData.personal_externo);
+      console.log('  Mapeo detallado por índice:');
+      for (let i = columnaInicialIndex; i <= columnaFinalIndex; i++) {
+        const fieldName = allFields[i];
+        const value = formData.hasOwnProperty(fieldName) ? formData[fieldName] : '[NO ENCONTRADO]';
+        console.log(`    Índice ${i} -> Campo '${fieldName}' -> Valor: '${value}'`);
+      }
+    }
+
     // Encontrar o crear fila para la solicitud
     const fila = await sheetsService.findOrCreateRequestRow(sheetName, id_solicitud);
     if (!fila) {
@@ -1416,7 +1466,6 @@ const guardarForm2Paso3 = async (req, res) => {
       subtotal_gastos,
       imprevistos_3,
       total_gastos_imprevistos,
-      diferencia, // Campo de diferencia
       observaciones // Campo de observaciones
     } = req.body;
 
@@ -1443,8 +1492,7 @@ const guardarForm2Paso3 = async (req, res) => {
     const escuelaDepartamentoValor = parseFloat(escuela_departamento) || (totalIngresos * escuelaDepartamentoPorcentaje / 100);
     const totalRecursosValor = parseFloat(total_recursos) || (fondoComun + facultadInstitutoValor + escuelaDepartamentoValor);
     
-    // Asegurar que diferencia y observaciones tengan valores
-    const diferenciaValor = parseFloat(diferencia) || 0;
+    // Asegurar que observaciones tenga valor
     const observacionesValor = observaciones || '';
 
     try {
@@ -1455,9 +1503,8 @@ const guardarForm2Paso3 = async (req, res) => {
       }
 
       // 2. Actualizar la hoja SOLICITUDES2 con los valores calculados
+      // Solo actualizar las columnas K-R que corresponden al paso 3
       const valoresAportes = [
-        // Importante: mantener este orden según el modelo SOLICITUDES2
-        diferenciaValor.toString(), // Columna J: diferencia
         fondoComunPorcentaje.toString(), // Columna K: fondo_comun_porcentaje
         fondoComun.toString(), // Columna L: fondo_comun
         facultadInstitutoPorcentaje.toString(), // Columna M: facultad_instituto_porcentaje (editable)
@@ -1470,12 +1517,12 @@ const guardarForm2Paso3 = async (req, res) => {
 
       console.log(`Actualizando datos de aportes en SOLICITUDES2 para la solicitud ${id_solicitud}: `, valoresAportes);
 
-      // 4. Actualizar la columna J a R (correspondiente a estos campos)
+      // 4. Actualizar solo las columnas K a R (correspondiente al paso 3)
       await sheetsService.updateRequestProgress({
         sheetName: 'SOLICITUDES2',
         rowIndex,
-        startColumn: 'J',    // Columna inicial para estos campos
-        endColumn: 'R',    // Columna final para estos campos
+        startColumn: 'K',    // Columna inicial para el paso 3
+        endColumn: 'R',    // Columna final para el paso 3
         values: valoresAportes
       });
       

@@ -159,7 +159,7 @@ class SheetsService {
     try {
       const hojas = definicionesHojas || {
         SOLICITUDES: {
-          range: 'SOLICITUDES!A2:AU',
+          range: 'SOLICITUDES!A2:AV',
           fields: this.fieldDefinitions.SOLICITUDES
         },
         SOLICITUDES2: {

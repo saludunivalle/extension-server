@@ -12,7 +12,7 @@ const report1Config = {
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES: {
-      range: 'SOLICITUDES!A2:AU',
+      range: 'SOLICITUDES!A2:AV',
       fields: [
         'id_solicitud', 'nombre_actividad','fecha_solicitud', 'nombre_solicitante', 'dependencia_tipo',
         'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
@@ -41,7 +41,19 @@ const report1Config = {
    */
   transformData: function(allData) {
     // Obtener datos de la solicitud
-    const formData = allData.SOLICITUDES || {};
+    const formData = allData.SOLICITUDES || allData; // Usar allData directamente si no hay SOLICITUDES anidado
+    
+    console.log('🔍 DEBUG TRANSFORM DATA - Datos recibidos:', {
+      tipoDeAllData: typeof allData,
+      tieneSolicitudes: !!allData.SOLICITUDES,
+      camposEnFormData: Object.keys(formData).length,
+      extension_solidaria: formData.extension_solidaria,
+      costo_extension_solidaria: formData.costo_extension_solidaria,
+      pieza_grafica: formData.pieza_grafica,
+      personal_externo: formData.personal_externo,
+      tipo: formData.tipo,
+      modalidad: formData.modalidad
+    });
     
     // Verificar y corregir datos
     const formDataCorregido = corregirCamposMalMapados(formData);
@@ -85,9 +97,9 @@ const report1Config = {
     const tipo = formDataCorregido.tipo || '';
     const tipoData = {
       tipo_curso: tipo === 'Curso' ? 'X' : '',
-      tipo_congreso: tipo === 'Congreso' ? 'X' : '',
-      tipo_conferencia: tipo === 'Conferencia' ? 'X' : '',
-      tipo_simposio: tipo === 'Simposio' ? 'X' : '',
+      tipo_taller: tipo === 'Taller' ? 'X' : '',
+      tipo_seminario: tipo === 'Seminario' ? 'X' : '',
+      tipo_programa: tipo === 'Programa' ? 'X' : '',
       tipo_diplomado: tipo === 'Diplomado' ? 'X' : '',
       tipo_otro: tipo === 'Otro' ? 'X' : '',
       tipo_otro_cual: tipo === 'Otro' ? formDataCorregido.otro_tipo || '' : '',
@@ -97,6 +109,7 @@ const report1Config = {
     const modalidad = formDataCorregido.modalidad || '';
     const modalidadData = {
       modalidad_presencial: modalidad === 'Presencial' ? 'X' : '',
+      modalidad_patl: modalidad === 'Presencial asistida por tecnología' ? 'X' : '',
       modalidad_semipresencial: modalidad === 'Semipresencial' ? 'X' : '',
       modalidad_virtual: modalidad === 'Virtual' ? 'X' : '',
       modalidad_mixta: modalidad === 'Mixta' ? 'X' : '',
@@ -134,16 +147,48 @@ const report1Config = {
       costo_extension_solidaria: esExtensionSi ? formDataCorregido.costo_extension_solidaria || '' : ''
     };
     
+    // Procesamiento de pieza gráfica
+    const piezaGrafica = formDataCorregido.pieza_grafica || '';
+    const piezaGraficaData = {
+      pieza_grafica_si: piezaGrafica ? 'X' : '',
+      pieza_grafica_no: piezaGrafica ? '' : 'X',
+      pieza_grafica: piezaGrafica,
+    };
+    
+    // Personal Externo
+    const personalExternoData = {
+      personal_externo: formDataCorregido.personal_externo || ''
+    };
+    
     // Combinar todos los datos transformados
-    return {
+    const resultadoFinal = {
       ...transformedData,
       ...tipoData,
       ...modalidadData,
       ...periodicidadData,
       ...organizacionData,
       ...certificadoData,
-      ...extensionSolidariaData
+      ...extensionSolidariaData,
+      ...piezaGraficaData,
+      ...personalExternoData,
     };
+    
+    console.log('🔍 DEBUG TRANSFORM DATA - Resultado final:', {
+      totalCampos: Object.keys(resultadoFinal).length,
+      extension_solidaria_si: resultadoFinal.extension_solidaria_si,
+      extension_solidaria_no: resultadoFinal.extension_solidaria_no,
+      costo_extension_solidaria: resultadoFinal.costo_extension_solidaria,
+      pieza_grafica_si: resultadoFinal.pieza_grafica_si,
+      pieza_grafica_no: resultadoFinal.pieza_grafica_no,
+      pieza_grafica: resultadoFinal.pieza_grafica,
+      personal_externo: resultadoFinal.personal_externo,
+      tipo_taller: resultadoFinal.tipo_taller,
+      tipo_seminario: resultadoFinal.tipo_seminario,
+      tipo_programa: resultadoFinal.tipo_programa,
+      modalidad_patl: resultadoFinal.modalidad_patl
+    });
+    
+    return resultadoFinal;
   }
 };
 
