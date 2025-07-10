@@ -14,6 +14,13 @@ const routes = require('./routes');
 
 config();
 
+// Verificar variables de entorno críticas
+if (process.env.NODE_ENV === 'production' && !process.env.SESSION_SECRET) {
+  console.error('FATAL ERROR: La variable de entorno SESSION_SECRET no está definida.');
+  process.exit(1); // Detener el servidor si el secreto no está en producción
+}
+
+
 // Inicializar express y middleware
 const app = express();
 const upload = multer({ dest: tempDir });
