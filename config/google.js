@@ -34,9 +34,9 @@ const oAuth2Client = new google.auth.OAuth2(
  * Cliente JWT para autenticación de servicio
  */
 const jwtClient = new google.auth.JWT(
-  client_email,
+  process.env.GOOGLE_CLIENT_EMAIL,
   null,
-  private_key?.replace(/\\n/g, '\n'),
+  (process.env.GOOGLE_PRIVATE_KEY || '').replace(/\\n/g, '\n'),
   SCOPES
 );
 
