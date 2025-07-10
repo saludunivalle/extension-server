@@ -32,7 +32,7 @@ app.use(bodyParser.json());
 
 // Configurar middleware de sesión
 app.use(session({
-  secret: process.env.GOOGLE_CLIENT_SECRET,
+  secret: process.env.SESSION_SECRET,
   resave: false,
   saveUninitialized: true,
   cookie: { secure: process.env.NODE_ENV === 'production' } // Solo HTTPS en producción
