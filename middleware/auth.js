@@ -22,7 +22,7 @@ const verifyToken = async (req, res, next) => {
     // Verificar el token con Google
     const ticket = await oAuth2Client.verifyIdToken({
       idToken: token,
-      audience: process.env.CLIENT_ID
+      audience: process.env.GOOGLE_CLIENT_ID
     });
 
     const payload = ticket.getPayload();
