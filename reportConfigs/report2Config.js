@@ -33,8 +33,8 @@ const report2Config = {
   
   transformData: function(allData) {
     // Priorizar datos de SOLICITUDES2 y GASTOS
-    const solicitudData = allData.SOLICITUDES || {};
-    const formData = allData.SOLICITUDES2 || {};
+    const solicitudData = Array.isArray(allData.SOLICITUDES) ? allData.SOLICITUDES[0] || {} : allData.SOLICITUDES || {};
+    const formData = Array.isArray(allData.SOLICITUDES2) ? allData.SOLICITUDES2[0] || {} : allData.SOLICITUDES2 || {};
     const gastosData = Array.isArray(allData.GASTOS) ? allData.GASTOS : [];
     const gastosFromAdditional = allData.gastosNormales || [];
     const gastosDinamicos = allData.gastosDinamicos || [];
@@ -189,6 +189,22 @@ const report2Config = {
       ...formDataCorregido
     };
     
+    // 1. Lista de campos de SOLICITUDES2
+    const allSolicitud2Fields = report2Config.sheetDefinitions.SOLICITUDES2.fields;
+
+    // 2. Asegura que todos los campos estén presentes y priorizados
+    allSolicitud2Fields.forEach(field => {
+      if (formDataCorregido[field] === undefined || formDataCorregido[field] === '') {
+        formDataCorregido[field] = solicitudData[field] || '';
+      }
+    });
+
+    // 3. Crea el objeto final solo con los campos requeridos
+    const datosCorregidosFinal = {};
+    allSolicitud2Fields.forEach(field => {
+      datosCorregidosFinal[field] = formDataCorregido[field];
+    });
+    
     // Now continue with the rest of the transformation
     const transformedData = { ...combinedData };
     
@@ -212,9 +228,9 @@ const report2Config = {
     });
     
     // Copy all corrected data to the result
-    Object.keys(datosCorregidos).forEach(key => {
-      if (datosCorregidos[key] !== undefined && datosCorregidos[key] !== null) {
-        transformedData[key] = datosCorregidos[key];
+    Object.keys(datosCorregidosFinal).forEach(key => {
+      if (datosCorregidosFinal[key] !== undefined && datosCorregidosFinal[key] !== null) {
+        transformedData[key] = datosCorregidosFinal[key];
       }
     });
     
@@ -349,8 +365,8 @@ const report2Config = {
       console.log(`Procesando ${gastosData.length} gastos desde hoja GASTOS`);
       
       // Filter gastos that match the solicitudId
-      const gastosFiltrados = gastosData.filter(g => g.id_solicitud === datosCorregidos.id_solicitud);
-      console.log(`Procesando ${gastosFiltrados.length} gastos para solicitud ${datosCorregidos.id_solicitud}`);
+      const gastosFiltrados = gastosData.filter(g => g.id_solicitud === datosCorregidosFinal.id_solicitud);
+      console.log(`Procesando ${gastosFiltrados.length} gastos para solicitud ${datosCorregidosFinal.id_solicitud}`);
       
       gastosFiltrados.forEach(gasto => {
         const idConcepto = gasto.id_conceptos;

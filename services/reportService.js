@@ -106,7 +106,14 @@ class ReportGenerationService {
       });
 
       // Combinar datos aplanados con datos adicionales
-      const combinedData = { ...flattenedSolicitudData, ...additionalData };
+      let combinedData = { ...flattenedSolicitudData, ...additionalData };
+
+      // --- FIX para reporte 2: pasar SOLICITUDES2 como objeto plano ---
+      if (formNum === 2 && solicitudData.SOLICITUDES2) {
+        combinedData.SOLICITUDES2 = solicitudData.SOLICITUDES2;
+      }
+      // --- FIN FIX ---
+
       console.log(`✅ Datos combinados: ${Object.keys(combinedData).length} campos totales`);
 
       // Transformar datos utilizando la función específica de la configuración del reporte
