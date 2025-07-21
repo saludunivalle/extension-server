@@ -626,6 +626,28 @@ class DriveService {
     const workbook = await excelUtils.loadTemplateWorkbook(plantillaPath);
     // Reemplazar marcadores
     excelUtils.replaceMarkers(workbook, data, true);
+
+    // Si es el reporte 2 y hay gastos dinámicos, insertar filas dinámicas
+    if (formNumber === 2 && data.gastosDinamicos && Array.isArray(data.gastosDinamicos) && data.gastosDinamicos.length > 0) {
+      // Determinar la hoja principal (usualmente la primera)
+      const sheet = workbook.worksheets[0];
+      // Convertir los objetos de gastos a arrays de celdas en el orden correcto
+      // (ajustar columnas según plantilla y templateMapperGastos)
+      const gastosRows = data.gastosDinamicos.map(gasto => [
+        gasto.id || '', // E
+        '', '', '', // F,G,H (vacío si no se usan)
+        gasto.descripcion || '', // F
+        ...Array(17).fill(''), // columnas intermedias hasta X
+        gasto.cantidad?.toString() || '0', // X
+        '', // Y
+        gasto.valorUnit_formatted || gasto.valorUnit || '0', // Z
+        '', '', // AA, AB
+        gasto.valorTotal_formatted || gasto.valorTotal || '0', // AC
+        ...Array(11).fill('') // hasta AK
+      ]);
+      // Insertar después de la fila 42 (1-based)
+      excelUtils.insertDynamicRows(workbook, sheet.name, 42, gastosRows);
+    }
     // Guardar archivo temporal
     const tempFilePath = await excelUtils.saveToTempFile(workbook, `Formulario${formNumber}_${solicitudId}`);
     return { filePath: tempFilePath, fileName };

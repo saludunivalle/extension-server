@@ -111,13 +111,21 @@ class SheetsService {
 
       // Si no existe, crear una nueva fila
       if (rowIndex === -1) {
-        rowIndex = rows.length + 1;
+        // Si la hoja es SOLICITUDES2, crear la fila con 18 columnas (A-R)
+        let newRow;
+        if (sheetName === 'SOLICITUDES2') {
+          newRow = Array(18).fill('');
+          newRow[0] = idSolicitud;
+        } else {
+          newRow = [idSolicitud];
+        }
         await this.client.spreadsheets.values.append({
           spreadsheetId: this.spreadsheetId,
-          range: `${sheetName}!A${rowIndex}`,
+          range: `${sheetName}!A${rows.length + 2}`,
           valueInputOption: 'RAW',
-          resource: { values: [[idSolicitud]] }
+          resource: { values: [newRow] }
         });
+        rowIndex = rows.length + 1;
       } else {
         rowIndex += 1; // Ajustar para que sea 1-based
       }
@@ -191,14 +199,22 @@ class SheetsService {
         });
 
         const rows = response.data.values || [];
-        const solicitudData = rows.find(row => row[0] === solicitudId);
+        // Log de depuración: mostrar todas las filas y el id_solicitud buscado
+        console.log(`[DEBUG] Hoja: ${hoja}, Buscando id_solicitud: '${solicitudId}'`);
+        console.log(`[DEBUG] Filas encontradas (${rows.length}):`, rows.map(r => r[0]));
 
+        const solicitudData = rows.find(row => row[0] === solicitudId);
         if (solicitudData) {
+          console.log(`[DEBUG] Fila encontrada en hoja ${hoja}:`, solicitudData);
           solicitudEncontrada = true;
-          resultados[hoja] = fields.reduce((acc, field, index) => {
+          const mapeo = fields.reduce((acc, field, index) => {
             acc[field] = solicitudData[index] || '';
             return acc;
           }, {});
+          console.log(`[DEBUG] Mapeo de campos para hoja ${hoja}:`, mapeo);
+          resultados[hoja] = mapeo;
+        } else {
+          console.log(`[DEBUG] No se encontró la solicitud en hoja ${hoja}`);
         }
       }
 

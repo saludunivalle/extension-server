@@ -256,6 +256,38 @@ const loadTemplateWorkbook = async (templatePath) => {
   };
   
   /**
+   * Inserta filas dinámicas en una hoja de Excel a partir de una fila de ejemplo
+   * @param {ExcelJS.Workbook} workbook - Libro de Excel
+   * @param {string} sheetName - Nombre de la hoja
+   * @param {number} exampleRowNumber - Número de la fila de ejemplo (1-based)
+   * @param {Array<Array>} rowsData - Datos a insertar (cada elemento es un array de celdas)
+   */
+  const insertDynamicRows = (workbook, sheetName, exampleRowNumber, rowsData) => {
+    const sheet = workbook.getWorksheet(sheetName);
+    if (!sheet) throw new Error(`Hoja ${sheetName} no encontrada`);
+    if (!rowsData || !rowsData.length) return;
+
+    // Insertar filas después de la fila de ejemplo
+    const insertStart = exampleRowNumber + 1;
+    sheet.spliceRows(insertStart, 0, ...rowsData);
+
+    // Copiar el formato de la fila de ejemplo a las nuevas filas
+    const exampleRow = sheet.getRow(exampleRowNumber);
+    for (let i = 0; i < rowsData.length; i++) {
+      const newRow = sheet.getRow(insertStart + i);
+      exampleRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        const newCell = newRow.getCell(colNumber);
+        newCell.style = { ...cell.style };
+        if (cell.numFmt) newCell.numFmt = cell.numFmt;
+        if (cell.font) newCell.font = { ...cell.font };
+        if (cell.alignment) newCell.alignment = { ...cell.alignment };
+        if (cell.border) newCell.border = { ...cell.border };
+        if (cell.fill) newCell.fill = { ...cell.fill };
+      });
+    }
+  };
+  
+  /**
    * Limpia los archivos temporales
    * @param {Array<string>} filePaths - Rutas de archivos a eliminar
    */
@@ -316,5 +348,6 @@ const loadTemplateWorkbook = async (templatePath) => {
     createFormattedTable,
     cleanupTempFiles,
     ensureTempDir,
-    rowsToObjects
+    rowsToObjects,
+    insertDynamicRows // Exportar la nueva función
   };

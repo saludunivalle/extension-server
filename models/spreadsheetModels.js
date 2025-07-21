@@ -77,12 +77,12 @@ class SpreadsheetModel {
     'SOLICITUDES2',
     [
       'id_solicitud', // A
-      'nombre_actividad', // B 
-      'fecha_solicitud', // C 
+      'nombre_actividad', // B
+      'fecha_solicitud', // C
       'ingresos_cantidad', // D
       'ingresos_vr_unit', // E
-      'total_ingresos', // F 
-      'subtotal_gastos', // G 
+      'total_ingresos', // F
+      'subtotal_gastos', // G
       'imprevistos_3', // H
       'total_gastos_imprevistos', // I
       'diferencia', // J
@@ -96,9 +96,9 @@ class SpreadsheetModel {
       'observaciones' // R
     ],
     {
-      1: ['B', 'C'], // Step 1: nombre_actividad, fecha_solicitud
-      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J'], // Step 2: Ingresos, Gastos Totales y Diferencia
-      3: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'] // Step 3: Aportes y Resumen (K to R)
+      1: ['B', 'C'], // Paso 1: nombre_actividad, fecha_solicitud
+      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J'], // Paso 2: Ingresos, Gastos Totales y Diferencia
+      3: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'] // Paso 3: Aportes y Resumen
     }
   );
   
