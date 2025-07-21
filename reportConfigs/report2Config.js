@@ -32,9 +32,9 @@ const report2Config = {
   },
   
   transformData: function(allData) {
-    // Priorizar datos de SOLICITUDES2 y GASTOS
-    const solicitudData = Array.isArray(allData.SOLICITUDES) ? allData.SOLICITUDES[0] || {} : allData.SOLICITUDES || {};
-    const formData = Array.isArray(allData.SOLICITUDES2) ? allData.SOLICITUDES2[0] || {} : allData.SOLICITUDES2 || {};
+    // Usar siempre el objeto plano de SOLICITUDES2
+    const formData = allData.SOLICITUDES2 || {};
+    const solicitudData = allData.SOLICITUDES || {};
     const gastosData = Array.isArray(allData.GASTOS) ? allData.GASTOS : [];
     const gastosFromAdditional = allData.gastosNormales || [];
     const gastosDinamicos = allData.gastosDinamicos || [];
