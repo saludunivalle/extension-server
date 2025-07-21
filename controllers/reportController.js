@@ -60,9 +60,17 @@ const downloadReport = async (req, res) => {
       return res.status(400).json({ error: 'Los parámetros solicitudId y formNumber son requeridos' });
     }
 
-    // Usar el servicio de reportes para generar el informe en el modo especificado
-    const result = await reportService.downloadReport(solicitudId, formNumber, mode);
-    res.status(200).json(result);
+    // Nuevo: obtener ruta y nombre del archivo Excel generado
+    const { filePath, fileName } = await reportService.downloadReportFile(solicitudId, formNumber, mode);
+    // Descargar el archivo al cliente
+    return res.download(filePath, fileName, (err) => {
+      if (err) {
+        console.error('Error al enviar el archivo Excel:', err);
+        return res.status(500).json({ error: 'Error al descargar el archivo Excel' });
+      }
+      // Opcional: eliminar el archivo temporal después de enviar
+      // fs.unlink(filePath, () => {});
+    });
   } catch (error) {
     console.error('Error al generar el informe para descarga/edición:', error);
     res.status(500).json({ error: 'Error al generar el informe para descarga/edición' });

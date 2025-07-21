@@ -204,6 +204,48 @@ class ReportGenerationService {
   }
 
   /**
+   * Genera un archivo Excel local listo para descargar
+   * @param {String} solicitudId - ID de la solicitud
+   * @param {Number} formNumber - Número de formulario (1-4)
+   * @param {String} mode - Modo de acceso al documento (view, edit)
+   * @returns {Promise<{filePath: string, fileName: string}>}
+   */
+  async downloadReportFile(solicitudId, formNumber, mode = 'view') {
+    // Cargar config, obtener datos y generar como en el método principal
+    const formNum = parseInt(formNumber, 10);
+    const reportConfig = this.loadReportConfig(formNum);
+    if (!reportConfig) {
+      throw new Error(`No se encontró configuración para el formulario ${formNum} (modo ${mode})`);
+    }
+    const solicitudData = await this.getSolicitudData(solicitudId, reportConfig.sheetDefinitions);
+    const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
+    // Aplanar datos
+    let flattenedSolicitudData = {};
+    if (typeof solicitudData === 'object' && solicitudData !== null) {
+      Object.keys(solicitudData).forEach(hoja => {
+        if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+        }
+      });
+      if (Object.keys(flattenedSolicitudData).length === 0) {
+        flattenedSolicitudData = solicitudData;
+      }
+    } else {
+      flattenedSolicitudData = solicitudData;
+    }
+    const combinedData = { ...flattenedSolicitudData, ...additionalData };
+    const transformedData = reportConfig.transformData(combinedData);
+    // Generar archivo Excel local usando driveService
+    const { filePath, fileName } = await driveService.generateLocalExcelReport(
+      formNum,
+      solicitudId,
+      transformedData,
+      mode
+    );
+    return { filePath, fileName };
+  }
+
+  /**
    * Carga la configuración específica de un reporte
    * @param {Number} formNumber - Número de formulario
    * @returns {Object} Configuración del reporte

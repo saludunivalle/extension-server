@@ -603,6 +603,35 @@ class DriveService {
   }
 
   /**
+   * Genera un archivo Excel local y retorna la ruta y el nombre
+   * @param {Number} formNumber
+   * @param {String} solicitudId
+   * @param {Object} data
+   * @param {String} mode
+   * @returns {Promise<{filePath: string, fileName: string}>}
+   */
+  async generateLocalExcelReport(formNumber, solicitudId, data, mode = 'view') {
+    const templateId = this.templateIds[formNumber];
+    if (!templateId) {
+      throw new Error(`Plantilla no encontrada para formulario ${formNumber}`);
+    }
+    // Descargar plantilla XLSX
+    const fileName = `Formulario${formNumber}_${solicitudId}.xlsx`;
+    // Suponemos que la plantilla está en /templates y se llama plantilla_formX.xlsx
+    const path = require('path');
+    const excelUtils = require('../utils/excelUtils');
+    const fs = require('fs');
+    const plantillaPath = path.join(__dirname, '../templates', `plantilla_form${formNumber}.xlsx`);
+    // Cargar plantilla
+    const workbook = await excelUtils.loadTemplateWorkbook(plantillaPath);
+    // Reemplazar marcadores
+    excelUtils.replaceMarkers(workbook, data, true);
+    // Guardar archivo temporal
+    const tempFilePath = await excelUtils.saveToTempFile(workbook, `Formulario${formNumber}_${solicitudId}`);
+    return { filePath: tempFilePath, fileName };
+  }
+
+  /**
    * Inserta filas dinámicas para gastos en una hoja de Google Sheets
    * @param {String} fileId - ID del archivo de Google Sheets
    * @param {Object} dinamicConfig - Configuración para filas dinámicas
