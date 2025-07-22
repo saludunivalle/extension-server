@@ -10,11 +10,11 @@
     "aplica": { "column": "C" },
     "mitigacion": { "column": "D:E", "span": 2 }
   },
-  "mergedCells": { // Rangos PREDETERMINADOS para la columna A
+  "mergedCells": { // Rangos PREDETERMINADOS para la columna A - CORREGIDOS según especificaciones
     "diseno": { "range": "A14:A17", "startRow": 14, "endRow": 17 },
-    "locacion": { "range": "A19:A24", "startRow": 19, "endRow": 24 },
-    "desarrollo": { "range": "A25:A35", "startRow": 25, "endRow": 35 },
-    "cierre": { "range": "A36:A38", "startRow": 36, "endRow": 38 },
+    "locacion": { "range": "A19:A23", "startRow": 19, "endRow": 23 },
+    "desarrollo": { "range": "A25:A34", "startRow": 25, "endRow": 34 },
+    "cierre": { "range": "A34:A37", "startRow": 34, "endRow": 37 },
     "otros": { "range": "A39:A39", "startRow": 39, "endRow": 39 } 
   },
   "dataMapping": { // Mapeo de nombres de campo

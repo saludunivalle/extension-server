@@ -32,17 +32,81 @@ const report2Config = {
   },
   
   transformData: function(allData) {
-    // Usar siempre el objeto plano de SOLICITUDES2
-    const formData = allData.SOLICITUDES2 || {};
-    const solicitudData = allData.SOLICITUDES || {};
-    const gastosData = Array.isArray(allData.GASTOS) ? allData.GASTOS : [];
+    // === LOGS DE DEPURACIÓN CRÍTICOS ===
+    console.log('🔥 [REPORT2CONFIG] transformData ejecutándose...');
+    console.log('🔥 [REPORT2CONFIG] allData keys:', Object.keys(allData || {}));
+    console.log('🔥 [REPORT2CONFIG] allData.SOLICITUDES2:', allData.SOLICITUDES2);
+    console.log('🔥 [REPORT2CONFIG] allData.SOLICITUDES:', allData.SOLICITUDES);
+    console.log('🔥 [REPORT2CONFIG] estructura completa allData:', JSON.stringify(allData, null, 2));
+    
+    // ===== NUEVA LÓGICA: TRABAJAR CON DATOS APLANADOS =====
+    // Los datos vienen directamente en allData, no anidados por hoja
+    
+    // CORRECCIÓN CRÍTICA: Los campos están intercambiados en el mapeo
+    // Lo que llega como "nombre_actividad" es realmente la fecha
+    // Lo que llega como "fecha_solicitud" es realmente el nombre
+    const nombre_actividad_real = allData.fecha_solicitud || ''; // ¡CORREGIDO!
+    const fecha_solicitud_real = allData.nombre_actividad || ''; // ¡CORREGIDO!
+    
+    console.log('🔥 [CORRECCION] nombre_actividad_real:', nombre_actividad_real);
+    console.log('🔥 [CORRECCION] fecha_solicitud_real:', fecha_solicitud_real);
+    
+    // Crear objeto base con valores corregidos
+    const transformedData = {
+      // Campos corregidos
+      id_solicitud: allData.id_solicitud || '',
+      nombre_actividad: nombre_actividad_real,
+      fecha_solicitud: fecha_solicitud_real,
+      
+      // Campos de ingresos
+      ingresos_cantidad: allData.ingresos_cantidad || '0',
+      ingresos_vr_unit: allData.ingresos_vr_unit || '0',
+      total_ingresos: allData.total_ingresos || '0',
+      
+      // Campos de gastos
+      subtotal_gastos: allData.subtotal_gastos || '0',
+      imprevistos_3: allData.imprevistos_3 || '0',
+      total_gastos_imprevistos: allData.total_gastos_imprevistos || '0',
+      diferencia: allData.diferencia || '0',
+      
+      // Campos de aportes
+      fondo_comun_porcentaje: allData.fondo_comun_porcentaje || '30',
+      fondo_comun: allData.fondo_comun || '0',
+      facultad_instituto_porcentaje: allData.facultad_instituto_porcentaje || '5',
+      facultad_instituto: allData.facultad_instituto || '0',
+      escuela_departamento_porcentaje: allData.escuela_departamento_porcentaje || '0',
+      escuela_departamento: allData.escuela_departamento || '0',
+      total_recursos: allData.total_recursos || '0',
+      
+      // Otros campos
+      observaciones: allData.observaciones || '',
+      nombre_solicitante: allData.nombre_solicitante || '',
+      
+      // Datos de gastos
+      gastos: allData.gastos || [],
+      gastosNormales: allData.gastosNormales || [],
+      gastosDinamicos: allData.gastosDinamicos || [],
+      gastosFormateados: allData.gastosFormateados || {}
+    };
+    
+    console.log('🔥 [DESPUES_CORRECCION] transformedData inicial:', {
+      id_solicitud: transformedData.id_solicitud,
+      nombre_actividad: transformedData.nombre_actividad,
+      fecha_solicitud: transformedData.fecha_solicitud,
+      ingresos_cantidad: transformedData.ingresos_cantidad,
+      ingresos_vr_unit: transformedData.ingresos_vr_unit,
+      total_ingresos: transformedData.total_ingresos
+    });
+    
+    // ===== CONTINUAR CON LA LÓGICA EXISTENTE =====
+    // Ahora que tenemos los datos corregidos, continuar con el resto de la lógica
+    
     const gastosFromAdditional = allData.gastosNormales || [];
     const gastosDinamicos = allData.gastosDinamicos || [];
-
+    
     // Helper para priorizar SOLICITUDES2
     const getField = (field) => {
-      if (formData[field] !== undefined && formData[field] !== null && formData[field] !== '') return formData[field];
-      if (solicitudData[field] !== undefined && solicitudData[field] !== null && solicitudData[field] !== '') return solicitudData[field];
+      if (transformedData[field] !== undefined && transformedData[field] !== null && transformedData[field] !== '') return transformedData[field];
       return '';
     };
 
@@ -70,10 +134,10 @@ const report2Config = {
     };
 
     // Agregar gastos y dinámicos al objeto combinado
-    combinedData.gastos = gastosData;
+    combinedData.gastos = transformedData.gastos;
     combinedData.gastosNormales = gastosFromAdditional;
     combinedData.gastosDinamicos = gastosDinamicos;
-    combinedData.gastosFormateados = allData.gastosFormateados || {};
+    combinedData.gastosFormateados = transformedData.gastosFormateados;
 
     // FIELD TYPE VALIDATION FUNCTIONS
     const isDateLike = (value) => {
@@ -89,16 +153,16 @@ const report2Config = {
     
     // Log diagnostic data for debugging
     console.log("🔍 DIAGNÓSTICO DE DATOS:");
-    console.log("- SOLICITUDES.nombre_actividad:", solicitudData.nombre_actividad);
-    console.log("- SOLICITUDES.fecha_solicitud:", solicitudData.fecha_solicitud);
-    console.log("- SOLICITUDES2.nombre_actividad:", formData.nombre_actividad);
-    console.log("- SOLICITUDES2.fecha_solicitud:", formData.fecha_solicitud);
-    console.log("- SOLICITUDES2.ingresos_cantidad:", formData.ingresos_cantidad);
-    console.log("- SOLICITUDES2.ingresos_vr_unit:", formData.ingresos_vr_unit);
-    console.log("- SOLICITUDES2.total_ingresos:", formData.total_ingresos);
+    console.log("- SOLICITUDES.nombre_actividad:", transformedData.nombre_actividad);
+    console.log("- SOLICITUDES.fecha_solicitud:", transformedData.fecha_solicitud);
+    console.log("- SOLICITUDES2.nombre_actividad:", transformedData.nombre_actividad);
+    console.log("- SOLICITUDES2.fecha_solicitud:", transformedData.fecha_solicitud);
+    console.log("- SOLICITUDES2.ingresos_cantidad:", transformedData.ingresos_cantidad);
+    console.log("- SOLICITUDES2.ingresos_vr_unit:", transformedData.ingresos_vr_unit);
+    console.log("- SOLICITUDES2.total_ingresos:", transformedData.total_ingresos);
     
     // Create a copy to avoid modifying the original data
-    const formDataCorregido = { ...formData };
+    const formDataCorregido = { ...transformedData };
     
     // CASE 1: Date in quantity field - FIX THE MAIN ISSUE
     if (isDateLike(formDataCorregido.ingresos_cantidad) && !isDateLike(formDataCorregido.fecha_solicitud)) {
@@ -135,21 +199,21 @@ const report2Config = {
     // Priorize data from SOLICITUDES2 sheet over SOLICITUDES
     if (formDataCorregido.nombre_actividad) {
       console.log("ℹ️ Usando nombre_actividad de tabla SOLICITUDES2");
-    } else if (solicitudData.nombre_actividad) {
+    } else if (transformedData.nombre_actividad) {
       console.log("ℹ️ Usando nombre_actividad de tabla SOLICITUDES");
-      formDataCorregido.nombre_actividad = solicitudData.nombre_actividad;
+      formDataCorregido.nombre_actividad = transformedData.nombre_actividad;
     }
 
     if (formDataCorregido.fecha_solicitud) {
       console.log("ℹ️ Usando fecha_solicitud de tabla SOLICITUDES2");
-    } else if (solicitudData.fecha_solicitud) {
+    } else if (transformedData.fecha_solicitud) {
       console.log("ℹ️ Usando fecha_solicitud de tabla SOLICITUDES");
-      formDataCorregido.fecha_solicitud = solicitudData.fecha_solicitud;
+      formDataCorregido.fecha_solicitud = transformedData.fecha_solicitud;
     }
     
-    if (!formDataCorregido.nombre_solicitante && solicitudData.nombre_solicitante) {
+    if (!formDataCorregido.nombre_solicitante && transformedData.nombre_solicitante) {
       console.log("ℹ️ Usando nombre_solicitante de tabla SOLICITUDES");
-      formDataCorregido.nombre_solicitante = solicitudData.nombre_solicitante;
+      formDataCorregido.nombre_solicitante = transformedData.nombre_solicitante;
     }
     
     // CASE 3: Ensure numeric fields contain valid numbers
@@ -184,7 +248,7 @@ const report2Config = {
     
     // Combine all data with corrected values
     const datosCorregidos = {
-      ...solicitudData,
+      ...transformedData,
       ...formDataCorregido
     };
     
@@ -194,24 +258,24 @@ const report2Config = {
     // 2. Asegura que todos los campos estén presentes y priorizados
     allSolicitud2Fields.forEach(field => {
       if (formDataCorregido[field] === undefined || formDataCorregido[field] === '') {
-        formDataCorregido[field] = solicitudData[field] || '';
+        formDataCorregido[field] = transformedData[field] || '';
       }
     });
 
     // 3. Crea el objeto final solo con los campos requeridos
     const datosCorregidosFinal = {};
     allSolicitud2Fields.forEach(field => {
-      // Prioriza el valor de formDataCorregido (SOLICITUDES2 corregido), si no, usa el de solicitudData (SOLICITUDES)
+      // Prioriza el valor de formDataCorregido (SOLICITUDES2 corregido), si no, usa el de transformedData (SOLICITUDES)
       datosCorregidosFinal[field] = (formDataCorregido[field] !== undefined && formDataCorregido[field] !== '')
         ? formDataCorregido[field]
-        : (solicitudData[field] || '');
+        : (transformedData[field] || '');
     });
 
     // LOG ESPECIAL PARA nombre_actividad
     console.log('🟢 Valor final de nombre_actividad:', datosCorregidosFinal['nombre_actividad']);
     
     // Now continue with the rest of the transformation
-    const transformedData = { ...combinedData };
+    const transformedDataFinal = { ...combinedData };
     
     // Pre-initialize placeholders for expenses
     const conceptosGastos = [
@@ -226,26 +290,26 @@ const report2Config = {
     ];
     
     conceptosGastos.forEach(concepto => {
-      transformedData[`gasto_${concepto}_cantidad`] = '0';
-      transformedData[`gasto_${concepto}_valor_unit`] = '$0';
-      transformedData[`gasto_${concepto}_valor_total`] = '$0';
-      transformedData[`gasto_${concepto}_descripcion`] = '';
+      transformedDataFinal[`gasto_${concepto}_cantidad`] = '0';
+      transformedDataFinal[`gasto_${concepto}_valor_unit`] = '$0';
+      transformedDataFinal[`gasto_${concepto}_valor_total`] = '$0';
+      transformedDataFinal[`gasto_${concepto}_descripcion`] = '';
     });
     
     // Copy all corrected data to the result
     Object.keys(datosCorregidosFinal).forEach(key => {
       if (datosCorregidosFinal[key] !== undefined && datosCorregidosFinal[key] !== null) {
-        transformedData[key] = datosCorregidosFinal[key];
+        transformedDataFinal[key] = datosCorregidosFinal[key];
       }
     });
 
     // LOG FINAL para depuración de nombre_actividad en el objeto transformado
-    console.log('🟢 Valor de nombre_actividad en transformedData:', transformedData['nombre_actividad']);
+    console.log('🟢 Valor de nombre_actividad en transformedData:', transformedDataFinal['nombre_actividad']);
     
     // Process date formatting
     const fechaActual = new Date();
     try {
-      const fechaStr = transformedData.fecha_solicitud;
+      const fechaStr = transformedDataFinal.fecha_solicitud;
       if (fechaStr) {
         let fechaProcesada;
         
@@ -272,31 +336,31 @@ const report2Config = {
         
         if (!isNaN(fechaProcesada.getTime())) {
           // Valid date, extract parts
-          transformedData.dia = fechaProcesada.getDate().toString().padStart(2, '0');
-          transformedData.mes = (fechaProcesada.getMonth() + 1).toString().padStart(2, '0');
-          transformedData.anio = fechaProcesada.getFullYear().toString();
+          transformedDataFinal.dia = fechaProcesada.getDate().toString().padStart(2, '0');
+          transformedDataFinal.mes = (fechaProcesada.getMonth() + 1).toString().padStart(2, '0');
+          transformedDataFinal.anio = fechaProcesada.getFullYear().toString();
           
           // Log successful date extraction
-          console.log(`✅ Fecha procesada correctamente: dia=${transformedData.dia}, mes=${transformedData.mes}, anio=${transformedData.anio}`);
+          console.log(`✅ Fecha procesada correctamente: dia=${transformedDataFinal.dia}, mes=${transformedDataFinal.mes}, anio=${transformedDataFinal.anio}`);
         } else {
           // Invalid date, use current date
           console.log(`⚠️ Fecha inválida: "${fechaStr}", usando fecha actual`);
-          transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
-          transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
-          transformedData.anio = fechaActual.getFullYear().toString();
+          transformedDataFinal.dia = fechaActual.getDate().toString().padStart(2, '0');
+          transformedDataFinal.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
+          transformedDataFinal.anio = fechaActual.getFullYear().toString();
         }
       } else {
         // No date available, use current date
         console.log('ℹ️ No hay fecha_solicitud, usando fecha actual');
-        transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
-        transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
-        transformedData.anio = fechaActual.getFullYear().toString();
+        transformedDataFinal.dia = fechaActual.getDate().toString().padStart(2, '0');
+        transformedDataFinal.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
+        transformedDataFinal.anio = fechaActual.getFullYear().toString();
       }
     } catch (error) {
       console.error('Error al procesar la fecha:', error);
-      transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
-      transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
-      transformedData.anio = fechaActual.getFullYear().toString();
+      transformedDataFinal.dia = fechaActual.getDate().toString().padStart(2, '0');
+      transformedDataFinal.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
+      transformedDataFinal.anio = fechaActual.getFullYear().toString();
     }
     
     // Format currency values
@@ -324,28 +388,28 @@ const report2Config = {
     ];
     
     // Ensure ingresos fields are properly populated
-    if (isNumeric(transformedData.ingresos_cantidad) && isNumeric(transformedData.ingresos_vr_unit)) {
-      const cantidad = parseFloat(transformedData.ingresos_cantidad);
-      const valorUnit = parseFloat(transformedData.ingresos_vr_unit);
+    if (isNumeric(transformedDataFinal.ingresos_cantidad) && isNumeric(transformedDataFinal.ingresos_vr_unit)) {
+      const cantidad = parseFloat(transformedDataFinal.ingresos_cantidad);
+      const valorUnit = parseFloat(transformedDataFinal.ingresos_vr_unit);
       const totalCalculado = cantidad * valorUnit;
       
       // Update formatted value and ensure total_ingresos is calculated
-      transformedData.ingresos_cantidad_formatted = cantidad.toString();
-      transformedData.ingresos_vr_unit_formatted = formatCurrency(valorUnit);
-      transformedData.total_ingresos = totalCalculado.toString();
-      transformedData.total_ingresos_formatted = formatCurrency(totalCalculado);
+      transformedDataFinal.ingresos_cantidad_formatted = cantidad.toString();
+      transformedDataFinal.ingresos_vr_unit_formatted = formatCurrency(valorUnit);
+      transformedDataFinal.total_ingresos = totalCalculado.toString();
+      transformedDataFinal.total_ingresos_formatted = formatCurrency(totalCalculado);
       
       console.log(`✅ Valores de ingresos procesados: cantidad=${cantidad}, valorUnit=${valorUnit}, total=${totalCalculado}`);
     } else {
       console.log("⚠️ Valores de ingresos inválidos o ausentes, estableciendo valores por defecto");
-      transformedData.ingresos_cantidad = transformedData.ingresos_cantidad || '0';
-      transformedData.ingresos_vr_unit = transformedData.ingresos_vr_unit || '0';
-      transformedData.total_ingresos = transformedData.total_ingresos || '0';
+      transformedDataFinal.ingresos_cantidad = transformedDataFinal.ingresos_cantidad || '0';
+      transformedDataFinal.ingresos_vr_unit = transformedDataFinal.ingresos_vr_unit || '0';
+      transformedDataFinal.total_ingresos = transformedDataFinal.total_ingresos || '0';
     }
     
     monetaryFields.forEach(field => {
-      if (transformedData[field]) {
-        transformedData[field + '_formatted'] = formatCurrency(transformedData[field]);
+      if (transformedDataFinal[field]) {
+        transformedDataFinal[field + '_formatted'] = formatCurrency(transformedDataFinal[field]);
       }
     });
     
@@ -360,20 +424,20 @@ const report2Config = {
         const placeholderId = `gasto_${idConComa}`;
         
         // Asignar valores a sus respectivos placeholders
-        transformedData[`${placeholderId}_cantidad`] = gasto.cantidad.toString();
-        transformedData[`${placeholderId}_valor_unit`] = gasto.valorUnit.toString();
-        transformedData[`${placeholderId}_valor_unit_formatted`] = gasto.valorUnit_formatted;
-        transformedData[`${placeholderId}_valor_total`] = gasto.valorTotal.toString();
-        transformedData[`${placeholderId}_valor_total_formatted`] = gasto.valorTotal_formatted;
-        transformedData[`${placeholderId}_descripcion`] = gasto.descripcion || gasto.concepto;
+        transformedDataFinal[`${placeholderId}_cantidad`] = gasto.cantidad.toString();
+        transformedDataFinal[`${placeholderId}_valor_unit`] = gasto.valorUnit.toString();
+        transformedDataFinal[`${placeholderId}_valor_unit_formatted`] = gasto.valorUnit_formatted;
+        transformedDataFinal[`${placeholderId}_valor_total`] = gasto.valorTotal.toString();
+        transformedDataFinal[`${placeholderId}_valor_total_formatted`] = gasto.valorTotal_formatted;
+        transformedDataFinal[`${placeholderId}_descripcion`] = gasto.descripcion || gasto.concepto;
       });
     }
     // Then check raw gastosData from GASTOS sheet
-    else if (gastosData && gastosData.length > 0) {
-      console.log(`Procesando ${gastosData.length} gastos desde hoja GASTOS`);
+    else if (transformedDataFinal.gastos && transformedDataFinal.gastos.length > 0) {
+      console.log(`Procesando ${transformedDataFinal.gastos.length} gastos desde hoja GASTOS`);
       
       // Filter gastos that match the solicitudId
-      const gastosFiltrados = gastosData.filter(g => g.id_solicitud === datosCorregidosFinal.id_solicitud);
+      const gastosFiltrados = transformedDataFinal.gastos.filter(g => g.id_solicitud === datosCorregidosFinal.id_solicitud);
       console.log(`Procesando ${gastosFiltrados.length} gastos para solicitud ${datosCorregidosFinal.id_solicitud}`);
       
       gastosFiltrados.forEach(gasto => {
@@ -385,11 +449,11 @@ const report2Config = {
         const valorTotal = parseFloat(gasto.valor_total) || cantidad * valorUnit;
         
         // Asignar valores a sus respectivos placeholders
-        transformedData[`${placeholderId}_cantidad`] = cantidad.toString();
-        transformedData[`${placeholderId}_valor_unit`] = valorUnit.toString();
-        transformedData[`${placeholderId}_valor_unit_formatted`] = formatCurrency(valorUnit);
-        transformedData[`${placeholderId}_valor_total`] = valorTotal.toString();
-        transformedData[`${placeholderId}_valor_total_formatted`] = formatCurrency(valorTotal);
+        transformedDataFinal[`${placeholderId}_cantidad`] = cantidad.toString();
+        transformedDataFinal[`${placeholderId}_valor_unit`] = valorUnit.toString();
+        transformedDataFinal[`${placeholderId}_valor_unit_formatted`] = formatCurrency(valorUnit);
+        transformedDataFinal[`${placeholderId}_valor_total`] = valorTotal.toString();
+        transformedDataFinal[`${placeholderId}_valor_total_formatted`] = formatCurrency(valorTotal);
       });
     } else {
       console.log('⚠️ No se encontraron gastos para procesar');
@@ -407,7 +471,7 @@ const report2Config = {
         console.log(`⚠️ CRÍTICO: Configurando inserción de filas dinámicas a partir de la fila 43`);
         
         // Add special field for dynamic rows with complete structure
-        transformedData['__FILAS_DINAMICAS__'] = {
+        transformedDataFinal['__FILAS_DINAMICAS__'] = {
           gastos: dynamicRowsData.gastos,
           rows: dynamicRowsData.rows,
           insertarEn: "A42:AK42", // Template row range (usar fila 42 como template)
@@ -415,7 +479,7 @@ const report2Config = {
         };
         
         console.log(`✅ Configuración de filas dinámicas completada con insertStartRow=43`);
-        console.log(`Estructura __FILAS_DINAMICAS__ generada:`, JSON.stringify(transformedData['__FILAS_DINAMICAS__'], null, 2));
+        console.log(`Estructura __FILAS_DINAMICAS__ generada:`, JSON.stringify(transformedDataFinal['__FILAS_DINAMICAS__'], null, 2));
       } else {
         console.log(`⚠️ No se pudo generar la estructura de filas dinámicas`);
       }
@@ -424,12 +488,12 @@ const report2Config = {
     // IMPORTANTE: Asegurarse que los valores de subtotal_gastos e imprevistos son correctos
     // En caso de que estos valores vengan desplazados, calcularlos basados en gastos
     // Calcular subtotal_gastos si no existe o es inválido
-    if (!transformedData.subtotal_gastos || isNaN(parseFloat(transformedData.subtotal_gastos))) {
+    if (!transformedDataFinal.subtotal_gastos || isNaN(parseFloat(transformedDataFinal.subtotal_gastos))) {
       let subtotalCalculado = 0;
       
       // Sumar todos los gastos normales
       conceptosGastos.forEach(concepto => {
-        const valorTotal = parseFloat(transformedData[`gasto_${concepto}_valor_total`]) || 0;
+        const valorTotal = parseFloat(transformedDataFinal[`gasto_${concepto}_valor_total`]) || 0;
         subtotalCalculado += valorTotal;
       });
       
@@ -440,31 +504,31 @@ const report2Config = {
         });
       }
       
-      transformedData.subtotal_gastos = subtotalCalculado.toString();
+      transformedDataFinal.subtotal_gastos = subtotalCalculado.toString();
       console.log(`✏️ Recalculado subtotal_gastos: ${subtotalCalculado}`);
     }
     
     // Calcular imprevistos_3 como 3% del subtotal_gastos
-    const subtotalGastos = parseFloat(transformedData.subtotal_gastos) || 0;
+    const subtotalGastos = parseFloat(transformedDataFinal.subtotal_gastos) || 0;
     // Usar exactamente 3% para imprevistos, independientemente del valor en imprevistos_3%
     const imprevistos3 = subtotalGastos * 0.03;
-    transformedData.imprevistos_3 = imprevistos3.toString();
-    transformedData['imprevistos_3%'] = '3'; // Fijar el porcentaje en 3%
+    transformedDataFinal.imprevistos_3 = imprevistos3.toString();
+    transformedDataFinal['imprevistos_3%'] = '3'; // Fijar el porcentaje en 3%
     
     // Calcular total_gastos_imprevistos como suma del subtotal_gastos + imprevistos_3
     const totalGastosImprevistos = subtotalGastos + imprevistos3;
-    transformedData.total_gastos_imprevistos = totalGastosImprevistos.toString();
+    transformedDataFinal.total_gastos_imprevistos = totalGastosImprevistos.toString();
     
     // Calcular la diferencia (Ingresos - Gastos)
-    const totalIngresos = parseFloat(transformedData.total_ingresos) || 0;
+    const totalIngresos = parseFloat(transformedDataFinal.total_ingresos) || 0;
     const diferencia = totalIngresos - totalGastosImprevistos;
-    transformedData.diferencia = diferencia.toString();
+    transformedDataFinal.diferencia = diferencia.toString();
     
     // Calcular los valores monetarios a partir de los porcentajes para el fondo común, facultad e instituto, y escuela
     // Obtener porcentajes (usar valores por defecto si no existen)
-    const fondoComunPorcentaje = parseFloat(transformedData.fondo_comun_porcentaje) || 30;
-    const facultadInstitutoPorcentaje = parseFloat(transformedData.facultad_instituto_porcentaje) || 5; // Ahora editable
-    const escuelaDepartamentoPorcentaje = parseFloat(transformedData.escuela_departamento_porcentaje) || 0;
+    const fondoComunPorcentaje = parseFloat(transformedDataFinal.fondo_comun_porcentaje) || 30;
+    const facultadInstitutoPorcentaje = parseFloat(transformedDataFinal.facultad_instituto_porcentaje) || 5; // Ahora editable
+    const escuelaDepartamentoPorcentaje = parseFloat(transformedDataFinal.escuela_departamento_porcentaje) || 0;
     
     // Calcular valores monetarios
     const fondoComun = totalIngresos * (fondoComunPorcentaje / 100);
@@ -475,47 +539,47 @@ const report2Config = {
     const totalRecursos = fondoComun + facultadInstituto + escuelaDepartamento;
     
     // Asignar valores calculados
-    transformedData.fondo_comun = fondoComun.toString();
-    transformedData.facultad_instituto = facultadInstituto.toString();
-    transformedData.escuela_departamento = escuelaDepartamento.toString();
-    transformedData.total_recursos = totalRecursos.toString();
+    transformedDataFinal.fondo_comun = fondoComun.toString();
+    transformedDataFinal.facultad_instituto = facultadInstituto.toString();
+    transformedDataFinal.escuela_departamento = escuelaDepartamento.toString();
+    transformedDataFinal.total_recursos = totalRecursos.toString();
     
     // Guardar también el porcentaje de facultad_instituto para referencia
-    transformedData.facultad_instituto_porcentaje = facultadInstitutoPorcentaje.toString();
+    transformedDataFinal.facultad_instituto_porcentaje = facultadInstitutoPorcentaje.toString();
     
     // Asegurar que el campo observaciones esté presente
-    if (!transformedData.observaciones) {
-      transformedData.observaciones = '';
+    if (!transformedDataFinal.observaciones) {
+      transformedDataFinal.observaciones = '';
     }
     
     console.log(`✅ Cálculos de gastos: subtotal=${subtotalGastos}, imprevistos(3%)=${imprevistos3}, total=${totalGastosImprevistos}, diferencia=${diferencia}`);
     console.log(`✅ Cálculos de aportes: fondo_comun(${fondoComunPorcentaje}%)=${fondoComun}, facultad(${facultadInstitutoPorcentaje}%)=${facultadInstituto}, escuela(${escuelaDepartamentoPorcentaje}%)=${escuelaDepartamento}, total=${totalRecursos}`);
     
     // IMPORTANTE: Eliminar marcadores no reemplazados
-    Object.keys(transformedData).forEach(key => {
-      const value = transformedData[key];
+    Object.keys(transformedDataFinal).forEach(key => {
+      const value = transformedDataFinal[key];
       if (typeof value === 'string' && (value.includes('{{') || value.includes('}}'))) {
         console.log(`⚠️ Detectado posible marcador en ${key}: "${value}"`);
-        transformedData[key] = '';
+        transformedDataFinal[key] = '';
       }
     });
     
     // Garantizar valores por defecto
-    if (!transformedData['fecha_solicitud'] || !transformedData['dia']) {
+    if (!transformedDataFinal['fecha_solicitud'] || !transformedDataFinal['dia']) {
       console.log('⚠️ Usando fecha por defecto para campos faltantes');
       const fechaActual = new Date();
       
-      if (!transformedData['fecha_solicitud']) {
-        transformedData['fecha_solicitud'] = `${fechaActual.getDate()}/${fechaActual.getMonth()+1}/${fechaActual.getFullYear()}`;
+      if (!transformedDataFinal['fecha_solicitud']) {
+        transformedDataFinal['fecha_solicitud'] = `${fechaActual.getDate()}/${fechaActual.getMonth()+1}/${fechaActual.getFullYear()}`;
       }
       
-      if (!transformedData['dia']) transformedData['dia'] = fechaActual.getDate().toString().padStart(2, '0');
-      if (!transformedData['mes']) transformedData['mes'] = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
-      if (!transformedData['anio']) transformedData['anio'] = fechaActual.getFullYear().toString();
+      if (!transformedDataFinal['dia']) transformedDataFinal['dia'] = fechaActual.getDate().toString().padStart(2, '0');
+      if (!transformedDataFinal['mes']) transformedDataFinal['mes'] = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
+      if (!transformedDataFinal['anio']) transformedDataFinal['anio'] = fechaActual.getFullYear().toString();
     }
     
-    console.log("⭐ DATOS TRANSFORMADOS FINALES - FORM 2:", transformedData);
-    return transformedData;
+    console.log("⭐ DATOS TRANSFORMADOS FINALES - FORM 2:", transformedDataFinal);
+    return transformedDataFinal;
   },
   
   // Configuración adicional específica para Google Sheets

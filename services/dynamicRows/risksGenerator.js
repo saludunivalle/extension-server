@@ -25,11 +25,11 @@ try {
       aplica: { column: "C" },
       mitigacion: { column: "D:E", span: 2 }
     },
-    mergedCells: { // Rangos por defecto Columna A
+    mergedCells: { // Rangos por defecto Columna A - CORREGIDOS según especificaciones
       diseno: { startRow: 14, endRow: 17 },
-      locacion: { startRow: 19, endRow: 24 },
-      desarrollo: { startRow: 25, endRow: 35 },
-      cierre: { startRow: 36, endRow: 38 },
+      locacion: { startRow: 19, endRow: 23 },
+      desarrollo: { startRow: 25, endRow: 34 },
+      cierre: { startRow: 34, endRow: 37 },
       otros: { startRow: 39, endRow: 39 }
     },
     dataMapping: { /* ... */ }
@@ -39,10 +39,10 @@ try {
 // Configuración específica para la *inserción* de filas (B:E) y copia de estilos
 const categoriaConfigInsercion = {
   diseno: { templateRow: { range: "B17:E17", insertStartRow: 18, copyStyle: true } },     // Template fila 17, inserta @ 18
-  locacion: { templateRow: { range: "B24:E24", insertStartRow: 25, copyStyle: true } },   // Template fila 24, inserta @ 25
-  desarrollo: { templateRow: { range: "B35:E35", insertStartRow: 36, copyStyle: true } }, // Template fila 35, inserta @ 36
-  cierre: { templateRow: { range: "B38:E38", insertStartRow: 39, copyStyle: true } },     // CORREGIDO: Template fila 38, inserta @ 39
-  otros: { templateRow: { range: "B39:E39", insertStartRow: 40, copyStyle: true } }      // CORREGIDO: Template fila 39, inserta @ 40 (default, se ajusta si cierre tiene filas)
+  locacion: { templateRow: { range: "B23:E23", insertStartRow: 24, copyStyle: true } },   // CORREGIDO: Template fila 23, inserta @ 24
+  desarrollo: { templateRow: { range: "B34:E34", insertStartRow: 35, copyStyle: true } }, // CORREGIDO: Template fila 34, inserta @ 35
+  cierre: { templateRow: { range: "B37:E37", insertStartRow: 38, copyStyle: true } },     // CORREGIDO: Template fila 37, inserta @ 38
+  otros: { templateRow: { range: "B38:E38", insertStartRow: 39, copyStyle: true } }       // CORREGIDO: Por defecto después de fila 37, se ajusta si cierre tiene filas
 };
 
 
@@ -464,6 +464,26 @@ async function handleColumnAMerges(sheets, fileId, sheetId, currentMerges, categ
         resource: { requests }
       });
       console.log(`✅ Combinación de Columna A para categoría ${categoria} (A${sectionStartRow}:A${finalEndRow}) completada.`);
+      
+      // 3. Establecer el contenido de la columna A con "OTROS RIESGOS - [CATEGORÍA]"
+      if (dynamicRowCount > 0) { // Solo establecer texto si hay filas dinámicas
+        const categoriaTexto = categoria.toUpperCase();
+        const contenidoColumnA = `OTROS RIESGOS - ${categoriaTexto}`;
+        
+        try {
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: fileId,
+            range: `A${sectionStartRow}`,
+            valueInputOption: 'USER_ENTERED',
+            resource: {
+              values: [[contenidoColumnA]]
+            }
+          });
+          console.log(`✅ Contenido de Columna A establecido: "${contenidoColumnA}" en A${sectionStartRow}`);
+        } catch (textError) {
+          console.error(`❌ Error al establecer texto en Columna A para ${categoria}:`, textError);
+        }
+      }
     } catch (error) {
       console.error(`Error en batchUpdate para ${categoria} (Columna A):`, error);
       if (error.response && error.response.data) {

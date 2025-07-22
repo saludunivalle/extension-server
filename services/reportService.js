@@ -70,7 +70,7 @@ class ReportGenerationService {
   
       // Procesar datos adicionales si el reporte lo requiere (como gastos)
       console.log(`🔄 Procesando datos adicionales...`);
-      const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
+      const additionalData = await this.processAdditionalData(solicitudId, reportConfig, solicitudData);
       console.log(`✅ Datos adicionales procesados:`, {
         tieneData: !!additionalData,
         camposRecibidos: Object.keys(additionalData).length
@@ -119,6 +119,38 @@ class ReportGenerationService {
             ingresos_vr_unit: flattenedSolicitudData.ingresos_vr_unit,
             total_ingresos: flattenedSolicitudData.total_ingresos
           });
+        } else if (formNum === 3) {
+          console.log(`🔄 [REPORTE 3] Procesando con prioridad a SOLICITUDES3...`);
+          
+          // Primero procesar SOLICITUDES (datos básicos)
+          if (solicitudData.SOLICITUDES) {
+            console.log(`📋 Agregando datos básicos de SOLICITUDES:`, solicitudData.SOLICITUDES);
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES };
+          }
+          
+          // Luego procesar SOLICITUDES3 (sobreescribir campos críticos)
+          if (solicitudData.SOLICITUDES3) {
+            console.log(`📋 Sobreescribiendo con datos críticos de SOLICITUDES3:`, solicitudData.SOLICITUDES3);
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES3 };
+          }
+          
+          // Procesar otras hojas si existen (como RIESGOS)
+          Object.keys(solicitudData).forEach(hoja => {
+            if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES3' && 
+                typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
+          
+          console.log(`🔍 [REPORTE 3] Campos críticos después del aplanado:`, {
+            id_solicitud: flattenedSolicitudData.id_solicitud,
+            nombre_actividad: flattenedSolicitudData.nombre_actividad,
+            fecha_solicitud: flattenedSolicitudData.fecha_solicitud,
+            nombre_solicitante: flattenedSolicitudData.nombre_solicitante,
+            proposito: flattenedSolicitudData.proposito,
+            comentario: flattenedSolicitudData.comentario,
+            programa: flattenedSolicitudData.programa
+          });
         } else {
           // Para otros reportes, usar la lógica original
           Object.keys(solicitudData).forEach(hoja => {
@@ -153,6 +185,17 @@ class ReportGenerationService {
       if (formNum === 2 && solicitudData.SOLICITUDES2) {
         combinedData.SOLICITUDES2 = solicitudData.SOLICITUDES2;
         console.log(`🔍 [REPORTE 2] SOLICITUDES2 preservado como objeto separado:`, combinedData.SOLICITUDES2);
+      }
+      // --- FIX para reporte 3: pasar SOLICITUDES y SOLICITUDES3 como objetos separados ---
+      if (formNum === 3) {
+        if (solicitudData.SOLICITUDES) {
+          combinedData.SOLICITUDES = solicitudData.SOLICITUDES;
+          console.log(`🔍 [REPORTE 3] SOLICITUDES preservado como objeto separado:`, combinedData.SOLICITUDES);
+        }
+        if (solicitudData.SOLICITUDES3) {
+          combinedData.SOLICITUDES3 = solicitudData.SOLICITUDES3;
+          console.log(`🔍 [REPORTE 3] SOLICITUDES3 preservado como objeto separado:`, combinedData.SOLICITUDES3);
+        }
       }
       // --- FIN FIX ---
 
@@ -213,16 +256,60 @@ class ReportGenerationService {
       console.log('✅ Configuración cargada correctamente para download/edit');
       
       const solicitudData = await this.getSolicitudData(solicitudId, reportConfig.sheetDefinitions);
-      const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
+      const additionalData = await this.processAdditionalData(solicitudId, reportConfig, solicitudData);
       
       // APLANAR los datos anidados por hoja en un solo objeto antes de combinar
       let flattenedSolicitudData = {};
       if (typeof solicitudData === 'object' && solicitudData !== null) {
-        Object.keys(solicitudData).forEach(hoja => {
-          if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
-            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+        // NUEVO: Para reporte 2, priorizar SOLICITUDES2 sobre SOLICITUDES
+        if (formNum === 2) {
+          console.log(`🔄 [REPORTE 2 - DOWNLOAD] Procesando con prioridad a SOLICITUDES2...`);
+          
+          // Primero procesar SOLICITUDES (datos básicos)
+          if (solicitudData.SOLICITUDES) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES };
           }
-        });
+          
+          // Luego procesar SOLICITUDES2 (sobreescribir campos críticos)
+          if (solicitudData.SOLICITUDES2) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES2 };
+          }
+          
+          // Procesar otras hojas si existen
+          Object.keys(solicitudData).forEach(hoja => {
+            if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES2' && 
+                typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
+        } else if (formNum === 3) {
+          console.log(`🔄 [REPORTE 3 - DOWNLOAD] Procesando con prioridad a SOLICITUDES3...`);
+          
+          // Primero procesar SOLICITUDES (datos básicos)
+          if (solicitudData.SOLICITUDES) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES };
+          }
+          
+          // Luego procesar SOLICITUDES3 (sobreescribir campos críticos)
+          if (solicitudData.SOLICITUDES3) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES3 };
+          }
+          
+          // Procesar otras hojas si existen (como RIESGOS)
+          Object.keys(solicitudData).forEach(hoja => {
+            if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES3' && 
+                typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
+        } else {
+          // Para otros reportes, usar la lógica original
+          Object.keys(solicitudData).forEach(hoja => {
+            if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
+        }
         
         if (Object.keys(flattenedSolicitudData).length === 0) {
           flattenedSolicitudData = solicitudData;
@@ -231,7 +318,20 @@ class ReportGenerationService {
         flattenedSolicitudData = solicitudData;
       }
       
-      const combinedData = { ...flattenedSolicitudData, ...additionalData };
+      let combinedData = { ...flattenedSolicitudData, ...additionalData };
+      
+      // Preservar datos originales para reporte 2 y 3
+      if (formNum === 2 && solicitudData.SOLICITUDES2) {
+        combinedData.SOLICITUDES2 = solicitudData.SOLICITUDES2;
+      }
+      if (formNum === 3) {
+        if (solicitudData.SOLICITUDES) {
+          combinedData.SOLICITUDES = solicitudData.SOLICITUDES;
+        }
+        if (solicitudData.SOLICITUDES3) {
+          combinedData.SOLICITUDES3 = solicitudData.SOLICITUDES3;
+        }
+      }
       const transformedData = reportConfig.transformData(combinedData);
       
       // Generar usando el modo especificado
@@ -267,22 +367,81 @@ class ReportGenerationService {
       throw new Error(`No se encontró configuración para el formulario ${formNum} (modo ${mode})`);
     }
     const solicitudData = await this.getSolicitudData(solicitudId, reportConfig.sheetDefinitions);
-    const additionalData = await this.processAdditionalData(solicitudId, reportConfig);
+    const additionalData = await this.processAdditionalData(solicitudId, reportConfig, solicitudData);
     // Aplanar datos
     let flattenedSolicitudData = {};
     if (typeof solicitudData === 'object' && solicitudData !== null) {
-      Object.keys(solicitudData).forEach(hoja => {
-        if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
-          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+      // NUEVO: Para reporte 2, priorizar SOLICITUDES2 sobre SOLICITUDES
+      if (formNum === 2) {
+        console.log(`🔄 [REPORTE 2 - FILE] Procesando con prioridad a SOLICITUDES2...`);
+        
+        // Primero procesar SOLICITUDES (datos básicos)
+        if (solicitudData.SOLICITUDES) {
+          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES };
         }
-      });
+        
+        // Luego procesar SOLICITUDES2 (sobreescribir campos críticos)
+        if (solicitudData.SOLICITUDES2) {
+          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES2 };
+        }
+        
+        // Procesar otras hojas si existen
+        Object.keys(solicitudData).forEach(hoja => {
+          if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES2' && 
+              typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+          }
+        });
+      } else if (formNum === 3) {
+        console.log(`🔄 [REPORTE 3 - FILE] Procesando con prioridad a SOLICITUDES3...`);
+        
+        // Primero procesar SOLICITUDES (datos básicos)
+        if (solicitudData.SOLICITUDES) {
+          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES };
+        }
+        
+        // Luego procesar SOLICITUDES3 (sobreescribir campos críticos)
+        if (solicitudData.SOLICITUDES3) {
+          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES3 };
+        }
+        
+        // Procesar otras hojas si existen (como RIESGOS)
+        Object.keys(solicitudData).forEach(hoja => {
+          if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES3' && 
+              typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+          }
+        });
+      } else {
+        // Para otros reportes, usar la lógica original
+        Object.keys(solicitudData).forEach(hoja => {
+          if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+          }
+        });
+      }
+      
       if (Object.keys(flattenedSolicitudData).length === 0) {
         flattenedSolicitudData = solicitudData;
       }
     } else {
       flattenedSolicitudData = solicitudData;
     }
-    const combinedData = { ...flattenedSolicitudData, ...additionalData };
+    
+    let combinedData = { ...flattenedSolicitudData, ...additionalData };
+    
+    // Preservar datos originales para reporte 2 y 3
+    if (formNum === 2 && solicitudData.SOLICITUDES2) {
+      combinedData.SOLICITUDES2 = solicitudData.SOLICITUDES2;
+    }
+    if (formNum === 3) {
+      if (solicitudData.SOLICITUDES) {
+        combinedData.SOLICITUDES = solicitudData.SOLICITUDES;
+      }
+      if (solicitudData.SOLICITUDES3) {
+        combinedData.SOLICITUDES3 = solicitudData.SOLICITUDES3;
+      }
+    }
     const transformedData = reportConfig.transformData(combinedData);
     // Generar archivo Excel local usando driveService
     const { filePath, fileName } = await driveService.generateLocalExcelReport(
@@ -362,9 +521,10 @@ class ReportGenerationService {
    * Procesa datos adicionales requeridos por el reporte
    * @param {String} solicitudId - ID de la solicitud
    * @param {Object} reportConfig - Configuración del reporte
+   * @param {Object} solicitudData - Datos ya obtenidos de getSolicitudData (opcional)
    * @returns {Promise<Object>} Datos adicionales procesados
    */
-  async processAdditionalData(solicitudId, reportConfig) {
+  async processAdditionalData(solicitudId, reportConfig, solicitudData = null) {
     // Si el reporte no requiere datos adicionales, retornar objeto vacío
     if (!reportConfig.requiresAdditionalData) {
       console.log('ℹ️ Este reporte no requiere datos adicionales');
@@ -383,7 +543,8 @@ class ReportGenerationService {
       // Procesar riesgos si el reporte lo requiere (formulario 3)
       if (reportConfig.requiresRiesgos) {
         console.log(`🔄 Procesando riesgos para solicitud ${solicitudId}...`);
-        const datos = await this.processRiesgosData(solicitudId);
+        // Pasar solicitudData para usar datos ya obtenidos si están disponibles
+        const datos = await this.processRiesgosData(solicitudId, solicitudData);
         console.log(`✅ Riesgos procesados: ${datos.riesgos?.length || 0} registros`);
         return datos;
       }
@@ -512,35 +673,91 @@ class ReportGenerationService {
   }
 
   /**
-   * Procesa datos de riesgos para una solicitud
+   * Procesa datos de riesgos para una solicitud utilizando datos ya obtenidos
    * @param {String} solicitudId - ID de la solicitud
+   * @param {Object} solicitudData - Datos ya obtenidos de getSolicitudData (opcional)
    * @returns {Promise<Object>} Datos de riesgos procesados
    */
-  async processRiesgosData(solicitudId) {
+  async processRiesgosData(solicitudId, solicitudData = null) {
     try {
-      if (!sheetsService || typeof sheetsService.getClient !== 'function') {
-        throw new Error('sheetsService no está configurado correctamente');
+      let riesgosRows = [];
+      let solicitudRiesgos = [];
+
+      // Si no se proporcionan datos previos, hacer la llamada a Google Sheets
+      if (!solicitudData || !solicitudData.RIESGOS) {
+        if (!sheetsService || typeof sheetsService.getClient !== 'function') {
+          throw new Error('sheetsService no está configurado correctamente');
+        }
+        
+        const client = sheetsService.getClient();
+        console.log(`🔄 Obteniendo datos de riesgos desde Sheets para solicitud ${solicitudId}...`);
+        
+        // Verificar si tenemos acceso al ID de la hoja
+        if (!sheetsService.spreadsheetId) {
+          throw new Error('No se encontró el ID de la hoja de cálculo');
+        }
+        
+        // Obtener riesgos desde Google Sheets
+        const riesgosResponse = await client.spreadsheets.values.get({
+          spreadsheetId: sheetsService.spreadsheetId,
+          range: 'RIESGOS!A2:F500'
+        });
+        
+        // Procesar los datos de riesgos
+        riesgosRows = riesgosResponse.data.values || [];
+        console.log(`ℹ️ Registros obtenidos: ${riesgosRows.length} riesgos`);
+        solicitudRiesgos = riesgosRows.filter(row => row[4] === solicitudId); // Columna E (índice 4) es id_solicitud
+        console.log(`✅ Encontrados ${solicitudRiesgos.length} riesgos para la solicitud ${solicitudId}`);
+      } else {
+        // Usar datos ya obtenidos - verificar si los datos de RIESGOS ya están en formato de objeto
+        console.log(`🔄 Usando datos de riesgos ya obtenidos para solicitud ${solicitudId}...`);
+        if (Array.isArray(solicitudData.RIESGOS)) {
+          // Si RIESGOS es un array de objetos, filtrar por solicitud correcta
+          solicitudRiesgos = solicitudData.RIESGOS.filter(riesgo => {
+            // Verificar id_solicitud en formato de objeto
+            return riesgo.id_solicitud === solicitudId;
+          });
+          console.log(`✅ Encontrados ${solicitudRiesgos.length} riesgos pre-procesados para la solicitud ${solicitudId}`);
+        } else if (solicitudData.RIESGOS && typeof solicitudData.RIESGOS === 'object') {
+          // Si es un objeto único, verificar que pertenezca a la solicitud correcta
+          if (solicitudData.RIESGOS.id_solicitud === solicitudId) {
+            solicitudRiesgos = [solicitudData.RIESGOS];
+            console.log(`✅ Encontrado 1 riesgo pre-procesado para la solicitud ${solicitudId}`);
+          } else {
+            console.log(`⚠️ El riesgo pre-procesado no pertenece a la solicitud ${solicitudId}, haciendo consulta directa...`);
+            // Hacer la consulta directa como fallback
+            if (!sheetsService || typeof sheetsService.getClient !== 'function') {
+              throw new Error('sheetsService no está configurado correctamente');
+            }
+            
+            const client = sheetsService.getClient();
+            const riesgosResponse = await client.spreadsheets.values.get({
+              spreadsheetId: sheetsService.spreadsheetId,
+              range: 'RIESGOS!A2:F500'
+            });
+            
+            riesgosRows = riesgosResponse.data.values || [];
+            solicitudRiesgos = riesgosRows.filter(row => row[4] === solicitudId);
+            console.log(`✅ Encontrados ${solicitudRiesgos.length} riesgos (consulta directa) para la solicitud ${solicitudId}`);
+          }
+        } else {
+          console.log(`⚠️ No se encontraron datos de RIESGOS válidos, realizando consulta directa...`);
+          // Hacer la consulta directa como fallback
+          if (!sheetsService || typeof sheetsService.getClient !== 'function') {
+            throw new Error('sheetsService no está configurado correctamente');
+          }
+          
+          const client = sheetsService.getClient();
+          const riesgosResponse = await client.spreadsheets.values.get({
+            spreadsheetId: sheetsService.spreadsheetId,
+            range: 'RIESGOS!A2:F500'
+          });
+          
+          riesgosRows = riesgosResponse.data.values || [];
+          solicitudRiesgos = riesgosRows.filter(row => row[4] === solicitudId);
+          console.log(`✅ Encontrados ${solicitudRiesgos.length} riesgos (consulta directa fallback) para la solicitud ${solicitudId}`);
+        }
       }
-      
-      const client = sheetsService.getClient();
-      console.log(`🔄 Obteniendo datos de riesgos desde Sheets para solicitud ${solicitudId}...`);
-      
-      // Verificar si tenemos acceso al ID de la hoja
-      if (!sheetsService.spreadsheetId) {
-        throw new Error('No se encontró el ID de la hoja de cálculo');
-      }
-      
-      // Obtener riesgos desde Google Sheets
-      const riesgosResponse = await client.spreadsheets.values.get({
-        spreadsheetId: sheetsService.spreadsheetId,
-        range: 'RIESGOS!A2:F500'
-      });
-      
-      // Procesar los datos de riesgos
-      const riesgosRows = riesgosResponse.data.values || [];
-      console.log(`ℹ️ Registros obtenidos: ${riesgosRows.length} riesgos`);
-      const solicitudRiesgos = riesgosRows.filter(row => row[4] === solicitudId); // Suponiendo que la columna E (índice 4) es id_solicitud
-      console.log(`✅ Encontrados ${solicitudRiesgos.length} riesgos para la solicitud ${solicitudId}`);
 
       if (solicitudRiesgos.length === 0) {
         console.log(`⚠️ No se encontraron riesgos para la solicitud ${solicitudId}.`);
@@ -553,13 +770,29 @@ class ReportGenerationService {
       };
 
       solicitudRiesgos.forEach(row => {
-        const id = row[0] || '';
-        const nombreRiesgo = row[1] || '';
-        const aplica = row[2] || 'No';
-        const mitigacion = row[3] || '';
-        const idSolicitud = row[4] || '';
-        // Por defecto a 'otros' si falta o está vacía la categoría (columna F, índice 5)
-        const categoria = (row[5] || 'otros').trim().toLowerCase();
+        let id, nombreRiesgo, aplica, mitigacion, idSolicitud, categoria;
+
+        // Verificar si es un objeto ya mapeado o un array de valores
+        if (Array.isArray(row)) {
+          // Formato de fila (array): [id_riesgo, nombre_riesgo, aplica, mitigacion, id_solicitud, categoria]
+          id = row[0] || '';
+          nombreRiesgo = row[1] || '';
+          aplica = row[2] || 'No';
+          mitigacion = row[3] || '';
+          idSolicitud = row[4] || '';
+          categoria = (row[5] || 'otros').trim().toLowerCase();
+        } else if (typeof row === 'object') {
+          // Formato de objeto ya mapeado
+          id = row.id_riesgo || '';
+          nombreRiesgo = row.nombre_riesgo || '';
+          aplica = row.aplica || 'No';
+          mitigacion = row.mitigacion || '';
+          idSolicitud = row.id_solicitud || '';
+          categoria = (row.categoria || 'otros').trim().toLowerCase();
+        } else {
+          console.warn('Formato de riesgo no reconocido:', row);
+          return; // Saltar este elemento
+        }
 
         const riesgoObj = {
           id_riesgo: id, nombre_riesgo: nombreRiesgo, aplica: aplica, mitigacion: mitigacion,

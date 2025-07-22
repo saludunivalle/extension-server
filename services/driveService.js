@@ -648,7 +648,102 @@ class DriveService {
       });
       // Insertar después de la fila 42 (1-based)
       excelUtils.insertDynamicRows(workbook, sheet.name, 42, gastosRows);
+    }
 
+    // Si es el reporte 3 y hay riesgos dinámicos, insertar filas dinámicas
+    if (formNumber === 3) {
+      console.log('🔄 Procesando filas dinámicas de riesgos para descarga local...');
+      
+      // Determinar la hoja principal (usualmente la primera)
+      const sheet = workbook.worksheets[0];
+      
+      // Definir las posiciones de inserción para cada categoría (filas de ejemplo)
+      const posicionesInsercion = {
+        diseno: 17,     // Después de fila 17 (ejemplo en fila 17, insertar en 18)
+        locacion: 23,   // Después de fila 23 (ejemplo en fila 23, insertar en 24)
+        desarrollo: 34, // CORREGIDO: Después de fila 34 (ejemplo en fila 34, insertar en 35)
+        cierre: 37,     // Después de fila 37 (ejemplo en fila 37, insertar en 38)
+        otros: 37       // Por defecto después de fila 37, se ajusta si hay cierre
+      };
+
+      // Procesar categorías en orden específico (CRÍTICO: cierre DEBE procesarse antes que otros)
+      const ordenCategorias = ['diseno', 'locacion', 'desarrollo', 'cierre', 'otros'];
+      let filasInsertadasPorCategoria = {}; // Rastrear filas insertadas por categoría
+      
+      console.log('🔄 Orden de procesamiento de categorías:', ordenCategorias.join(' → '));
+
+      for (const categoria of ordenCategorias) {
+        const campoRiesgos = `__FILAS_DINAMICAS_${categoria.toUpperCase()}__`;
+        
+        if (data[campoRiesgos] && data[campoRiesgos].riesgos && Array.isArray(data[campoRiesgos].riesgos) && data[campoRiesgos].riesgos.length > 0) {
+          const riesgosCategoria = data[campoRiesgos].riesgos;
+          console.log(`📋 Procesando ${riesgosCategoria.length} riesgos de categoría ${categoria}`);
+
+          // Calcular posición base
+          let posicionEjemplo = posicionesInsercion[categoria];
+          
+          // Ajustar posición considerando filas insertadas en categorías anteriores
+          let ajusteAcumulado = 0;
+          for (const cat of ordenCategorias) {
+            if (cat === categoria) break; // Solo contar categorías anteriores
+            if (filasInsertadasPorCategoria[cat]) {
+              // Solo ajustar si la posición de esta categoría es mayor que la categoría anterior
+              if (posicionesInsercion[categoria] > posicionesInsercion[cat]) {
+                ajusteAcumulado += filasInsertadasPorCategoria[cat];
+              }
+            }
+          }
+          
+          // Ajuste especial para "otros" - debe ir inmediatamente después de cierre si existe
+          if (categoria === 'otros') {
+            if (filasInsertadasPorCategoria.cierre && filasInsertadasPorCategoria.cierre > 0) {
+              // Posicionarse inmediatamente después de la última fila insertada de cierre
+              // La fila de ejemplo será la última fila insertada de cierre
+              const posicionAnterior = posicionEjemplo;
+              posicionEjemplo = posicionesInsercion.cierre + ajusteAcumulado + filasInsertadasPorCategoria.cierre - 1;
+              ajusteAcumulado = 0; // Reset porque ya calculamos la posición exacta
+              console.log(`✅ PRIORIDAD APLICADA: "otros" reposicionado de fila ${posicionAnterior} a fila ${posicionEjemplo} (después de ${filasInsertadasPorCategoria.cierre} filas de cierre)`);
+            } else {
+              console.log(`ℹ️ No hay filas de cierre, "otros" mantendrá posición base ${posicionEjemplo}`);
+            }
+          }
+
+          // Aplicar ajuste acumulado
+          posicionEjemplo += ajusteAcumulado;
+
+          // Convertir riesgos a arrays de celdas
+          const riesgosRows = riesgosCategoria.map(riesgo => {
+            const row = [];
+            row[0] = `OTROS RIESGOS - ${categoria.toUpperCase()}`; // A: "OTROS RIESGOS - CATEGORÍA"
+            row[1] = riesgo.nombre_riesgo || riesgo.descripcion || ''; // B: nombre_riesgo
+            row[2] = riesgo.aplica || 'No'; // C: aplica
+            row[3] = riesgo.mitigacion || riesgo.estrategia || ''; // D: mitigación
+            // Completar columnas vacías hasta la longitud necesaria
+            while (row.length < 20) row.push('');
+            return row;
+          });
+
+          // Insertar las filas dinámicas con formato especial para riesgos
+          console.log(`🔄 Insertando ${riesgosRows.length} filas de riesgos ${categoria} en fila de ejemplo ${posicionEjemplo}`);
+          excelUtils.insertDynamicRows(workbook, sheet.name, posicionEjemplo, riesgosRows, 'riesgos');
+          
+          // Registrar filas insertadas para esta categoría
+          filasInsertadasPorCategoria[categoria] = riesgosRows.length;
+          console.log(`✅ Insertadas ${riesgosRows.length} filas de riesgos ${categoria}. Posición final: ${posicionEjemplo + riesgosRows.length}`);
+        } else {
+          console.log(`ℹ️ No hay riesgos para la categoría ${categoria}`);
+          filasInsertadasPorCategoria[categoria] = 0; // Registrar que no se insertaron filas
+        }
+      }
+
+      const totalFilasInsertadas = Object.values(filasInsertadasPorCategoria).reduce((sum, count) => sum + count, 0);
+      console.log(`✅ Filas dinámicas de riesgos procesadas: ${totalFilasInsertadas} filas insertadas total`);
+      console.log(`📋 Resumen de procesamiento por categoría:`, filasInsertadasPorCategoria);
+      
+      // Verificar que cierre se procesó antes que otros (si ambos existen)
+      if (filasInsertadasPorCategoria.cierre > 0 && filasInsertadasPorCategoria.otros > 0) {
+        console.log(`✅ PRIORIDAD CONFIRMADA: Se procesaron ${filasInsertadasPorCategoria.cierre} filas de "cierre" antes que ${filasInsertadasPorCategoria.otros} filas de "otros"`);
+      }
     }
     // Guardar archivo temporal
     const tempFilePath = await excelUtils.saveToTempFile(workbook, `Formulario${formNumber}_${solicitudId}`);

@@ -262,7 +262,7 @@ const loadTemplateWorkbook = async (templatePath) => {
    * @param {number} exampleRowNumber - Número de la fila de ejemplo (1-based)
    * @param {Array<Array>} rowsData - Datos a insertar (cada elemento es un array de celdas)
    */
-  const insertDynamicRows = (workbook, sheetName, exampleRowNumber, rowsData) => {
+  const insertDynamicRows = (workbook, sheetName, exampleRowNumber, rowsData, tipo = 'gastos') => {
     const sheet = workbook.getWorksheet(sheetName);
     if (!sheet) throw new Error(`Hoja ${sheetName} no encontrada`);
     if (!rowsData || !rowsData.length) return;
@@ -275,42 +275,97 @@ const loadTemplateWorkbook = async (templatePath) => {
     const exampleRow = sheet.getRow(exampleRowNumber);
     for (let i = 0; i < rowsData.length; i++) {
       const newRow = sheet.getRow(insertStart + i);
+      
       exampleRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
         const newCell = newRow.getCell(colNumber);
+        
+        // Copiar estilo base de la fila de ejemplo
         newCell.style = { ...cell.style };
         if (cell.numFmt) newCell.numFmt = cell.numFmt;
         if (cell.font) newCell.font = { ...cell.font };
         if (cell.alignment) newCell.alignment = { ...cell.alignment };
         if (cell.border) newCell.border = { ...cell.border };
         if (cell.fill) newCell.fill = { ...cell.fill };
+
+        // Aplicar formato especial para riesgos
+        if (tipo === 'riesgos') {
+          if (colNumber === 1) { // Columna A
+            // Formato especial para columna A: texto ajustado, negrilla, solo borde inferior
+            newCell.font = { ...newCell.font, bold: true };
+            newCell.alignment = { 
+              ...newCell.alignment, 
+              wrapText: true, 
+              vertical: 'middle', 
+              horizontal: 'center' 
+            };
+            newCell.border = {
+              bottom: { style: 'thin', color: { argb: 'FF000000' } }
+            };
+                     } else if (colNumber >= 2 && colNumber <= 3) { // Columnas B, C
+             // Bordes externos completos para columnas B, C
+             newCell.border = {
+               top: { style: 'thin', color: { argb: 'FF000000' } },
+               bottom: { style: 'thin', color: { argb: 'FF000000' } },
+               left: { style: 'thin', color: { argb: 'FF000000' } },
+               right: { style: 'thin', color: { argb: 'FF000000' } }
+             };
+             newCell.alignment = { 
+               ...newCell.alignment, 
+               wrapText: true, 
+               vertical: 'middle' 
+             };
+           } else if (colNumber === 4) { // Columna D
+             // Solo bordes superior, izquierdo e inferior (sin borde derecho)
+             newCell.border = {
+               top: { style: 'thin', color: { argb: 'FF000000' } },
+               bottom: { style: 'thin', color: { argb: 'FF000000' } },
+               left: { style: 'thin', color: { argb: 'FF000000' } }
+               // Sin borde derecho
+             };
+             newCell.alignment = { 
+               ...newCell.alignment, 
+               wrapText: true, 
+               vertical: 'middle' 
+             };
+           }
+        }
       });
     }
 
-    // --- Copiar merges de la fila de ejemplo a las filas nuevas ---
-    // Buscar todos los merges que afectan a la fila de ejemplo
-    const merges = Object.keys(sheet._merges || {}).map(range => {
-      const match = range.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-      if (match) {
-        const startCol = match[1];
-        const startRow = parseInt(match[2], 10);
-        const endCol = match[3];
-        const endRow = parseInt(match[4], 10);
-        if (startRow === exampleRowNumber && endRow === exampleRowNumber) {
-          return { startCol, endCol };
-        }
-      }
-      return null;
-    }).filter(Boolean);
+    // --- Manejo más seguro de merges para riesgos ---
+    if (tipo === 'riesgos') {
+      // Para riesgos, evitar copiar merges complejos que pueden causar errores
+      console.log(`ℹ️ Aplicando formato simplificado para riesgos (sin merges complejos)`);
+    } else {
+      // --- Copiar merges de la fila de ejemplo a las filas nuevas (solo para gastos) ---
+      try {
+        const merges = Object.keys(sheet._merges || {}).map(range => {
+          const match = range.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+          if (match) {
+            const startCol = match[1];
+            const startRow = parseInt(match[2], 10);
+            const endCol = match[3];
+            const endRow = parseInt(match[4], 10);
+            if (startRow === exampleRowNumber && endRow === exampleRowNumber) {
+              return { startCol, endCol };
+            }
+          }
+          return null;
+        }).filter(Boolean);
 
-    for (let i = 0; i < rowsData.length; i++) {
-      const rowNum = insertStart + i;
-      merges.forEach(({ startCol, endCol }) => {
-        const mergeRange = `${startCol}${rowNum}:${endCol}${rowNum}`;
-        // Descombinar si ya existe (por herencia de merges)
-        try { sheet.unMergeCells(mergeRange); } catch (e) {}
-        // Combinar
-        try { sheet.mergeCells(mergeRange); } catch (e) {}
-      });
+        for (let i = 0; i < rowsData.length; i++) {
+          const rowNum = insertStart + i;
+          merges.forEach(({ startCol, endCol }) => {
+            const mergeRange = `${startCol}${rowNum}:${endCol}${rowNum}`;
+            // Descombinar si ya existe (por herencia de merges)
+            try { sheet.unMergeCells(mergeRange); } catch (e) {/* ignorar */}
+            // Combinar
+            try { sheet.mergeCells(mergeRange); } catch (e) {/* ignorar */}
+          });
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error al procesar merges: ${error.message}`);
+      }
     }
   };
   

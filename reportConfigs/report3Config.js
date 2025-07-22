@@ -85,15 +85,15 @@ const report3Config = {
           transformedData.dia = dateParts.dia;
           transformedData.mes = dateParts.mes;
           transformedData.anio = dateParts.anio;
-          // Optionally keep the original formatted date if needed elsewhere, 
-          // but ensure dia, mes, anio are prioritized for placeholders
-          // transformedData.fecha_solicitud = `${dateParts.dia}/${dateParts.mes}/${dateParts.anio}`; 
+          // Preservar la fecha original también
+          transformedData.fecha_solicitud = `${dateParts.dia}/${dateParts.mes}/${dateParts.anio}`; 
         } else {
           // Valores por defecto
           const fechaActual = new Date();
           transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
           transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
           transformedData.anio = fechaActual.getFullYear().toString();
+          transformedData.fecha_solicitud = `${transformedData.dia}/${transformedData.mes}/${transformedData.anio}`;
         }
       } catch (error) {
         console.error('Error al procesar la fecha:', error);
@@ -101,7 +101,16 @@ const report3Config = {
         transformedData.dia = fechaActual.getDate().toString().padStart(2, '0');
         transformedData.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
         transformedData.anio = fechaActual.getFullYear().toString();
+        transformedData.fecha_solicitud = `${transformedData.dia}/${transformedData.mes}/${transformedData.anio}`;
       }
+
+      // Preservar campos críticos que son necesarios para el reporte
+      const camposCriticos = ['nombre_solicitante', 'nombre_actividad', 'id_solicitud'];
+      camposCriticos.forEach(campo => {
+        if (combinedData[campo] !== undefined && combinedData[campo] !== null) {
+          transformedData[campo] = combinedData[campo];
+        }
+      });
 
       // Convertir campos de riesgo a "Sí aplica" o "No aplica"
       const camposRiesgo = [
@@ -140,13 +149,13 @@ const report3Config = {
       if (riesgosPorCategoria && Object.keys(riesgosPorCategoria).length > 0) {
         console.log("📊 Procesando riesgos dinámicos por categoría");
 
-        // Definición de las posiciones de inserción para cada categoría
+        // Definición de las posiciones de inserción para cada categoría - CORREGIDAS según especificaciones
         const posiciones = {
-          diseno: 'B18:H18',
-          locacion: 'B24:H24',
-          desarrollo: 'B35:H35', // Ajusta si la plantilla cambió
-          cierre: 'B38:H38',   // Ajusta si la plantilla cambió
-          otros: 'B41:H41'    // Ajusta si la plantilla cambió
+          diseno: 'B18:H18',     // Debajo de fila 17 ✓
+          locacion: 'B24:H24',   // Debajo de fila 23 ✓
+          desarrollo: 'B35:H35', // CORREGIDO: Debajo de fila 34 (copia fila 34) ✓
+          cierre: 'B38:H38',     // Debajo de fila 37 ✓
+          otros: 'B39:H39'       // Después de cierre o debajo de fila 37 ✓
         };
 
         // Generar filas dinámicas para cada categoría
@@ -178,7 +187,7 @@ const report3Config = {
          console.log("📊 Procesando riesgos sin categorización (se asignarán a 'otros')");
 
         // Si tenemos riesgos pero no están categorizados, los ponemos todos como 'otros'
-        const dynamicRowsData = generateRiskRows(riesgosData, 'otros', 'B41:H41'); // Ajusta el rango si es necesario
+        const dynamicRowsData = generateRiskRows(riesgosData, 'otros', 'B39:H39'); // CORREGIDO: usar la nueva posición para otros
 
         if (dynamicRowsData) {
           transformedData['__FILAS_DINAMICAS_OTROS__'] = dynamicRowsData;
