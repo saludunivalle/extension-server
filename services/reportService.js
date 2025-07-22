@@ -78,14 +78,55 @@ class ReportGenerationService {
   
             // APLANAR los datos anidados por hoja en un solo objeto antes de combinar
       console.log(`🔄 Aplanando datos anidados por hoja...`);
+      
+      // LOG INMEDIATO: Verificar estructura de datos
+      console.log(`🔍 [DEBUG] Estructura de solicitudData recibida:`, JSON.stringify(solicitudData, null, 2));
+      console.log(`🔍 [DEBUG] Tipo de solicitudData:`, typeof solicitudData);
+      console.log(`🔍 [DEBUG] Keys de solicitudData:`, Object.keys(solicitudData || {}));
+      console.log(`🔍 [DEBUG] formNum:`, formNum);
+      
       let flattenedSolicitudData = {};
       if (typeof solicitudData === 'object' && solicitudData !== null) {
-        // Si los datos vienen anidados por hoja (SOLICITUDES, SOLICITUDES2, etc.)
-        Object.keys(solicitudData).forEach(hoja => {
-          if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
-            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+        // NUEVO: Para reporte 2, priorizar SOLICITUDES2 sobre SOLICITUDES
+        if (formNum === 2) {
+          console.log(`🔄 [REPORTE 2] Procesando con prioridad a SOLICITUDES2...`);
+          
+          // Primero procesar SOLICITUDES (datos básicos)
+          if (solicitudData.SOLICITUDES) {
+            console.log(`📋 Agregando datos básicos de SOLICITUDES:`, solicitudData.SOLICITUDES);
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES };
           }
-        });
+          
+          // Luego procesar SOLICITUDES2 (sobreescribir campos críticos)
+          if (solicitudData.SOLICITUDES2) {
+            console.log(`📋 Sobreescribiendo con datos críticos de SOLICITUDES2:`, solicitudData.SOLICITUDES2);
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES2 };
+          }
+          
+          // Procesar otras hojas si existen
+          Object.keys(solicitudData).forEach(hoja => {
+            if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES2' && 
+                typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
+          
+          console.log(`🔍 [REPORTE 2] Campos críticos después del aplanado:`, {
+            id_solicitud: flattenedSolicitudData.id_solicitud,
+            nombre_actividad: flattenedSolicitudData.nombre_actividad,
+            fecha_solicitud: flattenedSolicitudData.fecha_solicitud,
+            ingresos_cantidad: flattenedSolicitudData.ingresos_cantidad,
+            ingresos_vr_unit: flattenedSolicitudData.ingresos_vr_unit,
+            total_ingresos: flattenedSolicitudData.total_ingresos
+          });
+        } else {
+          // Para otros reportes, usar la lógica original
+          Object.keys(solicitudData).forEach(hoja => {
+            if (typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
+        }
         
         // Si no hay datos anidados, usar los datos tal como vienen
         if (Object.keys(flattenedSolicitudData).length === 0) {
@@ -111,6 +152,7 @@ class ReportGenerationService {
       // --- FIX para reporte 2: pasar SOLICITUDES2 como objeto plano ---
       if (formNum === 2 && solicitudData.SOLICITUDES2) {
         combinedData.SOLICITUDES2 = solicitudData.SOLICITUDES2;
+        console.log(`🔍 [REPORTE 2] SOLICITUDES2 preservado como objeto separado:`, combinedData.SOLICITUDES2);
       }
       // --- FIN FIX ---
 

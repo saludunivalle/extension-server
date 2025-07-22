@@ -67,7 +67,6 @@ const report2Config = {
       total_recursos: getField('total_recursos'),
       observaciones: getField('observaciones'),
       nombre_solicitante: getField('nombre_solicitante'),
-      // Otros campos que quieras priorizar
     };
 
     // Agregar gastos y dinámicos al objeto combinado
@@ -202,8 +201,14 @@ const report2Config = {
     // 3. Crea el objeto final solo con los campos requeridos
     const datosCorregidosFinal = {};
     allSolicitud2Fields.forEach(field => {
-      datosCorregidosFinal[field] = formDataCorregido[field];
+      // Prioriza el valor de formDataCorregido (SOLICITUDES2 corregido), si no, usa el de solicitudData (SOLICITUDES)
+      datosCorregidosFinal[field] = (formDataCorregido[field] !== undefined && formDataCorregido[field] !== '')
+        ? formDataCorregido[field]
+        : (solicitudData[field] || '');
     });
+
+    // LOG ESPECIAL PARA nombre_actividad
+    console.log('🟢 Valor final de nombre_actividad:', datosCorregidosFinal['nombre_actividad']);
     
     // Now continue with the rest of the transformation
     const transformedData = { ...combinedData };
@@ -233,6 +238,9 @@ const report2Config = {
         transformedData[key] = datosCorregidosFinal[key];
       }
     });
+
+    // LOG FINAL para depuración de nombre_actividad en el objeto transformado
+    console.log('🟢 Valor de nombre_actividad en transformedData:', transformedData['nombre_actividad']);
     
     // Process date formatting
     const fechaActual = new Date();
