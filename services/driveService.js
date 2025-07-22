@@ -633,20 +633,22 @@ class DriveService {
       const sheet = workbook.worksheets[0];
       // Convertir los objetos de gastos a arrays de celdas en el orden correcto
       // (ajustar columnas según plantilla y templateMapperGastos)
-      const gastosRows = data.gastosDinamicos.map(gasto => [
-        gasto.id || '', // E
-        '', '', '', // F,G,H (vacío si no se usan)
-        gasto.descripcion || '', // F
-        ...Array(17).fill(''), // columnas intermedias hasta X
-        gasto.cantidad?.toString() || '0', // X
-        '', // Y
-        gasto.valorUnit_formatted || gasto.valorUnit || '0', // Z
-        '', '', // AA, AB
-        gasto.valorTotal_formatted || gasto.valorTotal || '0', // AC
-        ...Array(11).fill('') // hasta AK
-      ]);
+      const gastosRows = data.gastosDinamicos.map(gasto => {
+        // Columnas: A, B, C, D, E, ...
+        // A: subgrupo/índice, B: concepto, C: cantidad, D: Vr.Unit, E: Valor Total
+        const row = [];
+        row[0] = gasto.id || gasto.subgrupo || ''; // A: subgrupo/índice (ej: 8.1, 8.2)
+        row[1] = gasto.descripcion || gasto.concepto || ''; // B: concepto
+        row[2] = gasto.cantidad?.toString() || '0'; // C: cantidad
+        row[3] = gasto.valorUnit_formatted || gasto.valorUnit || '0'; // D: Vr.Unit
+        row[4] = gasto.valorTotal_formatted || gasto.valorTotal || '0'; // E: Valor Total
+        // El resto de columnas vacías hasta la longitud de la fila de ejemplo (puedes ajustar si necesitas más columnas)
+        while (row.length < 20) row.push('');
+        return row;
+      });
       // Insertar después de la fila 42 (1-based)
       excelUtils.insertDynamicRows(workbook, sheet.name, 42, gastosRows);
+
     }
     // Guardar archivo temporal
     const tempFilePath = await excelUtils.saveToTempFile(workbook, `Formulario${formNumber}_${solicitudId}`);

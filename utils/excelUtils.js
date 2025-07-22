@@ -285,6 +285,33 @@ const loadTemplateWorkbook = async (templatePath) => {
         if (cell.fill) newCell.fill = { ...cell.fill };
       });
     }
+
+    // --- Copiar merges de la fila de ejemplo a las filas nuevas ---
+    // Buscar todos los merges que afectan a la fila de ejemplo
+    const merges = Object.keys(sheet._merges || {}).map(range => {
+      const match = range.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
+      if (match) {
+        const startCol = match[1];
+        const startRow = parseInt(match[2], 10);
+        const endCol = match[3];
+        const endRow = parseInt(match[4], 10);
+        if (startRow === exampleRowNumber && endRow === exampleRowNumber) {
+          return { startCol, endCol };
+        }
+      }
+      return null;
+    }).filter(Boolean);
+
+    for (let i = 0; i < rowsData.length; i++) {
+      const rowNum = insertStart + i;
+      merges.forEach(({ startCol, endCol }) => {
+        const mergeRange = `${startCol}${rowNum}:${endCol}${rowNum}`;
+        // Descombinar si ya existe (por herencia de merges)
+        try { sheet.unMergeCells(mergeRange); } catch (e) {}
+        // Combinar
+        try { sheet.mergeCells(mergeRange); } catch (e) {}
+      });
+    }
   };
   
   /**
