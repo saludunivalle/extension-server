@@ -151,6 +151,46 @@ class ReportGenerationService {
             comentario: flattenedSolicitudData.comentario,
             programa: flattenedSolicitudData.programa
           });
+        } else if (formNum === 4) {
+          console.log(`🔄 [REPORTE 4] Procesando con prioridad a SOLICITUDES4...`);
+          
+          // Solo tomar fecha_solicitud y nombre_dependencia de SOLICITUDES
+          if (solicitudData.SOLICITUDES) {
+            const solicitudesBasicas = {
+              fecha_solicitud: solicitudData.SOLICITUDES.fecha_solicitud,
+              nombre_dependencia: solicitudData.SOLICITUDES.nombre_dependencia,
+              id_solicitud: solicitudData.SOLICITUDES.id_solicitud,
+              nombre_actividad: solicitudData.SOLICITUDES.nombre_actividad,
+              nombre_solicitante: solicitudData.SOLICITUDES.nombre_solicitante
+            };
+            console.log(`📋 Agregando datos básicos limitados de SOLICITUDES:`, solicitudesBasicas);
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudesBasicas };
+          }
+          
+          // Luego procesar SOLICITUDES4 (todos los campos específicos del formulario 4)
+          if (solicitudData.SOLICITUDES4) {
+            console.log(`📋 Agregando datos específicos de SOLICITUDES4:`, solicitudData.SOLICITUDES4);
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES4 };
+          }
+          
+          // Procesar otras hojas si existen
+          Object.keys(solicitudData).forEach(hoja => {
+            if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES4' && 
+                typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
+          
+          console.log(`🔍 [REPORTE 4] Campos críticos después del aplanado:`, {
+            id_solicitud: flattenedSolicitudData.id_solicitud,
+            nombre_actividad: flattenedSolicitudData.nombre_actividad,
+            fecha_solicitud: flattenedSolicitudData.fecha_solicitud,
+            nombre_dependencia: flattenedSolicitudData.nombre_dependencia,
+            descripcionPrograma: flattenedSolicitudData.descripcionPrograma,
+            beneficiosTangibles: flattenedSolicitudData.beneficiosTangibles,
+            particulares: flattenedSolicitudData.particulares,
+            dofaDebilidades: flattenedSolicitudData.dofaDebilidades
+          });
         } else {
           // Para otros reportes, usar la lógica original
           Object.keys(solicitudData).forEach(hoja => {
@@ -195,6 +235,17 @@ class ReportGenerationService {
         if (solicitudData.SOLICITUDES3) {
           combinedData.SOLICITUDES3 = solicitudData.SOLICITUDES3;
           console.log(`🔍 [REPORTE 3] SOLICITUDES3 preservado como objeto separado:`, combinedData.SOLICITUDES3);
+        }
+      }
+      // --- FIX para reporte 4: pasar SOLICITUDES y SOLICITUDES4 como objetos separados ---
+      if (formNum === 4) {
+        if (solicitudData.SOLICITUDES) {
+          combinedData.SOLICITUDES = solicitudData.SOLICITUDES;
+          console.log(`🔍 [REPORTE 4] SOLICITUDES preservado como objeto separado:`, combinedData.SOLICITUDES);
+        }
+        if (solicitudData.SOLICITUDES4) {
+          combinedData.SOLICITUDES4 = solicitudData.SOLICITUDES4;
+          console.log(`🔍 [REPORTE 4] SOLICITUDES4 preservado como objeto separado:`, combinedData.SOLICITUDES4);
         }
       }
       // --- FIN FIX ---
@@ -302,6 +353,33 @@ class ReportGenerationService {
               flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
             }
           });
+        } else if (formNum === 4) {
+          console.log(`🔄 [REPORTE 4 - DOWNLOAD] Procesando con prioridad a SOLICITUDES4...`);
+          
+          // Solo tomar fecha_solicitud y nombre_dependencia de SOLICITUDES
+          if (solicitudData.SOLICITUDES) {
+            const solicitudesBasicas = {
+              fecha_solicitud: solicitudData.SOLICITUDES.fecha_solicitud,
+              nombre_dependencia: solicitudData.SOLICITUDES.nombre_dependencia,
+              id_solicitud: solicitudData.SOLICITUDES.id_solicitud,
+              nombre_actividad: solicitudData.SOLICITUDES.nombre_actividad,
+              nombre_solicitante: solicitudData.SOLICITUDES.nombre_solicitante
+            };
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudesBasicas };
+          }
+          
+          // Luego procesar SOLICITUDES4 (todos los campos específicos del formulario 4)
+          if (solicitudData.SOLICITUDES4) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES4 };
+          }
+          
+          // Procesar otras hojas si existen
+          Object.keys(solicitudData).forEach(hoja => {
+            if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES4' && 
+                typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+              flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+            }
+          });
         } else {
           // Para otros reportes, usar la lógica original
           Object.keys(solicitudData).forEach(hoja => {
@@ -320,7 +398,7 @@ class ReportGenerationService {
       
       let combinedData = { ...flattenedSolicitudData, ...additionalData };
       
-      // Preservar datos originales para reporte 2 y 3
+      // Preservar datos originales para reporte 2, 3 y 4
       if (formNum === 2 && solicitudData.SOLICITUDES2) {
         combinedData.SOLICITUDES2 = solicitudData.SOLICITUDES2;
       }
@@ -330,6 +408,14 @@ class ReportGenerationService {
         }
         if (solicitudData.SOLICITUDES3) {
           combinedData.SOLICITUDES3 = solicitudData.SOLICITUDES3;
+        }
+      }
+      if (formNum === 4) {
+        if (solicitudData.SOLICITUDES) {
+          combinedData.SOLICITUDES = solicitudData.SOLICITUDES;
+        }
+        if (solicitudData.SOLICITUDES4) {
+          combinedData.SOLICITUDES4 = solicitudData.SOLICITUDES4;
         }
       }
       const transformedData = reportConfig.transformData(combinedData);
@@ -412,6 +498,33 @@ class ReportGenerationService {
             flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
           }
         });
+      } else if (formNum === 4) {
+        console.log(`🔄 [REPORTE 4 - FILE] Procesando con prioridad a SOLICITUDES4...`);
+        
+        // Solo tomar fecha_solicitud y nombre_dependencia de SOLICITUDES
+        if (solicitudData.SOLICITUDES) {
+          const solicitudesBasicas = {
+            fecha_solicitud: solicitudData.SOLICITUDES.fecha_solicitud,
+            nombre_dependencia: solicitudData.SOLICITUDES.nombre_dependencia,
+            id_solicitud: solicitudData.SOLICITUDES.id_solicitud,
+            nombre_actividad: solicitudData.SOLICITUDES.nombre_actividad,
+            nombre_solicitante: solicitudData.SOLICITUDES.nombre_solicitante
+          };
+          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudesBasicas };
+        }
+        
+        // Luego procesar SOLICITUDES4 (todos los campos específicos del formulario 4)
+        if (solicitudData.SOLICITUDES4) {
+          flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData.SOLICITUDES4 };
+        }
+        
+        // Procesar otras hojas si existen
+        Object.keys(solicitudData).forEach(hoja => {
+          if (hoja !== 'SOLICITUDES' && hoja !== 'SOLICITUDES4' && 
+              typeof solicitudData[hoja] === 'object' && solicitudData[hoja] !== null) {
+            flattenedSolicitudData = { ...flattenedSolicitudData, ...solicitudData[hoja] };
+          }
+        });
       } else {
         // Para otros reportes, usar la lógica original
         Object.keys(solicitudData).forEach(hoja => {
@@ -430,7 +543,7 @@ class ReportGenerationService {
     
     let combinedData = { ...flattenedSolicitudData, ...additionalData };
     
-    // Preservar datos originales para reporte 2 y 3
+    // Preservar datos originales para reporte 2, 3 y 4
     if (formNum === 2 && solicitudData.SOLICITUDES2) {
       combinedData.SOLICITUDES2 = solicitudData.SOLICITUDES2;
     }
@@ -440,6 +553,14 @@ class ReportGenerationService {
       }
       if (solicitudData.SOLICITUDES3) {
         combinedData.SOLICITUDES3 = solicitudData.SOLICITUDES3;
+      }
+    }
+    if (formNum === 4) {
+      if (solicitudData.SOLICITUDES) {
+        combinedData.SOLICITUDES = solicitudData.SOLICITUDES;
+      }
+      if (solicitudData.SOLICITUDES4) {
+        combinedData.SOLICITUDES4 = solicitudData.SOLICITUDES4;
       }
     }
     const transformedData = reportConfig.transformData(combinedData);
