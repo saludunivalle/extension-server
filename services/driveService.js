@@ -174,52 +174,47 @@ class DriveService {
         // Incorporar los campos individuales de gastos
         Object.assign(processData, gastoFields);
         
-        // Reemplazar marcadores en el Sheet
+        // Reemplazar marcadores en todas las pestañas del Sheet
         const sheets = google.sheets({ version: 'v4', auth: jwtClient });
-        
-        // Obtener todos los datos actuales de la hoja para buscar marcadores
-        const sheetData = await sheets.spreadsheets.values.get({
+        // Obtener títulos de todas las hojas
+        const spreadsheetInfo = await sheets.spreadsheets.get({
           spreadsheetId: fileId,
-          range: 'A1:AZ1000' // Rango amplio para cubrir todos los posibles marcadores
+          fields: 'sheets.properties.title'
         });
-        
-        const values = sheetData.data.values || [];
+        const sheetTitles = (spreadsheetInfo.data.sheets || []).map(s => s.properties.title);
         const updates = [];
-        
-        // Buscar marcadores y reemplazarlos
-        for (let r = 0; r < values.length; r++) {
-          const row = values[r];
-          for (let c = 0; c < row.length; c++) {
-            const cell = row[c];
-            
-            // Si la celda contiene un marcador
-            if (typeof cell === 'string' && cell.includes('{{') && cell.includes('}}')) {
-              const matches = cell.match(/\{\{([^}]+)\}\}/g);
-              
-              if (matches) {
-                let replacedValue = cell;
-                
-                matches.forEach(match => {
-                  const key = match.slice(2, -2); // Extraer el nombre del marcador: {{nombre_actividad}} -> nombre_actividad
-                  if (processData[key] !== undefined) {
-                    replacedValue = replacedValue.replace(match, processData[key]);
-                  }
-                });
-                
-                // Si se realizó algún reemplazo, añadir a las actualizaciones
-                if (replacedValue !== cell) {
-                  const colLetter = String.fromCharCode(65 + c); // A, B, C, ...
-                  updates.push({
-                    range: `${colLetter}${r + 1}`,
-                    values: [[replacedValue]]
+        for (const title of sheetTitles) {
+          const sheetData = await sheets.spreadsheets.values.get({
+            spreadsheetId: fileId,
+            range: `'${title}'!A1:ZZZ2000`
+          });
+          const values = sheetData.data.values || [];
+          for (let r = 0; r < values.length; r++) {
+            const row = values[r];
+            for (let c = 0; c < row.length; c++) {
+              const cell = row[c];
+              if (typeof cell === 'string' && cell.includes('{{') && cell.includes('}}')) {
+                const matches = cell.match(/\{\{([^}]+)\}\}/g);
+                if (matches) {
+                  let replacedValue = cell;
+                  matches.forEach(match => {
+                    const key = match.slice(2, -2).trim();
+                    if (processData[key] !== undefined) {
+                      replacedValue = replacedValue.replace(match, processData[key]);
+                    }
                   });
+                  if (replacedValue !== cell) {
+                    const colLetter = this.indexToColumn(c);
+                    updates.push({
+                      range: `'${title}'!${colLetter}${r + 1}`,
+                      values: [[replacedValue]]
+                    });
+                  }
                 }
               }
             }
           }
         }
-        
-        // Aplicar todos los reemplazos en una sola operación
         if (updates.length > 0) {
           await sheets.spreadsheets.values.batchUpdate({
             spreadsheetId: fileId,
@@ -228,7 +223,7 @@ class DriveService {
               data: updates
             }
           });
-          console.log(`✅ Reemplazados ${updates.length} marcadores en Google Sheet`);
+          console.log(`✅ Reemplazados ${updates.length} marcadores en todas las pestañas del Google Sheet`);
         }
         
       } else {
@@ -910,52 +905,52 @@ class DriveService {
       // Inicializar la API de Sheets
       const sheets = google.sheets({ version: 'v4', auth: jwtClient });
       
-      // 1. Obtener todo el contenido de la hoja
-      let response;
-      try {
-        response = await sheets.spreadsheets.values.get({
-          spreadsheetId: fileId,
-          range: 'A1:AZ100' // Rango amplio para cubrir toda la hoja
-        });
-      } catch (getError) {
-        console.error('Error al obtener valores de la hoja:', getError);
+      // 1. Obtener metadatos de las hojas para iterar sobre todas las pestañas
+      const spreadsheetInfo = await sheets.spreadsheets.get({
+        spreadsheetId: fileId,
+        fields: 'sheets.properties.title'
+      });
+      const sheetTitles = (spreadsheetInfo.data.sheets || []).map(s => s.properties.title);
+      if (!sheetTitles.length) {
+        console.warn('No se encontraron pestañas en el archivo');
         return false;
       }
       
-      if (!response || !response.data || !response.data.values) {
-        console.warn('No se encontraron valores en la hoja');
-        return false;
-      }
-      
-      const rows = response.data.values;
-      
-      // 2. Buscar y reemplazar marcadores
+      // 2. Buscar y reemplazar marcadores en todas las pestañas
       const updates = [];
-      
-      for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const row = rows[rowIndex];
-        for (let colIndex = 0; colIndex < row.length; colIndex++) {
-          const cell = row[colIndex];
-          if (typeof cell === 'string' && cell.includes('{{') && cell.includes('}}')) {
-            // Extraer marcadores en formato {{nombre_campo}}
-            const matches = cell.match(/\{\{([^}]+)\}\}/g);
-            
-            if (matches) {
-              let newValue = cell;
-              
-              matches.forEach(match => {
-                const fieldName = match.substring(2, match.length - 2);
-                const replacement = processData[fieldName] !== undefined ? processData[fieldName] : '';
-                
-                newValue = newValue.replace(match, replacement);
-              });
-              
-              if (newValue !== cell) {
-                const colLetter = this.indexToColumn(colIndex);
-                updates.push({
-                  range: `${colLetter}${rowIndex + 1}`,
-                  values: [[newValue]]
+      for (const title of sheetTitles) {
+        let response;
+        try {
+          // Usar comillas simples por si el título contiene espacios
+          response = await sheets.spreadsheets.values.get({
+            spreadsheetId: fileId,
+            range: `'${title}'!A1:ZZZ2000`
+          });
+        } catch (getError) {
+          console.error(`Error al obtener valores de la hoja '${title}':`, getError);
+          continue;
+        }
+        const rows = (response.data && response.data.values) ? response.data.values : [];
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+          const row = rows[rowIndex];
+          for (let colIndex = 0; colIndex < row.length; colIndex++) {
+            const cell = row[colIndex];
+            if (typeof cell === 'string' && cell.includes('{{') && cell.includes('}}')) {
+              const matches = cell.match(/\{\{([^}]+)\}\}/g);
+              if (matches) {
+                let newValue = cell;
+                matches.forEach(match => {
+                  const fieldName = match.substring(2, match.length - 2).trim();
+                  const replacement = processData[fieldName] !== undefined ? processData[fieldName] : '';
+                  newValue = newValue.replace(match, replacement);
                 });
+                if (newValue !== cell) {
+                  const colLetter = this.indexToColumn(colIndex);
+                  updates.push({
+                    range: `'${title}'!${colLetter}${rowIndex + 1}`,
+                    values: [[newValue]]
+                  });
+                }
               }
             }
           }
@@ -972,13 +967,13 @@ class DriveService {
               data: updates
             }
           });
-          console.log(`✅ Reemplazados ${updates.length} marcadores en la hoja de cálculo`);
+          console.log(`✅ Reemplazados ${updates.length} marcadores en ${sheetTitles.length} hoja(s)`);
         } catch (updateError) {
           console.error('Error al actualizar celdas:', updateError);
           return false;
         }
       } else {
-        console.log('No se encontraron marcadores para reemplazar');
+        console.log('No se encontraron marcadores para reemplazar en ninguna pestaña');
       }
       
       return true;

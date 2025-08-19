@@ -171,15 +171,35 @@ const report4Config = {
       result.otro_canalChecked = formData.otro_canalChecked || 'No';
       result.otro_canal = formData.otro_canal || '';
 
-      // 3. PROCESAR FECHA
+      // 3. PROCESAR FECHA (usar la de SOLICITUDES si existe)
       try {
-        if (result.fecha_solicitud) {
-          const dateParts = dateUtils.formatDateParts(result.fecha_solicitud);
-          result.dia = dateParts.dia;
-          result.mes = dateParts.mes;
-          result.anio = dateParts.anio;
-          result.fecha_solicitud = `${dateParts.dia}/${dateParts.mes}/${dateParts.anio}`;
+        const rawFecha = solicitudData.fecha_solicitud || result.fecha_solicitud;
+        let fechaObj = null;
+        if (typeof rawFecha === 'string' && rawFecha.trim() !== '') {
+          // Intentar formato español dd/mm/yyyy primero
+          fechaObj = dateUtils.parseSpanishDate(rawFecha.trim()) || new Date(rawFecha.trim());
+        } else if (typeof rawFecha === 'number') {
+          // Posible serial de Sheets (número de días desde 1899-12-30)
+          const base = Date.UTC(1899, 11, 30);
+          fechaObj = new Date(base + rawFecha * 86400000);
+        } else if (rawFecha instanceof Date) {
+          fechaObj = rawFecha;
+        }
+
+        if (fechaObj && !isNaN(fechaObj.getTime())) {
+          const partes = dateUtils.getDateParts(fechaObj, true);
+          result.dia = partes.dia;
+          result.mes = partes.mes;
+          result.anio = partes.anio;
+          result.fecha_solicitud = `${partes.dia}/${partes.mes}/${partes.anio}`;
+        } else if (typeof rawFecha === 'string' && rawFecha.trim() !== '') {
+          // Conservar cadena si no se pudo parsear, pero completar dia/mes/año vacíos
+          result.fecha_solicitud = rawFecha.trim();
+          result.dia = result.dia || '';
+          result.mes = result.mes || '';
+          result.anio = result.anio || '';
         } else {
+          // Fallback: fecha actual
           const fechaActual = new Date();
           result.dia = fechaActual.getDate().toString().padStart(2, '0');
           result.mes = (fechaActual.getMonth() + 1).toString().padStart(2, '0');
@@ -232,6 +252,34 @@ const report4Config = {
         result[campo] = esAfirmativo ? 'Sí' : 'No';
       });
 
+      // 6.1. CAMPOS ESPECIALES PARA PLANTILLA: valorEconomico_si / valorEconomico_no
+      // Deja una 'X' en el campo correspondiente según el valor de valorEconomico
+      (() => {
+        const valor = result.valorEconomico;
+        const esSi = (
+          valor === true ||
+          valor === 'Sí' || valor === 'Si' || valor === 'sí' || valor === 'si' ||
+          valor === 1 || valor === '1'
+        );
+        const esNo = (
+          valor === false ||
+          valor === 'No' || valor === 'no' || valor === 'NO' ||
+          valor === 0 || valor === '0'
+        );
+
+        if (esSi) {
+          result.valorEconomico_si = 'X';
+          result.valorEconomico_no = '';
+        } else if (esNo) {
+          result.valorEconomico_si = '';
+          result.valorEconomico_no = 'X';
+        } else {
+          // Si no se reconoce el valor, no marcamos nada en la plantilla
+          result.valorEconomico_si = '';
+          result.valorEconomico_no = '';
+        }
+      })();
+
       // 6. PROCESAR CAMPOS CONDICIONALES
       const camposCondicionales = [
         { checkbox: 'otroInteresChecked', campo: 'otroInteres' },
@@ -244,9 +292,13 @@ const report4Config = {
       ];
 
       camposCondicionales.forEach(({ checkbox, campo }) => {
-        if (result[checkbox] !== 'Sí') {
+        const tieneValor = typeof result[campo] === 'string' && result[campo].trim() !== '';
+        if (tieneValor) {
+          // Si ya hay valor en Sheets, respetarlo y marcar el checkbox como 'Sí'
+          result[checkbox] = 'Sí';
+        } else if (result[checkbox] !== 'Sí') {
           result[campo] = 'No';
-        } else if (!result[campo] || result[campo].trim() === '') {
+        } else {
           result[campo] = 'Sin especificar';
         }
       });
