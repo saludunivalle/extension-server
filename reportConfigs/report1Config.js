@@ -5,17 +5,17 @@ const dateUtils = require('../utils/dateUtils');
  */
 const report1Config = {
   title: 'Formulario de Aprobación - F-05-MP-05-01-01',
-  templateId: '1xsz9YSnYEOng56eNKGV9it9EgTn0mZw1', // ID correcto de la plantilla del formulario 1
+  templateId: '1cbKIx8vINJnbRPj0MkNDl6uz6nSzgFru', // ID correcto de la plantilla del formulario 1
   requiresAdditionalData: false, // El reporte 1 no requiere datos adicionales como gastos
   requiresGastos: false,
   
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES: {
-      range: 'SOLICITUDES!A2:AV',
+      range: 'SOLICITUDES!A2:AU',
       fields: [
-        'id_solicitud', 'nombre_actividad','fecha_solicitud', 'nombre_solicitante', 'dependencia_tipo',
-        'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'introduccion',
+        'id_solicitud', 'nombre_actividad','fecha_solicitud', 'programa', 'nombre_solicitante', 'dependencia_tipo',
+        'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'entradas_diseño', 'introduccion',
         'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo', 'otro_tipo',
         'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont',
         'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador',
@@ -23,7 +23,7 @@ const report1Config = {
         'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio',
         'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros',
         'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act', 
-        'extension_solidaria', 'costo_extension_solidaria', 'personal_externo', 'pieza_grafica',
+         'observaciones_cambios', 
         'porcentaje_asistencia_minima', 'metodo_control_asistencia', 'escala_calificacion',
         'metodo_evaluacion', 'registro_calificacion_participante'
       ]
@@ -47,10 +47,8 @@ const report1Config = {
       tipoDeAllData: typeof allData,
       tieneSolicitudes: !!allData.SOLICITUDES,
       camposEnFormData: Object.keys(formData).length,
-      extension_solidaria: formData.extension_solidaria,
-      costo_extension_solidaria: formData.costo_extension_solidaria,
-      pieza_grafica: formData.pieza_grafica,
-      personal_externo: formData.personal_externo,
+      observaciones_cambios: formData.observaciones_cambios,
+      programa: formData.programa,
       tipo: formData.tipo,
       modalidad: formData.modalidad
     });
@@ -94,26 +92,50 @@ const report1Config = {
     transformedData.becas_total = becasTotal;
     
     // Procesamiento de tipo de actividad
-    const tipo = formDataCorregido.tipo || '';
+    const tipo = normalizeText(formDataCorregido.tipo || '');
     const tipoData = {
-      tipo_curso: tipo === 'Curso' ? 'X' : '',
-      tipo_taller: tipo === 'Taller' ? 'X' : '',
-      tipo_seminario: tipo === 'Seminario' ? 'X' : '',
-      tipo_programa: tipo === 'Programa' ? 'X' : '',
-      tipo_diplomado: tipo === 'Diplomado' ? 'X' : '',
-      tipo_otro: tipo === 'Otro' ? 'X' : '',
-      tipo_otro_cual: tipo === 'Otro' ? formDataCorregido.otro_tipo || '' : '',
+      tipo_curso: tipo === 'curso' ? 'X' : '',
+      tipo_taller: tipo === 'taller' ? 'X' : '',
+      tipo_seminario: tipo === 'seminario' ? 'X' : '',
+      tipo_especial: tipo === 'programa especial' ? 'X' : '',
+      tipo_diplomado: tipo === 'diplomado' ? 'X' : '',
+      tipo_otro: tipo === 'otro' ? 'X' : '',
+      tipo_otro_cual: tipo === 'otro' ? formDataCorregido.otro_tipo || '' : '',
     };
-    
+  const programa = normalizeText(formDataCorregido.programa || formDataCorregido.proceso || ''); 
+    const programaData = {
+    programa_nuevo: programa === 'programa nuevo' ? 'X' : '',
+    actualizacion_programa: programa === 'actualizacion de programa' ? 'X' : '',
+    modificacion_programa: programa === 'modificacion de programa' ? 'X' : '',
+    };
+
+
+const entradaDiseño =
+  formDataCorregido.entradas_diseño ||
+  formDataCorregido.entrada_diseño ||
+  formDataCorregido.entrada_diseno ||
+  '';
+const entradaDiseñoData = {
+  entrada_conocimiento: entradaDiseño == 'F-07-MP-05-01-01 Conocimiento de las necesidades del mercado' ? 'X' : '',
+  tendencias_sectoriales: entradaDiseño == 'Tendencias Sectoriales del Mercado' ? 'X' : '',
+  grupos_focales: entradaDiseño =='Grupos Focales y/o Design Thinking' ? 'X' : '',
+  entrada_requisitos: entradaDiseño == 'Requisitos y Necesidades de las Partes Interesadas (oferta cerrada)' ? 'X' : '',
+  entrada_oportunidad: entradaDiseño == 'Oportunidad en la Transferencia de Conocimiento' ? 'X' : '',
+  otras_entradas: entradaDiseño == 'Otras entradas (especificar en justificación)' ? 'X' : '',
+  entrada_propuesta: entradaDiseño == 'Propuestas de Programas de Educación Continua Anteriores' ? 'X' : '',
+  entrada_investigacion: entradaDiseño == 'Resultado de Investigaciones' ? 'X' : '',
+  no_aplica: entradaDiseño == 'No Aplica' ? 'X' : ''
+};
+
     // Procesamiento de modalidad
-    const modalidad = formDataCorregido.modalidad || '';
+    const modalidad = normalizeText(formDataCorregido.modalidad || '');
     const modalidadData = {
-      modalidad_presencial: modalidad === 'Presencial' ? 'X' : '',
-      modalidad_patl: modalidad === 'Presencial asistida por tecnología' ? 'X' : '',
-      modalidad_semipresencial: modalidad === 'Semipresencial' ? 'X' : '',
-      modalidad_virtual: modalidad === 'Virtual' ? 'X' : '',
-      modalidad_mixta: modalidad === 'Mixta' ? 'X' : '',
-      modalidad_todas: modalidad === 'Todas las anteriores' ? 'X' : '',
+      modalidad_presencial: modalidad === 'presencial' ? 'X' : '',
+      modalidad_patl: modalidad === 'presencial asistida por tecnologia' ? 'X' : '',
+      modalidad_semipresencial: modalidad === 'semipresencial' ? 'X' : '',
+      modalidad_virtual: modalidad === 'virtual' ? 'X' : '',
+      modalidad_mixta: modalidad === 'mixta' ? 'X' : '',
+      modalidad_todas: modalidad === 'todas las anteriores' ? 'X' : '',
     };
     
     // Procesamiento de periodicidad
@@ -122,6 +144,7 @@ const report1Config = {
       periodicidad_anual: periodicidad === 'anual' ? 'X' : '',
       periodicidad_semestral: periodicidad === 'semestral' ? 'X' : '',
       periodicidad_permanente: periodicidad === 'permanente' ? 'X' : '',
+      periodicidad_solo_una_vez: periodicidad === 'solo una vez' ? 'X' : '',
     };
     
     // Procesamiento de organización
@@ -137,15 +160,7 @@ const report1Config = {
     const certificadoData = procesarCertificado(formDataCorregido);
     
     // Procesamiento de extensión solidaria
-    const extensionSolidaria = (formDataCorregido.extension_solidaria || '').toString().toLowerCase();
-    const esExtensionSi = extensionSolidaria === 'si' || extensionSolidaria === '1' || extensionSolidaria === 1;
-    const esExtensionNo = extensionSolidaria === 'no' || extensionSolidaria === '0' || extensionSolidaria === 0;
-    
-    const extensionSolidariaData = {
-      extension_solidaria_si: esExtensionSi ? 'X' : '',
-      extension_solidaria_no: esExtensionNo ? 'X' : '',
-      costo_extension_solidaria: esExtensionSi ? formDataCorregido.costo_extension_solidaria || '' : ''
-    };
+
     
     // Procesamiento de pieza gráfica
     const piezaGrafica = formDataCorregido.pieza_grafica || '';
@@ -157,34 +172,34 @@ const report1Config = {
     
     // Personal Externo
     const personalExternoData = {
-      personal_externo: formDataCorregido.personal_externo || ''
+      observaciones_cambios: formDataCorregido.observaciones_cambios || '',
+      obervaciones_cambios: formDataCorregido.observaciones_cambios || '',
+      entrada_diseño: entradaDiseño,
+      entrada_diseno: entradaDiseño,
+      entradas_diseño: entradaDiseño
     };
     
     // Combinar todos los datos transformados
     const resultadoFinal = {
       ...transformedData,
+      ...programaData,
+      ...entradaDiseñoData,
       ...tipoData,
       ...modalidadData,
       ...periodicidadData,
       ...organizacionData,
       ...certificadoData,
-      ...extensionSolidariaData,
       ...piezaGraficaData,
       ...personalExternoData,
     };
     
     console.log('🔍 DEBUG TRANSFORM DATA - Resultado final:', {
       totalCampos: Object.keys(resultadoFinal).length,
-      extension_solidaria_si: resultadoFinal.extension_solidaria_si,
-      extension_solidaria_no: resultadoFinal.extension_solidaria_no,
-      costo_extension_solidaria: resultadoFinal.costo_extension_solidaria,
-      pieza_grafica_si: resultadoFinal.pieza_grafica_si,
-      pieza_grafica_no: resultadoFinal.pieza_grafica_no,
-      pieza_grafica: resultadoFinal.pieza_grafica,
-      personal_externo: resultadoFinal.personal_externo,
+
+      observaciones_cambios: resultadoFinal.observaciones_cambios,
       tipo_taller: resultadoFinal.tipo_taller,
       tipo_seminario: resultadoFinal.tipo_seminario,
-      tipo_programa: resultadoFinal.tipo_programa,
+      tipo_especial: resultadoFinal.tipo_especial,
       modalidad_patl: resultadoFinal.modalidad_patl
     });
     
@@ -258,6 +273,15 @@ function formatDateParts(date) {
   }
 }
 
+function normalizeText(value) {
+  return value
+    .toString()
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}
+
 /**
  * Función para procesar datos de certificado
  * @param {Object} formData - Datos del formulario
@@ -277,22 +301,22 @@ function procesarCertificado(formData) {
     razon_no_certificado_texto: ''
   };
   
-  const certificadoTipo = formData.certificado_solicitado || '';
+  const certificadoTipo = normalizeText(formData.certificado_solicitado || '');
   
-  if (certificadoTipo === 'De asistencia') {
+  if (certificadoTipo === 'de asistencia') {
     certificadoData.certificado_asistencia = 'X';
     certificadoData.porcentaje_asistencia_minima = formData.porcentaje_asistencia_minima || '';
     certificadoData.metodo_control_asistencia = formData.metodo_control_asistencia || '';
     certificadoData.registro_calificacion_participante = formData.registro_calificacion_participante || '';
   } 
-  else if (certificadoTipo === 'De aprobación') {
+  else if (certificadoTipo === 'de aprobacion') {
     certificadoData.certificado_aprobacion = 'X';
     certificadoData.calificacion_minima = formData.calificacion_minima || '';
     certificadoData.escala_calificacion = formData.escala_calificacion || '';
     certificadoData.metodo_evaluacion = formData.metodo_evaluacion || '';
     certificadoData.registro_calificacion_participante = formData.registro_calificacion_participante || '';
   } 
-  else if (certificadoTipo === 'No otorga certificado') {
+  else if (certificadoTipo === 'no otorga certificado') {
     certificadoData.certificado_no_otorga = 'X';
     certificadoData.razon_no_certificado_texto = formData.razon_no_certificado || '';
   }
@@ -318,24 +342,15 @@ function corregirCamposMalMapados(formData) {
   }
   
   // Si organización tiene un valor de extensión solidaria, intercambiarlos
-  if (['si', 'no'].includes(dataCopia.organizacion_actividad) && 
-      !['si', 'no'].includes(dataCopia.extension_solidaria)) {
-    const temp = dataCopia.organizacion_actividad;
-    dataCopia.organizacion_actividad = dataCopia.extension_solidaria;
-    dataCopia.extension_solidaria = temp;
-  }
+
   
   // Normalizar periodicidad
-  if (!['anual', 'semestral', 'permanente'].includes(dataCopia.periodicidad_oferta?.toLowerCase())) {
+  if (!['anual', 'semestral', 'permanente', 'solo una vez'].includes(dataCopia.periodicidad_oferta?.toLowerCase())) {
     dataCopia.periodicidad_oferta = 'semestral';
   }
   
   // Normalizar valores numéricos de extensión solidaria
-  if (dataCopia.extension_solidaria === 0 || dataCopia.extension_solidaria === '0') {
-    dataCopia.extension_solidaria = 'no';
-  } else if (dataCopia.extension_solidaria === 1 || dataCopia.extension_solidaria === '1') {
-    dataCopia.extension_solidaria = 'si';
-  }
+
   
   return dataCopia;
 }

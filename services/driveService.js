@@ -22,8 +22,8 @@ class DriveService {
     
     // IDs de plantillas de formularios
     this.templateIds = {
-      1: '1xsz9YSnYEOng56eNKGV9it9EgTn0mZw1', //Plantilla de formulario 1
-      2: '1nWY2gYKtJuXQnGLsdN7RID_2QmrHKRtOwcQsaTsOOm8', //Plantilla de formulario 2
+      1: '1cbKIx8vINJnbRPj0MkNDl6uz6nSzgFru', //Plantilla de formulario 1
+      2: '1uv3WH1ivc5hPFPAwH8DVMg_tYsdQpBvB', //Plantilla de formulario 2
       3: '1Tq-V2BSoe17-xjOeWeqaq4Hm6bU1dLx0TG-bcIhnS_4', //Plantilla de formulario 3
       4: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0', //Plantilla de formulario 4
     };

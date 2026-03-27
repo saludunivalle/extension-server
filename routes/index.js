@@ -67,4 +67,13 @@ router.get('/', (req, res) => {
   res.send('¡Hola desde la ruta principal!');
 });
 
+
+router.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    backend: 'extension-server',
+    env: process.env.NODE_ENV || 'development'
+  });
+});
+
 module.exports = router;
