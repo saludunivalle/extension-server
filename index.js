@@ -8,7 +8,7 @@ const os = require('os');
 const path = require('path');
 const session = require('express-session');
 const tempDir = path.join(os.tmpdir(), 'extension-server-uploads');
-
+const router = express.Router();
 const { jwtClient, oAuth2Client } = require('./config/google');
 const routes = require('./routes');
 

@@ -210,10 +210,8 @@ class ReportGenerationService {
       
       console.log(`✅ Datos aplanados: ${Object.keys(flattenedSolicitudData).length} campos`);
       console.log(`🔍 Campos críticos aplanados:`, {
-        extension_solidaria: flattenedSolicitudData.extension_solidaria,
-        costo_extension_solidaria: flattenedSolicitudData.costo_extension_solidaria,
-        pieza_grafica: flattenedSolicitudData.pieza_grafica,
-        personal_externo: flattenedSolicitudData.personal_externo,
+
+        observaciones_cambios: flattenedSolicitudData.observaciones_cambios,
         tipo: flattenedSolicitudData.tipo,
         modalidad: flattenedSolicitudData.modalidad
       });

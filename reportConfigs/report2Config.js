@@ -5,8 +5,8 @@ const { generateExpenseRows } = require('../services/dynamicRows');
  * Configuración específica para el reporte del Formulario 2 - Presupuesto
  */
 const report2Config = {
-  title: 'Formulario de Presupuesto - F-05-MP-05-01-02',
-  templateId: '1nWY2gYKtJuXQnGLsdN7RID_2QmrHKRtOwcQsaTsOOm8',
+  title: 'Formulario de Presupuesto - F-06-MP-05-01-01 ',
+  templateId: '1uv3WH1ivc5hPFPAwH8DVMg_tYsdQpBvB',
   requiresAdditionalData: true,
   requiresGastos: true, // Budget form needs expense data
   
@@ -23,7 +23,7 @@ const report2Config = {
     },
     SOLICITUDES: {
       range: 'SOLICITUDES!A2:F',
-      fields: ['id_solicitud', 'fecha_solicitud', 'nombre_actividad', 'nombre_solicitante']
+      fields: ['id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'nombre_solicitante']
     },
     GASTOS: {
       range: 'GASTOS!A2:F',
@@ -42,11 +42,21 @@ const report2Config = {
     // ===== NUEVA LÓGICA: TRABAJAR CON DATOS APLANADOS =====
     // Los datos vienen directamente en allData, no anidados por hoja
     
-    // CORRECCIÓN CRÍTICA: Los campos están intercambiados en el mapeo
-    // Lo que llega como "nombre_actividad" es realmente la fecha
-    // Lo que llega como "fecha_solicitud" es realmente el nombre
-    const nombre_actividad_real = allData.fecha_solicitud || ''; // ¡CORREGIDO!
-    const fecha_solicitud_real = allData.nombre_actividad || ''; // ¡CORREGIDO!
+    // Usar el orden real de campos; si hay datos históricos invertidos, corregir solo en ese caso
+    const looksLikeDate = (value) => {
+      if (typeof value !== 'string') return false;
+      return /\d{1,4}[-/]\d{1,2}[-/]\d{1,4}/.test(value.trim());
+    };
+
+    let nombre_actividad_real = allData.nombre_actividad || '';
+    let fecha_solicitud_real = allData.fecha_solicitud || '';
+
+    if (looksLikeDate(nombre_actividad_real) && !looksLikeDate(fecha_solicitud_real)) {
+      console.log('⚠️ Detectada inversión histórica de nombre_actividad/fecha_solicitud. Se corrige para este reporte.');
+      const tmp = nombre_actividad_real;
+      nombre_actividad_real = fecha_solicitud_real;
+      fecha_solicitud_real = tmp;
+    }
     
     console.log('🔥 [CORRECCION] nombre_actividad_real:', nombre_actividad_real);
     console.log('🔥 [CORRECCION] fecha_solicitud_real:', fecha_solicitud_real);
@@ -280,13 +290,13 @@ const report2Config = {
     // Pre-initialize placeholders for expenses
     const conceptosGastos = [
       '1', '1,1', '1,2', '1,3',
-      '2', '2,1', '2,2', '2,3',
-      '3', '3,1', '3,2',
-      '4', '4,1', '4,2', '4,3', '4,4',
-      '5', '5,1', '5,2', '5,3',
-      '6', '6,1', '6,2',
-      '7', '7,1', '7,2', '7,3',
-      '8' // Gastos dinámicos 8,1; 8,2; ...
+      '2', '3', '4',
+      '5', '6', '7',
+      '7,1', '7,2', '7,3', '7,4', '7,5',
+      '8', '8,1', '8,2', '8,3',
+      '8,4', '9', '9,1',
+      '9,2', '9,3', '10', '11',
+      '12','13','14' // Gastos dinámicos 14,1; 14,2; ...
     ];
     
     conceptosGastos.forEach(concepto => {

@@ -49,6 +49,28 @@ const guardarProgreso = async (req, res) => {
   const { id_solicitud, paso, hoja, id_usuario, name, nombre_actividad, ...restFormData } = req.body;
   // Reconstruir formData incluyendo nombre_actividad explícitamente
   const formData = { nombre_actividad, ...restFormData };
+
+  // Compatibilidad de nombres para el nuevo campo de programa
+  // Frontend puede enviar tipo_programa/proceso mientras el modelo usa programa
+  if (!formData.programa) {
+    formData.programa = formData.tipo_programa || formData.proceso || '';
+  }
+
+  if (!formData.entradas_diseño) {
+    formData.entradas_diseño = formData.entradas_diseño ||  formData.entrada_diseno || '';
+  }
+
+  // Compatibilidad de nombres para valor de inscripción
+  if (!formData.valor_inscripcion) {
+    formData.valor_inscripcion =
+      formData.valorInscripcion ||
+      formData.inscripcion ||
+      formData.valor_inscripcion_individual ||
+      formData.valorInscripcionIndividual ||
+      '';
+  }
+
+
   const piezaGrafica = req.file;
 
   console.log('Recibiendo datos para guardar progreso:', { id_solicitud, paso, hoja, id_usuario, name });
@@ -177,11 +199,11 @@ const guardarProgreso = async (req, res) => {
       console.log('🔍 DEBUG PASO 5:');
       console.log('  allFields completo:', allFields);
       console.log('  pieza_grafica en posición:', allFields.indexOf('pieza_grafica'));
-      console.log('  personal_externo en posición:', allFields.indexOf('personal_externo'));
+      console.log('  observaciones_cambios en posición:', allFields.indexOf('observaciones_cambios'));
       console.log('  formData recibido:', formData);
       console.log('  Campos específicos:');
       console.log('    pieza_grafica:', formData.pieza_grafica);
-      console.log('    personal_externo:', formData.personal_externo);
+      console.log('    observaciones_cambios:', formData.observaciones_cambios);
       console.log('  Mapeo detallado por índice:');
       for (let i = columnaInicialIndex; i <= columnaFinalIndex; i++) {
         const fieldName = allFields[i];
@@ -328,8 +350,8 @@ const createNewRequest = async (req, res) => {
     
     // 3. Crear entrada en SOLICITUDES
     const range = 'SOLICITUDES!A2:F2';
-    // Importante: nombre_actividad y fecha_solicitud en orden correcto
-    const values = [[id_solicitud, fecha_solicitud, activityName, nombre_solicitante, dependencia_tipo, nombre_dependencia]];
+    // Orden correcto según modelo SOLICITUDES: A=id, B=nombre_actividad, C=fecha_solicitud
+    const values = [[id_solicitud, activityName, fecha_solicitud, nombre_solicitante, dependencia_tipo, nombre_dependencia]];
 
     await client.spreadsheets.values.append({
       spreadsheetId: sheetsService.spreadsheetId,

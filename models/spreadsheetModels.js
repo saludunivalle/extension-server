@@ -52,8 +52,8 @@ class SpreadsheetModel {
   const SOLICITUDES = new SpreadsheetModel(
     'SOLICITUDES',
     [
-      'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'nombre_solicitante', 'dependencia_tipo',
-      'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia',
+      'id_solicitud', 'nombre_actividad', 'fecha_solicitud','programa', 'nombre_solicitante', 'dependencia_tipo',
+      'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia','entradas_diseño',
       'introduccion', 'objetivo_general', 'objetivos_especificos', 'justificacion', 'metodologia', 'tipo',
       'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
       'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador',
@@ -61,14 +61,14 @@ class SpreadsheetModel {
       'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion',
       'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
       'becas_otros', 'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act',
-      'extension_solidaria', 'costo_extension_solidaria', 'pieza_grafica', 'personal_externo'
+      'observaciones_cambios'
     ],
     {
-      1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I'],
-      2: ['J', 'K', 'L', 'M', 'N'],
-      3: ['O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y'],
-      4: ['Z', 'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH'],
-      5: ['AI', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV']
+      1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'],
+      2: ['K', 'L', 'M', 'N', 'O', 'P'],
+      3: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA'],
+      4: ['AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ'],
+      5: ['AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU']
     }
   );
   
