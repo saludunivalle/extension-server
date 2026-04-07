@@ -14,7 +14,7 @@ class SheetsService {
     this.models = models.getModels(); // Usar los modelos definidos
   }
 
-  async saveUserIfNotExists(userId, email, name) {
+  async saveUserIfNotExists(userId, email, name, role = '') {
     try {
       const userCheckRange = 'USUARIOS!A2:A';
       const userCheckResponse = await this.client.spreadsheets.values.get({
@@ -26,8 +26,9 @@ class SheetsService {
       
       // Verificar si el usuario ya existe
       if (!existingUsers.includes(userId)) {
-        const userRange = 'USUARIOS!A2:C2';
-        const userValues = [[userId, email, name]];
+        const userRange = 'USUARIOS!A2:D2';
+        const normalizedRole = String(role || '').trim().toLowerCase() === 'admin' ? 'admin' : '';
+        const userValues = [[userId, email, name, normalizedRole]];
   
         await this.client.spreadsheets.values.append({
           spreadsheetId: this.spreadsheetId,
@@ -97,17 +98,36 @@ class SheetsService {
     // Añadir caché para evitar solicitudes duplicadas
     const cacheKey = `${sheetName}_${idSolicitud}`;
     if (this.rowCache && this.rowCache[cacheKey]) {
-      return this.rowCache[cacheKey];
+      const cached = this.rowCache[cacheKey];
+
+      // Autocorrección: si la fila cacheada no tiene ID en columna A, lo reescribe.
+      const cachedA = await this.client.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: `${sheetName}!A${cached.rowIndex}`
+      });
+      const cachedId = cachedA.data.values?.[0]?.[0] || '';
+
+      if (cachedId !== String(idSolicitud)) {
+        await this.client.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range: `${sheetName}!A${cached.rowIndex}`,
+          valueInputOption: 'RAW',
+          resource: { values: [[String(idSolicitud)]] }
+        });
+      }
+
+      return cached;
     }
     
     try {
       const response = await this.client.spreadsheets.values.get({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!A:A`
+        range: `${sheetName}!A2:A`
       });
 
       const rows = response.data.values || [];
       let rowIndex = rows.findIndex((row) => row[0] === idSolicitud.toString());
+      let created = false;
 
       // Si no existe, crear una nueva fila
       if (rowIndex === -1) {
@@ -115,22 +135,47 @@ class SheetsService {
         let newRow;
         if (sheetName === 'SOLICITUDES2') {
           newRow = Array(18).fill('');
-          newRow[0] = idSolicitud;
+          newRow[0] = idSolicitud.toString();
         } else {
-          newRow = [idSolicitud];
+          newRow = [idSolicitud.toString()];
         }
         await this.client.spreadsheets.values.append({
           spreadsheetId: this.spreadsheetId,
-          range: `${sheetName}!A${rows.length + 2}`,
+          range: `${sheetName}!A2:A`,
           valueInputOption: 'RAW',
+          insertDataOption: 'INSERT_ROWS',
           resource: { values: [newRow] }
         });
-        rowIndex = rows.length + 1;
+        rowIndex = rows.length + 2;
+        created = true;
+
+        // Validación defensiva: garantizar que A{rowIndex} sí tiene el ID.
+        await this.client.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range: `${sheetName}!A${rowIndex}`,
+          valueInputOption: 'RAW',
+          resource: { values: [[String(idSolicitud)]] }
+        });
       } else {
-        rowIndex += 1; // Ajustar para que sea 1-based
+        rowIndex += 2; // Ajustar para que sea 1-based y compensar inicio en A2
+
+        // Si la fila existe pero A está vacía, restaurar el id_solicitud.
+        const existingA = await this.client.spreadsheets.values.get({
+          spreadsheetId: this.spreadsheetId,
+          range: `${sheetName}!A${rowIndex}`
+        });
+        const existingId = existingA.data.values?.[0]?.[0] || '';
+        if (existingId !== String(idSolicitud)) {
+          await this.client.spreadsheets.values.update({
+            spreadsheetId: this.spreadsheetId,
+            range: `${sheetName}!A${rowIndex}`,
+            valueInputOption: 'RAW',
+            resource: { values: [[String(idSolicitud)]] }
+          });
+        }
       }
 
-      const result = rowIndex;
+      const result = { rowIndex, created };
 
       // Guardar en caché
       if (!this.rowCache) this.rowCache = {};
@@ -146,11 +191,27 @@ class SheetsService {
   //Actualiza el progreso de una solicitud
   async updateRequestProgress(params) {
     const { sheetName, rowIndex, startColumn, endColumn, values } = params;
+
+    const numberToColumnLetter = (columnNumber) => {
+      let number = parseInt(columnNumber, 10);
+      let letter = '';
+
+      while (number > 0) {
+        const temp = (number - 1) % 26;
+        letter = String.fromCharCode(temp + 65) + letter;
+        number = Math.floor((number - temp - 1) / 26);
+      }
+
+      return letter;
+    };
+
+    const startCol = typeof startColumn === 'number' ? numberToColumnLetter(startColumn) : startColumn;
+    const endCol = typeof endColumn === 'number' ? numberToColumnLetter(endColumn) : endColumn;
     
     try {
       return await this.client.spreadsheets.values.update({
         spreadsheetId: this.spreadsheetId,
-        range: `${sheetName}!${startColumn}${rowIndex}:${endColumn}${rowIndex}`,
+        range: `${sheetName}!${startCol}${rowIndex}:${endCol}${rowIndex}`,
         valueInputOption: 'RAW',
         resource: { values: [values] }
       });

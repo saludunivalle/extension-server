@@ -279,12 +279,12 @@ const migrarRiesgosForm3 = async (req, res) => {
     // Convertir riesgos del formulario 3 al nuevo formato
     const nuevosRiesgos = [];
     for (const riesgo of riesgosMap) {
-      if (form3Data[riesgo.field] === 'Sí' || form3Data[riesgo.field] === 'Si' || form3Data[riesgo.field] === true) {
+      if (form3Data[riesgo.field] === 'Sí aplica' || form3Data[riesgo.field] === 'Si' || form3Data[riesgo.field] === 'Sí' || form3Data[riesgo.field] === true) {
         lastId++;
         nuevosRiesgos.push({
           id_riesgo: lastId.toString(),
           nombre_riesgo: riesgo.nombre,
-          aplica: 'Sí',
+          aplica: 'Sí aplica',
           mitigacion: '',
           id_solicitud: id_solicitud.toString(),
           categoria: riesgo.categoria

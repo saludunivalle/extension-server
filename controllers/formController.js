@@ -19,7 +19,7 @@ const etapasCache = {
       const client = sheetsService.getClient();
       const response = await client.spreadsheets.values.get({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I'
+        range: 'ETAPAS!A:J'
       });
       this.datos = response.data.values || [];
       this.ultimaActualizacion = Date.now();
@@ -38,6 +38,35 @@ async function getEtapas(fuerzaRefresh = false) {
     await etapasCache.refresh();
   }
   return etapasCache.datos;
+}
+
+async function getUserRoleInfo(userId) {
+  if (!userId) {
+    return { role: '', isAdmin: false };
+  }
+
+  const client = sheetsService.getClient();
+  const response = await client.spreadsheets.values.get({
+    spreadsheetId: sheetsService.spreadsheetId,
+    range: 'USUARIOS!A2:D'
+  });
+
+  const rows = response.data.values || [];
+  const normalizedUserId = String(userId).trim();
+  const matchingRows = rows.filter(
+    (row) => String(row[0] || '').trim() === normalizedUserId
+  );
+
+  const preferredRow = matchingRows.find(
+    (row) => String(row[3] || '').trim().toLowerCase() === 'admin'
+  ) || matchingRows[0];
+
+  const role = String(preferredRow?.[3] || '').trim().toLowerCase() === 'admin' ? 'admin' : '';
+
+  return {
+    role,
+    isAdmin: role.toLowerCase() === 'admin'
+  };
 }
 
 /**
@@ -213,16 +242,27 @@ const guardarProgreso = async (req, res) => {
     }
 
     // Encontrar o crear fila para la solicitud
-    const fila = await sheetsService.findOrCreateRequestRow(sheetName, id_solicitud);
-    if (!fila) {
+    const rowInfo = await sheetsService.findOrCreateRequestRow(sheetName, id_solicitud);
+    if (!rowInfo || !rowInfo.rowIndex) {
         throw new Error('No se pudo obtener el índice de la fila.');
     }
-    console.log(`  Fila encontrada/creada: ${fila}`);
+
+    // Garantizar que el id_solicitud siempre quede en la columna A de SOLICITUDES2
+    if (sheetName === 'SOLICITUDES2') {
+      await sheetsService.getClient().spreadsheets.values.update({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: `SOLICITUDES2!A${rowInfo.rowIndex}`,
+        valueInputOption: 'RAW',
+        resource: { values: [[String(id_solicitud)]] }
+      });
+    }
+
+    console.log(`  Fila encontrada/creada: ${rowInfo.rowIndex}`);
 
     // Actualizar datos en Google Sheets usando sheetsService
     await sheetsService.updateRequestProgress({
       sheetName,
-      rowIndex: fila,
+      rowIndex: rowInfo.rowIndex,
       startColumn: columnaInicialLetra, // Usar letra de columna inicial
       endColumn: columnaFinalLetra,     // Usar letra de columna final
       values: valoresOrdenados         // Usar el array ordenado
@@ -238,7 +278,7 @@ const guardarProgreso = async (req, res) => {
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:J'
     });
     const etapasRows = etapasResponse.data.values || [];
     const filaExistenteIndex = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
@@ -296,7 +336,7 @@ const guardarProgreso = async (req, res) => {
       ];
       await client.spreadsheets.values.append({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I',
+        range: 'ETAPAS!A:J',
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
         resource: { values: [nuevaFila] }
@@ -384,7 +424,7 @@ const createNewRequest = async (req, res) => {
     
     await client.spreadsheets.values.append({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I',
+      range: 'ETAPAS!A:J',
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: { values: [nuevaFila] }
@@ -407,11 +447,17 @@ const createNewRequest = async (req, res) => {
 const getRequests = async (req, res) => {
   try {
     const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Se requiere userId' });
+    }
+
     const client = sheetsService.getClient();
+    const { role, isAdmin } = await getUserRoleInfo(userId);
 
     const activeResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!A2:I`,
+      range: `ETAPAS!A2:J`,
     });
 
     const rows = activeResponse.data.values;
@@ -419,15 +465,15 @@ const getRequests = async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron solicitudes activas o terminadas' });
     }
 
-    const activeRequests = rows.filter(
-      (row) => row[1] === userId && row[5] === 'En progreso'
-    );
+    const canAccessRow = (row) => isAdmin || row[1] === userId;
 
-    const completedRequests = rows.filter(
-      (row) => row[1] === userId && row[5] === 'Completado'
-    );
+    const activeRequests = rows.filter((row) => canAccessRow(row) && row[5] === 'En progreso');
+
+    const completedRequests = rows.filter((row) => canAccessRow(row) && row[5] === 'Completado');
 
     res.status(200).json({
+      role,
+      isAdmin,
       activeRequests,
       completedRequests,
     });
@@ -450,11 +496,12 @@ const getActiveRequests = async (req, res) => {
     }
     
     const client = sheetsService.getClient();
+    const { isAdmin } = await getUserRoleInfo(userId);
 
     // 1. Obtener datos de ETAPAS con manejo de errores mejorado
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A2:I',
+      range: 'ETAPAS!A2:J',
     }).catch(err => {
       console.error(`Error al acceder a ETAPAS: ${err.message}`);
       throw new Error(`Error al acceder a ETAPAS: ${err.message}`);
@@ -467,7 +514,7 @@ const getActiveRequests = async (req, res) => {
       .filter(row => {
         // Verificar que la fila tenga suficientes columnas
         return row.length >= 9 && 
-               row[1] === userId && 
+               (isAdmin || row[1] === userId) && 
                row[5] === 'En progreso';
       })
       .map(row => {
@@ -497,6 +544,9 @@ const getActiveRequests = async (req, res) => {
         
         return {
           idSolicitud: row[0] || 'N/A',
+          id_usuario: row[1] || 'N/A',
+          nombre_usuario: row[3] || 'N/A',
+          fecha_solicitud: row[2] || '',
           formulario: isNaN(etapa) ? 1 : etapa,
           paso: isNaN(paso) ? 1 : paso,
           estadoFormularios,
@@ -504,49 +554,7 @@ const getActiveRequests = async (req, res) => {
         };
       });
 
-    // 3. Obtener datos adicionales de SOLICITUDES para validar nombre_actividad
-    const solicitudesResponse = await client.spreadsheets.values.get({
-      spreadsheetId: sheetsService.spreadsheetId,
-      range: 'SOLICITUDES!A2:C', // A=id_solicitud, B=fecha_solicitud, C=nombre_actividad
-    }).catch(err => {
-      console.error('Error al obtener SOLICITUDES:', err);
-      return { data: { values: [] } };
-    });
-
-    const solicitudesRows = solicitudesResponse.data.values || [];
-    
-    // 4. Combinar datos asegurando la correcta asignación de campos
-    const combinedRequests = activeRequests.map(request => {
-      const solicitud = solicitudesRows.find(r => r[0] === request.idSolicitud);
-      
-      if (solicitud) {
-        // Verificar si los campos están intercambiados
-        let nombre = solicitud[1];
-        let fecha = solicitud[2];
-        
-        // Si fecha contiene texto que no parece fecha y nombre parece fecha, intercambiar
-        if (
-          (typeof nombre === 'string' && nombre.includes('/')) && 
-          (typeof fecha === 'string' && !fecha.includes('/') && fecha.length > 4)
-        ) {
-          console.log(`⚠️ Detectada inversión de campos para solicitud ${request.idSolicitud}`);
-          // Intercambiar valores para corregir
-          const temp = nombre;
-          nombre = fecha;
-          fecha = temp;
-        }
-        
-        return {
-          ...request,
-          nombre_actividad: nombre || request.nombre_actividad,
-          fecha_solicitud: fecha
-        };
-      }
-      
-      return request;
-    });
-
-    res.status(200).json(combinedRequests);
+    res.status(200).json(activeRequests);
   } catch (error) {
     console.error('Error en getActiveRequests:', error);
     res.status(500).json({ 
@@ -562,12 +570,18 @@ const getActiveRequests = async (req, res) => {
 const getCompletedRequests = async (req, res) => {
   try {
     const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Se requiere userId' });
+    }
+
     console.log('Obteniendo solicitudes completadas para el usuario:', userId);
     const client = sheetsService.getClient();
+    const { isAdmin } = await getUserRoleInfo(userId);
 
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!A2:I`,
+      range: `ETAPAS!A2:J`,
     });
 
     const rows = etapasResponse.data.values;
@@ -575,9 +589,12 @@ const getCompletedRequests = async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron solicitudes completadas' });
     }
 
-    const completedRequests = rows.filter((row) => row[1] === userId && row[5] === 'Completado')
+    const completedRequests = rows.filter((row) => (isAdmin || row[1] === userId) && row[5] === 'Completado')
       .map((row) => ({
         idSolicitud: row[0],
+        id_usuario: row[1] || 'N/A',
+        fecha_solicitud: row[2] || '',
+        nombre_usuario: row[3] || 'N/A',
         formulario: parseInt(row[4]),
         etapa_actual: parseInt(row[4]),
         paso: parseInt(row[7]),
@@ -790,7 +807,7 @@ const actualizarPasoMaximo = async (req, res) => {
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:J'
     });
     const etapasRows = etapasResponse.data.values || [];
     
@@ -913,7 +930,7 @@ const validarProgresion = async (req, res) => {
     // Obtener datos de ETAPAS con manejo de creación de fila
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:J'
     });
 
     let etapasRows = etapasResponse.data.values || [];
@@ -945,7 +962,7 @@ const validarProgresion = async (req, res) => {
       try {
         await client.spreadsheets.values.append({
           spreadsheetId: sheetsService.spreadsheetId,
-          range: 'ETAPAS!A:I',
+          range: 'ETAPAS!A:J',
           valueInputOption: 'RAW',
           insertDataOption: 'INSERT_ROWS',
           resource: { values: [nuevaFila] }
@@ -1103,7 +1120,7 @@ const actualizarProgresoGlobal = async (req, res) => {
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:J'
     });
     
     const etapasRows = etapasResponse.data.values || [];
@@ -1272,6 +1289,7 @@ const guardarForm2Paso1 = async (req, res) => {
 
     // Mapear los campos al modelo correspondiente en Sheets
     const modelo = sheetsService.models.SOLICITUDES2;
+    const modelFields = modelo.fields || [];
     const updateValues = [];
     const columnas = [];
     
@@ -1280,8 +1298,9 @@ const guardarForm2Paso1 = async (req, res) => {
 
     // Mapear cada campo al modelo y añadir a la actualización
     campos.forEach(campo => {
-      if (modelo[campo] !== undefined) {
-        const colIndex = modelo[campo];
+      const fieldIndex = modelFields.indexOf(campo);
+      if (fieldIndex !== -1) {
+        const colIndex = fieldIndex + 1; // Columnas 1-based
         columnas.push(colIndex);
         updateValues.push(req.body[campo] !== undefined ? req.body[campo].toString() : '');
       }
@@ -1519,8 +1538,8 @@ const guardarForm2Paso3 = async (req, res) => {
 
     try {
       // 1. Encontrar o crear la fila para esta solicitud
-      const rowIndex = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
-      if (!rowIndex) {
+      const rowInfo = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
+      if (!rowInfo || !rowInfo.rowIndex) {
         throw new Error(`No se pudo encontrar o crear fila para solicitud ${id_solicitud}`);
       }
 
@@ -1542,7 +1561,7 @@ const guardarForm2Paso3 = async (req, res) => {
       // 4. Actualizar solo las columnas K a R (correspondiente al paso 3)
       await sheetsService.updateRequestProgress({
         sheetName: 'SOLICITUDES2',
-        rowIndex,
+        rowIndex: rowInfo.rowIndex,
         startColumn: 'K',    // Columna inicial para el paso 3
         endColumn: 'R',    // Columna final para el paso 3
         values: valoresAportes

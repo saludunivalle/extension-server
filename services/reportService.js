@@ -766,11 +766,9 @@ class ReportGenerationService {
         };
         
         // Determinar si es un gasto dinámico (empieza con 8.)
-        if (idConcepto.startsWith('8.')) {
-          gastosDinamicos.push(gastoObj);
-        } else {
+       
           gastosNormales.push(gastoObj);
-        }
+        
       });
       
       console.log(`📊 Gastos procesados: ${gastosNormales.length} normales, ${gastosDinamicos.length} dinámicos`);
@@ -918,8 +916,8 @@ class ReportGenerationService {
           id_solicitud: idSolicitud, categoria: categoria,
           // Campos adicionales para el templateMapper
           id: id, descripcion: nombreRiesgo,
-          impacto: (aplica === 'Sí' || aplica === 'Si') ? 'Alto' : 'Bajo',
-          probabilidad: (aplica === 'Sí' || aplica === 'Si') ? 'Alta' : 'Baja',
+          impacto: (aplica === 'Sí aplica' || aplica === 'Si aplica') ? 'Alto' : 'Bajo',
+          probabilidad: (aplica === 'Sí aplica' || aplica === 'Si aplica') ? 'Alta' : 'Baja',
           estrategia: mitigacion
         };
 

@@ -38,8 +38,8 @@ const templateMapperRiesgos = {
     return {
       // Prioritize specific fields, provide fallbacks
       descripcion: getDataValue(riesgo, 'descripcion') || getDataValue(riesgo, 'nombre_riesgo') || '',
-      // Ensure 'aplica' is 'Sí' or 'No' (or similar expected values)
-      aplica: getDataValue(riesgo, 'aplica') === 'Sí' ? 'Sí' : 'No',
+      // Ensure 'aplica' is 'Sí aplica' or 'No' (or similar expected values)
+      aplica: getDataValue(riesgo, 'aplica') === 'Sí aplica' || getDataValue(riesgo, 'aplica') === 'Sí' ? 'Sí aplica' : 'No',
       mitigacion: getDataValue(riesgo, 'mitigacion') || getDataValue(riesgo, 'estrategia') || '' // Añadido fallback a 'estrategia'
     };
   },
