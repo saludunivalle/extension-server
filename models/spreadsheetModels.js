@@ -183,7 +183,17 @@ class SpreadsheetModel {
   const ETAPAS = new SpreadsheetModel(
     'ETAPAS',
     [
-      'id_solicitud', 'id_usuario', 'fecha', 'name', 'etapa_actual', 'estado', 'nombre_actividad', 'paso', 'estado_formularios'
+      'id_solicitud',
+      'id_usuario',
+      'fecha',
+      'name',
+      'etapa_actual',
+      'estado',
+      'nombre_actividad',
+      'paso',
+      'estado_formularios',
+      'estado_general',
+      'comentarios'
     ]
   );
   
@@ -191,7 +201,7 @@ class SpreadsheetModel {
   const USUARIOS = new SpreadsheetModel(
     'USUARIOS',
     [
-      'id', 'email', 'name'
+      'id', 'email', 'name', 'role'
     ]
   );
   

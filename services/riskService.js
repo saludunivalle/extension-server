@@ -51,8 +51,8 @@ class RiskService {
           // Campos adicionales para el mapeo de plantilla
           id: riesgo.id_riesgo,
           descripcion: riesgo.nombre_riesgo,
-          impacto: riesgo.aplica === 'Sí' || riesgo.aplica === 'Si' ? 'Alto' : 'Bajo',
-          probabilidad: riesgo.aplica === 'Sí' || riesgo.aplica === 'Si' ? 'Alta' : 'Baja',
+          impacto: riesgo.aplica === 'Sí aplica' || riesgo.aplica === 'Si aplica' ? 'Alto' : 'Bajo',
+          probabilidad: riesgo.aplica === 'Sí aplica' || riesgo.aplica === 'Si aplica' ? 'Alta' : 'Baja',
           estrategia: riesgo.mitigacion || 'No especificado'
         };
         

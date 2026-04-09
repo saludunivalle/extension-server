@@ -35,6 +35,14 @@ router.post('/guardarProgreso', upload.single('pieza_grafica'), formController.g
 router.post('/guardarGastos', formController.guardarGastos);
 router.post('/createNewRequest', formController.createNewRequest);
 router.get('/getRequests', formController.getRequests);
+router.post('/enviarFormulariosRevision', formController.enviarSolicitudRevision);
+router.post('/enviarSolicitudRevision', formController.enviarSolicitudRevision);
+router.get('/admin/solicitudesRevision', formController.getSolicitudesRevisionAdmin);
+router.post('/admin/aprobarFormularios', formController.aprobarSolicitudAdmin);
+router.post('/admin/aprobarSolicitud', formController.aprobarSolicitudAdmin);
+router.post('/admin/aprobarSolicitudCompleta', formController.aprobarSolicitudCompletaAdmin);
+router.post('/admin/enviarCorrecciones', formController.enviarCorreccionesAdmin);
+router.get('/estadoRevisionSolicitud', formController.getEstadoRevisionSolicitud);
 router.get('/getProgramasYOficinas', require('../controllers/otherController').getProgramasYOficinas);
 router.get('/getSolicitud', require('../controllers/otherController').getSolicitud);
 router.post('/guardarForm2Paso2', formController.guardarForm2Paso2);

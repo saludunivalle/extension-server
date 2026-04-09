@@ -3,6 +3,22 @@ const driveService = require('../services/driveService');
 const dateUtils = require('../utils/dateUtils');
 const progressService = require('../services/progressStateService'); // Añadir esta línea
 
+const ESTADOS_GENERALES = Object.freeze({
+  EN_PROCESO: 'En proceso',
+  TERMINADO: 'Terminado',
+  ENVIADO_REVISION: 'Enviado a revisión',
+  APROBADO_PARCIAL: 'Aprobado parcialmente',
+  APROBADO: 'Aprobado'
+});
+
+const ESTADOS_FORMULARIO = Object.freeze({
+  EN_PROGRESO: 'En progreso',
+  COMPLETADO: 'Completado',
+  ENVIADO_REVISION: 'Enviado a revisión',
+  APROBADO: 'Aprobado',
+  REQUIERE_CORRECCIONES: 'Requiere correcciones'
+});
+
 // Sistema de caché para ETAPAS
 const etapasCache = {
   datos: null,
@@ -19,7 +35,7 @@ const etapasCache = {
       const client = sheetsService.getClient();
       const response = await client.spreadsheets.values.get({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I'
+        range: 'ETAPAS!A:K'
       });
       this.datos = response.data.values || [];
       this.ultimaActualizacion = Date.now();
@@ -38,6 +54,223 @@ async function getEtapas(fuerzaRefresh = false) {
     await etapasCache.refresh();
   }
   return etapasCache.datos;
+}
+
+async function getUserRoleInfo(userId) {
+  if (!userId) {
+    return { role: '', isAdmin: false };
+  }
+
+  const client = sheetsService.getClient();
+  const response = await client.spreadsheets.values.get({
+    spreadsheetId: sheetsService.spreadsheetId,
+    range: 'USUARIOS!A2:D'
+  });
+
+  const rows = response.data.values || [];
+  const normalizedUserId = String(userId).trim();
+  const matchingRows = rows.filter(
+    (row) => String(row[0] || '').trim() === normalizedUserId
+  );
+
+  const preferredRow = matchingRows.find(
+    (row) => String(row[3] || '').trim().toLowerCase() === 'admin'
+  ) || matchingRows[0];
+
+  const role = String(preferredRow?.[3] || '').trim().toLowerCase() === 'admin' ? 'admin' : '';
+
+  return {
+    role,
+    isAdmin: role.toLowerCase() === 'admin'
+  };
+}
+
+function getDefaultEstadoFormularios() {
+  return {
+    '1': 'En progreso',
+    '2': 'En progreso',
+    '3': 'En progreso',
+    '4': 'En progreso'
+  };
+}
+
+function normalizeEstadoFormulario(estadoFormulario) {
+  const value = String(estadoFormulario || '').trim().toLowerCase();
+  if (value === 'aprobado') {
+    return ESTADOS_FORMULARIO.APROBADO;
+  }
+
+  if (value === 'enviado a revisión' || value === 'enviado a revision') {
+    return ESTADOS_FORMULARIO.ENVIADO_REVISION;
+  }
+
+  if (value === 'requiere correcciones') {
+    return ESTADOS_FORMULARIO.REQUIERE_CORRECCIONES;
+  }
+
+  if (value === 'completado' || value === 'terminado') {
+    return ESTADOS_FORMULARIO.COMPLETADO;
+  }
+
+  return ESTADOS_FORMULARIO.EN_PROGRESO;
+}
+
+function parseEstadoFormularios(rawEstadoFormularios) {
+  let parsed = getDefaultEstadoFormularios();
+
+  if (rawEstadoFormularios) {
+    try {
+      const candidate = typeof rawEstadoFormularios === 'string'
+        ? JSON.parse(rawEstadoFormularios)
+        : rawEstadoFormularios;
+      if (candidate && typeof candidate === 'object') {
+        parsed = {
+          ...parsed,
+          ...candidate
+        };
+      }
+    } catch (error) {
+      console.warn('No se pudo parsear estado_formularios, usando valores por defecto.');
+    }
+  }
+
+  return parsed;
+}
+
+function getEstadoGeneralLegacy(estadoGeneral) {
+  return estadoGeneral === ESTADOS_GENERALES.EN_PROCESO ? 'En progreso' : 'Completado';
+}
+
+function calculateEstadoGeneral(estadoFormularios, estadoGeneralActual = '') {
+  const keys = ['1', '2', '3', '4'];
+  const normalized = keys.map((key) => normalizeEstadoFormulario(estadoFormularios[key]));
+
+  const allAprobados = normalized.every((estado) => estado === ESTADOS_FORMULARIO.APROBADO);
+  if (allAprobados) {
+    return ESTADOS_GENERALES.APROBADO;
+  }
+
+  const hasAprobados = normalized.some((estado) => estado === ESTADOS_FORMULARIO.APROBADO);
+  if (hasAprobados) {
+    return ESTADOS_GENERALES.APROBADO_PARCIAL;
+  }
+
+  const hasEnRevision = normalized.some((estado) => estado === ESTADOS_FORMULARIO.ENVIADO_REVISION);
+  if (hasEnRevision) {
+    return ESTADOS_GENERALES.ENVIADO_REVISION;
+  }
+
+  const allCompletados = normalized.every(
+    (estado) => estado === ESTADOS_FORMULARIO.COMPLETADO
+  );
+  if (allCompletados) {
+    return ESTADOS_GENERALES.TERMINADO;
+  }
+
+  const hasInProgress = normalized.some((estado) => estado === ESTADOS_FORMULARIO.EN_PROGRESO);
+  if (hasInProgress) {
+    return ESTADOS_GENERALES.EN_PROCESO;
+  }
+
+  if (estadoGeneralActual === ESTADOS_GENERALES.APROBADO_PARCIAL) {
+    return ESTADOS_GENERALES.APROBADO_PARCIAL;
+  }
+
+  return ESTADOS_GENERALES.EN_PROCESO;
+}
+
+function parseComentariosPorFormulario(rawComentarios) {
+  if (!rawComentarios) {
+    return {};
+  }
+
+  try {
+    const parsed = typeof rawComentarios === 'string'
+      ? JSON.parse(rawComentarios)
+      : rawComentarios;
+
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed;
+    }
+  } catch (error) {
+    // Compatibilidad: valor antiguo de texto libre.
+  }
+
+  return {
+    general: String(rawComentarios)
+  };
+}
+
+function stringifyComentariosPorFormulario(comentarios) {
+  if (!comentarios || Object.keys(comentarios).length === 0) {
+    return '';
+  }
+
+  return JSON.stringify(comentarios);
+}
+
+function sanitizeFormularios(formularios) {
+  if (!Array.isArray(formularios)) {
+    return [];
+  }
+
+  const unique = [...new Set(formularios
+    .map((f) => parseInt(f, 10))
+    .filter((f) => Number.isInteger(f) && f >= 1 && f <= 4))];
+
+  return unique.sort((a, b) => a - b);
+}
+
+function getFormulariosByEstado(estadoFormularios, allowedStates) {
+  return Object.entries(estadoFormularios)
+    .filter(([, estado]) => allowedStates.includes(normalizeEstadoFormulario(estado)))
+    .map(([formulario]) => parseInt(formulario, 10));
+}
+
+function isFormularioRealizado(estadoFormulario) {
+  const normalized = normalizeEstadoFormulario(estadoFormulario);
+  return normalized !== ESTADOS_FORMULARIO.EN_PROGRESO;
+}
+
+function setEstadoFormulario(estadoFormularios, formularioId, estado) {
+  estadoFormularios[String(formularioId)] = estado;
+}
+
+function getEstadoGeneralFromRow(row = []) {
+  const rowEstadoGeneral = String(row[9] || '').trim();
+  if (Object.values(ESTADOS_GENERALES).includes(rowEstadoGeneral)) {
+    return rowEstadoGeneral;
+  }
+
+  const estadoFormularios = parseEstadoFormularios(row[8]);
+  return calculateEstadoGeneral(estadoFormularios);
+}
+
+async function userIsAdmin(userId) {
+  const { isAdmin } = await getUserRoleInfo(userId);
+  return isAdmin;
+}
+
+function buildEtapaSummary(row) {
+  const estadoFormularios = parseEstadoFormularios(row[8]);
+  const comentariosPorFormulario = parseComentariosPorFormulario(row[10] || '');
+  return {
+    id_solicitud: row[0] || '',
+    id_usuario: row[1] || '',
+    fecha: row[2] || '',
+    name: row[3] || '',
+    etapa_actual: parseInt(row[4], 10) || 1,
+    estado: row[5] || 'En progreso',
+    nombre_actividad: row[6] || '',
+    paso: parseInt(row[7], 10) || 1,
+    estado_formularios: estadoFormularios,
+    estado_general: getEstadoGeneralFromRow(row),
+    comentarios: row[10] || '',
+    comentarios_por_formulario: comentariosPorFormulario,
+    formularios_en_revision: getFormulariosByEstado(estadoFormularios, [ESTADOS_FORMULARIO.ENVIADO_REVISION]),
+    formularios_aprobados: getFormulariosByEstado(estadoFormularios, [ESTADOS_FORMULARIO.APROBADO]),
+    formularios_con_correcciones: getFormulariosByEstado(estadoFormularios, [ESTADOS_FORMULARIO.REQUIERE_CORRECCIONES])
+  };
 }
 
 /**
@@ -213,16 +446,27 @@ const guardarProgreso = async (req, res) => {
     }
 
     // Encontrar o crear fila para la solicitud
-    const fila = await sheetsService.findOrCreateRequestRow(sheetName, id_solicitud);
-    if (!fila) {
+    const rowInfo = await sheetsService.findOrCreateRequestRow(sheetName, id_solicitud);
+    if (!rowInfo || !rowInfo.rowIndex) {
         throw new Error('No se pudo obtener el índice de la fila.');
     }
-    console.log(`  Fila encontrada/creada: ${fila}`);
+
+    // Garantizar que el id_solicitud siempre quede en la columna A de SOLICITUDES2
+    if (sheetName === 'SOLICITUDES2') {
+      await sheetsService.getClient().spreadsheets.values.update({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: `SOLICITUDES2!A${rowInfo.rowIndex}`,
+        valueInputOption: 'RAW',
+        resource: { values: [[String(id_solicitud)]] }
+      });
+    }
+
+    console.log(`  Fila encontrada/creada: ${rowInfo.rowIndex}`);
 
     // Actualizar datos en Google Sheets usando sheetsService
     await sheetsService.updateRequestProgress({
       sheetName,
-      rowIndex: fila,
+      rowIndex: rowInfo.rowIndex,
       startColumn: columnaInicialLetra, // Usar letra de columna inicial
       endColumn: columnaFinalLetra,     // Usar letra de columna final
       values: valoresOrdenados         // Usar el array ordenado
@@ -230,39 +474,37 @@ const guardarProgreso = async (req, res) => {
 
     console.log(`✅ Progreso guardado para ${sheetName}, Solicitud ${id_solicitud}, Paso ${parsedPaso}`);
 
-    // --- Lógica para actualizar ETAPAS (sin cambios) ---
+    // --- Lógica para actualizar ETAPAS ---
     const maxPasos = { 1: 5, 2: 3, 3: 6, 4: 5 };
-    const estadoGlobal = (parsedHoja === 4 && parsedPaso >= maxPasos[4]) ? 'Completado' : 'En progreso'; // >= para el último paso
-    let estadoFormularios = {};
+    let estadoFormularios = getDefaultEstadoFormularios();
 
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:K'
     });
     const etapasRows = etapasResponse.data.values || [];
     const filaExistenteIndex = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
     const filaExistente = filaExistenteIndex !== -1 ? etapasRows[filaExistenteIndex] : null;
+    const estadoGeneralActual = filaExistente ? String(filaExistente[9] || '').trim() : '';
+    const comentariosActuales = filaExistente ? String(filaExistente[10] || '') : '';
 
-    if (filaExistente && filaExistente[8]) {
-      try {
-        estadoFormularios = JSON.parse(filaExistente[8]);
-      } catch (e) {
-        console.error('Error al parsear estado_formularios existente:', e);
-        estadoFormularios = { "1": "En progreso", "2": "En progreso", "3": "En progreso", "4": "En progreso" };
-      }
-    } else {
-      estadoFormularios = { "1": "En progreso", "2": "En progreso", "3": "En progreso", "4": "En progreso" };
+    if (filaExistente) {
+      estadoFormularios = parseEstadoFormularios(filaExistente[8]);
     }
 
     for (let i = 1; i < parsedHoja; i++) {
-      if (!estadoFormularios[i.toString()] || estadoFormularios[i.toString()] === 'En progreso') {
-        estadoFormularios[i.toString()] = "Completado";
+      if (normalizeEstadoFormulario(estadoFormularios[i.toString()]) === ESTADOS_FORMULARIO.EN_PROGRESO) {
+        estadoFormularios[i.toString()] = ESTADOS_FORMULARIO.COMPLETADO;
       }
     }
-    estadoFormularios[parsedHoja.toString()] = (parsedPaso >= maxPasos[parsedHoja]) ? 'Completado' : 'En progreso';
+    estadoFormularios[parsedHoja.toString()] = (parsedPaso >= maxPasos[parsedHoja])
+      ? ESTADOS_FORMULARIO.COMPLETADO
+      : ESTADOS_FORMULARIO.EN_PROGRESO;
 
     const estadoFormulariosJSON = JSON.stringify(estadoFormularios);
+    const estadoGeneral = calculateEstadoGeneral(estadoFormularios, estadoGeneralActual);
+    const estadoGlobal = getEstadoGeneralLegacy(estadoGeneral);
     const etapaActual = (parsedPaso >= maxPasos[parsedHoja] && parsedHoja < 4) ? parsedHoja + 1 : parsedHoja;
     const etapaActualAjustada = etapaActual > 4 ? 4 : etapaActual;
     
@@ -292,11 +534,13 @@ const guardarProgreso = async (req, res) => {
         estadoGlobal,
         nombreActividadActual,
         parsedPaso,
-        estadoFormulariosJSON
+        estadoFormulariosJSON,
+        estadoGeneral,
+        ''
       ];
       await client.spreadsheets.values.append({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I',
+        range: 'ETAPAS!A:K',
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
         resource: { values: [nuevaFila] }
@@ -308,6 +552,8 @@ const guardarProgreso = async (req, res) => {
         { range: `ETAPAS!F${filaEtapas}`, values: [[estadoGlobal]] },
         { range: `ETAPAS!H${filaEtapas}`, values: [[parsedPaso]] },
         { range: `ETAPAS!I${filaEtapas}`, values: [[estadoFormulariosJSON]] },
+        { range: `ETAPAS!J${filaEtapas}`, values: [[estadoGeneral]] },
+        { range: `ETAPAS!K${filaEtapas}`, values: [[comentariosActuales]] },
         { range: `ETAPAS!B${filaEtapas}`, values: [[id_usuario || filaExistente[1]]] }, // Actualizar si viene, si no mantener
         { range: `ETAPAS!G${filaEtapas}`, values: [[nombreActividadActual]] }, // Actualizar nombre actividad
         { range: `ETAPAS!D${filaEtapas}`, values: [[name || filaExistente[3]]] } // Actualizar si viene, si no mantener
@@ -362,12 +608,7 @@ const createNewRequest = async (req, res) => {
     });
     
     // 4. Crear entrada en ETAPAS con el mismo ID
-    const estadoFormularios = { 
-      "1": "En progreso", 
-      "2": "En progreso", 
-      "3": "En progreso", 
-      "4": "En progreso" 
-    };
+    const estadoFormularios = getDefaultEstadoFormularios();
     
     // Usar el mismo nombre de actividad para ETAPAS que fue guardado en SOLICITUDES
     const nuevaFila = [
@@ -379,12 +620,14 @@ const createNewRequest = async (req, res) => {
       'En progreso',              // estado inicial
       activityName,              // Usar la misma variable validada, no un valor por defecto
       1,                          // paso inicial
-      JSON.stringify(estadoFormularios)
+      JSON.stringify(estadoFormularios),
+      ESTADOS_GENERALES.EN_PROCESO,
+      ''
     ];
     
     await client.spreadsheets.values.append({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I',
+      range: 'ETAPAS!A:K',
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       resource: { values: [nuevaFila] }
@@ -407,11 +650,17 @@ const createNewRequest = async (req, res) => {
 const getRequests = async (req, res) => {
   try {
     const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Se requiere userId' });
+    }
+
     const client = sheetsService.getClient();
+    const { role, isAdmin } = await getUserRoleInfo(userId);
 
     const activeResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!A2:I`,
+      range: 'ETAPAS!A2:K',
     });
 
     const rows = activeResponse.data.values;
@@ -419,17 +668,25 @@ const getRequests = async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron solicitudes activas o terminadas' });
     }
 
-    const activeRequests = rows.filter(
-      (row) => row[1] === userId && row[5] === 'En progreso'
-    );
+    const canAccessRow = (row) => isAdmin || row[1] === userId;
+    const visibleRows = rows.filter((row) => canAccessRow(row));
 
-    const completedRequests = rows.filter(
-      (row) => row[1] === userId && row[5] === 'Completado'
-    );
+    const activeRequests = visibleRows.filter((row) => getEstadoGeneralFromRow(row) === ESTADOS_GENERALES.EN_PROCESO);
+    const completedRequests = visibleRows.filter((row) => getEstadoGeneralFromRow(row) !== ESTADOS_GENERALES.EN_PROCESO);
+    const adminReviewRequests = isAdmin
+      ? visibleRows.filter((row) => {
+        if (row[1] === userId) return false;
+        const estadoFormularios = parseEstadoFormularios(row[8]);
+        return getFormulariosByEstado(estadoFormularios, [ESTADOS_FORMULARIO.ENVIADO_REVISION]).length > 0;
+      })
+      : [];
 
     res.status(200).json({
+      role,
+      isAdmin,
       activeRequests,
       completedRequests,
+      adminReviewRequests
     });
   } catch (error) {
     console.error('Error al obtener las etapas:', error);
@@ -450,11 +707,12 @@ const getActiveRequests = async (req, res) => {
     }
     
     const client = sheetsService.getClient();
+    const { isAdmin } = await getUserRoleInfo(userId);
 
     // 1. Obtener datos de ETAPAS con manejo de errores mejorado
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A2:I',
+      range: 'ETAPAS!A2:K',
     }).catch(err => {
       console.error(`Error al acceder a ETAPAS: ${err.message}`);
       throw new Error(`Error al acceder a ETAPAS: ${err.message}`);
@@ -465,88 +723,35 @@ const getActiveRequests = async (req, res) => {
     // 2. Filtrar y mapear con validación robusta de datos
     const activeRequests = etapasRows
       .filter(row => {
-        // Verificar que la fila tenga suficientes columnas
+        const estadoGeneral = getEstadoGeneralFromRow(row);
         return row.length >= 9 && 
-               row[1] === userId && 
-               row[5] === 'En progreso';
+               (isAdmin || row[1] === userId) && 
+               estadoGeneral === ESTADOS_GENERALES.EN_PROCESO;
       })
       .map(row => {
         // Añadir chequeos de valores
         const etapa = row[4] ? parseInt(row[4], 10) : 1;
         const paso = row[7] ? parseInt(row[7], 10) : 1;
+        const estadoGeneral = getEstadoGeneralFromRow(row);
         
         // Parsing seguro de JSON
-        let estadoFormularios = {
-          "1": "En progreso", 
-          "2": "En progreso",
-          "3": "En progreso", 
-          "4": "En progreso"
-        };
-        
-        // Intentar parsear el estado de formularios
-        if (row[8]) {
-          try {
-            const parsed = JSON.parse(row[8]);
-            if (parsed) {
-              estadoFormularios = parsed;
-            }
-          } catch (e) {
-            console.warn(`Error al parsear estado_formularios para ID ${row[0]}: ${e.message}`);
-          }
-        }
+        const estadoFormularios = parseEstadoFormularios(row[8]);
         
         return {
           idSolicitud: row[0] || 'N/A',
+          id_usuario: row[1] || 'N/A',
+          nombre_usuario: row[3] || 'N/A',
+          fecha_solicitud: row[2] || '',
           formulario: isNaN(etapa) ? 1 : etapa,
           paso: isNaN(paso) ? 1 : paso,
           estadoFormularios,
+          estado_general: estadoGeneral,
+          comentarios: row[10] || '',
           nombre_actividad: row[6]?.trim() || 'Sin nombre'
         };
       });
 
-    // 3. Obtener datos adicionales de SOLICITUDES para validar nombre_actividad
-    const solicitudesResponse = await client.spreadsheets.values.get({
-      spreadsheetId: sheetsService.spreadsheetId,
-      range: 'SOLICITUDES!A2:C', // A=id_solicitud, B=fecha_solicitud, C=nombre_actividad
-    }).catch(err => {
-      console.error('Error al obtener SOLICITUDES:', err);
-      return { data: { values: [] } };
-    });
-
-    const solicitudesRows = solicitudesResponse.data.values || [];
-    
-    // 4. Combinar datos asegurando la correcta asignación de campos
-    const combinedRequests = activeRequests.map(request => {
-      const solicitud = solicitudesRows.find(r => r[0] === request.idSolicitud);
-      
-      if (solicitud) {
-        // Verificar si los campos están intercambiados
-        let nombre = solicitud[1];
-        let fecha = solicitud[2];
-        
-        // Si fecha contiene texto que no parece fecha y nombre parece fecha, intercambiar
-        if (
-          (typeof nombre === 'string' && nombre.includes('/')) && 
-          (typeof fecha === 'string' && !fecha.includes('/') && fecha.length > 4)
-        ) {
-          console.log(`⚠️ Detectada inversión de campos para solicitud ${request.idSolicitud}`);
-          // Intercambiar valores para corregir
-          const temp = nombre;
-          nombre = fecha;
-          fecha = temp;
-        }
-        
-        return {
-          ...request,
-          nombre_actividad: nombre || request.nombre_actividad,
-          fecha_solicitud: fecha
-        };
-      }
-      
-      return request;
-    });
-
-    res.status(200).json(combinedRequests);
+    res.status(200).json(activeRequests);
   } catch (error) {
     console.error('Error en getActiveRequests:', error);
     res.status(500).json({ 
@@ -562,12 +767,18 @@ const getActiveRequests = async (req, res) => {
 const getCompletedRequests = async (req, res) => {
   try {
     const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({ error: 'Se requiere userId' });
+    }
+
     console.log('Obteniendo solicitudes completadas para el usuario:', userId);
     const client = sheetsService.getClient();
+    const { isAdmin } = await getUserRoleInfo(userId);
 
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!A2:I`,
+      range: 'ETAPAS!A2:K',
     });
 
     const rows = etapasResponse.data.values;
@@ -575,12 +786,21 @@ const getCompletedRequests = async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron solicitudes completadas' });
     }
 
-    const completedRequests = rows.filter((row) => row[1] === userId && row[5] === 'Completado')
+    const completedRequests = rows
+      .filter((row) => {
+        const estadoGeneral = getEstadoGeneralFromRow(row);
+        return (isAdmin || row[1] === userId) && estadoGeneral !== ESTADOS_GENERALES.EN_PROCESO;
+      })
       .map((row) => ({
         idSolicitud: row[0],
+        id_usuario: row[1] || 'N/A',
+        fecha_solicitud: row[2] || '',
+        nombre_usuario: row[3] || 'N/A',
         formulario: parseInt(row[4]),
         etapa_actual: parseInt(row[4]),
         paso: parseInt(row[7]),
+        estado_general: getEstadoGeneralFromRow(row),
+        comentarios: row[10] || '',
         nombre_actividad: row[6]
       }));
 
@@ -790,7 +1010,7 @@ const actualizarPasoMaximo = async (req, res) => {
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:K'
     });
     const etapasRows = etapasResponse.data.values || [];
     
@@ -806,50 +1026,33 @@ const actualizarPasoMaximo = async (req, res) => {
     
     filaEtapas += 1; // Ajustar índice a 1-based para Google Sheets
     
-    // Leer el estado actual de formularios
-    let estadoFormularios = {};
-    if (etapasRows[filaEtapas - 1][8]) {
-      try {
-        estadoFormularios = JSON.parse(etapasRows[filaEtapas - 1][8]);
-      } catch (e) {
-        // Si no es JSON válido, inicializar estructura
-        estadoFormularios = {
-          "1": "En progreso",
-          "2": "En progreso",
-          "3": "En progreso",
-          "4": "En progreso"
-        };
-      }
-    } else {
-      // Inicializar todos los formularios en "En progreso"
-      estadoFormularios = {
-        "1": "En progreso",
-        "2": "En progreso",
-        "3": "En progreso",
-        "4": "En progreso"
-      };
-    }
+    const rowActual = etapasRows[filaEtapas - 1];
+    const estadoFormularios = parseEstadoFormularios(rowActual[8]);
     
     // Actualizar estados según etapa_actual
     // Si el formulario es menor que etapa_actual, se considera completado
     for (let i = 1; i <= 4; i++) {
       if (i < parsedEtapa) {
-        estadoFormularios[i.toString()] = "Completado";
+        estadoFormularios[i.toString()] = ESTADOS_FORMULARIO.COMPLETADO;
       }
     }
     
+    const estadoGeneral = calculateEstadoGeneral(estadoFormularios, String(rowActual[9] || '').trim());
+    const estadoLegacy = getEstadoGeneralLegacy(estadoGeneral);
+
     // Actualizar la hoja con la nueva información
     await client.spreadsheets.values.update({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!E${filaEtapas}:I${filaEtapas}`,
+      range: `ETAPAS!E${filaEtapas}:J${filaEtapas}`,
       valueInputOption: 'RAW',
       resource: {
         values: [[
           parsedEtapa,
-          etapasRows[filaEtapas - 1][5] || 'En progreso', // Mantener el estado global
-          etapasRows[filaEtapas - 1][6] || 'N/A', // Mantener el nombre_actividad
+          estadoLegacy,
+          rowActual[6] || 'N/A', // Mantener el nombre_actividad
           parsedPaso,
-          JSON.stringify(estadoFormularios)
+          JSON.stringify(estadoFormularios),
+          estadoGeneral
         ]]
       }
     });
@@ -871,7 +1074,10 @@ const actualizarPasoMaximo = async (req, res) => {
     
     res.status(200).json({
       success: true,
-      message: 'Paso máximo actualizado correctamente'
+      message: 'Paso máximo actualizado correctamente',
+      data: {
+        estado_general: estadoGeneral
+      }
     });
   } catch (error) {
     // Log más detallado para depuración
@@ -913,7 +1119,7 @@ const validarProgresion = async (req, res) => {
     // Obtener datos de ETAPAS con manejo de creación de fila
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:K'
     });
 
     let etapasRows = etapasResponse.data.values || [];
@@ -923,12 +1129,7 @@ const validarProgresion = async (req, res) => {
     if (!filaExistente) {
       console.log(`No se encontró registro para solicitud ${id_solicitud}. Creando registro inicial...`);
       const fechaActual = dateUtils.getCurrentDate();
-      const estadoFormularios = { 
-        "1": "En progreso", 
-        "2": "En progreso", 
-        "3": "En progreso", 
-        "4": "En progreso" 
-      };
+      const estadoFormularios = getDefaultEstadoFormularios();
       
       const nuevaFila = [
         id_solicitud,
@@ -939,13 +1140,15 @@ const validarProgresion = async (req, res) => {
         'En progreso',
         req.body.nombre_actividad || 'Nueva solicitud', 
         1,                             // paso inicial
-        JSON.stringify(estadoFormularios)
+        JSON.stringify(estadoFormularios),
+        ESTADOS_GENERALES.EN_PROCESO,
+        ''
       ];
 
       try {
         await client.spreadsheets.values.append({
           spreadsheetId: sheetsService.spreadsheetId,
-          range: 'ETAPAS!A:I',
+          range: 'ETAPAS!A:K',
           valueInputOption: 'RAW',
           insertDataOption: 'INSERT_ROWS',
           resource: { values: [nuevaFila] }
@@ -982,24 +1185,12 @@ const validarProgresion = async (req, res) => {
     const pasoActual = parseInt(filaExistente[7]) || 1;
     
     // Extraer estado de formularios con manejo de errores
-    let estadoFormularios;
-    try {
-      estadoFormularios = filaExistente[8] ? JSON.parse(filaExistente[8]) : {
-        "1": "En progreso", "2": "En progreso",
-        "3": "En progreso", "4": "En progreso"
-      };
-    } catch (e) {
-      console.warn(`Error al parsear JSON de estado_formularios para solicitud ${id_solicitud}:`, e);
-      estadoFormularios = {
-        "1": "En progreso", "2": "En progreso",
-        "3": "En progreso", "4": "En progreso"
-      };
-    }
+    const estadoFormularios = parseEstadoFormularios(filaExistente[8]);
     
     // Resto de la lógica de validación...
     // Simplificamos la validación para permitir navegación flexible
     const formulariosIniciados = Object.entries(estadoFormularios)
-      .filter(([_, estado]) => estado === 'Completado' || estado === 'En progreso')
+      .filter(([_, estado]) => isFormularioRealizado(estado) || normalizeEstadoFormulario(estado) === ESTADOS_FORMULARIO.EN_PROGRESO)
       .map(([num, _]) => parseInt(num));
       
     let puedeAvanzar = true;
@@ -1024,6 +1215,8 @@ const validarProgresion = async (req, res) => {
       estado: {
         etapaActual,
         pasoActual,
+        estadoGeneral: getEstadoGeneralFromRow(filaExistente),
+        comentarios: filaExistente[10] || '',
         estadoFormularios,
         etapaDestino: parseInt(etapa_destino),
         pasoDestino: parseInt(paso_destino),
@@ -1103,7 +1296,7 @@ const actualizarProgresoGlobal = async (req, res) => {
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:K'
     });
     
     const etapasRows = etapasResponse.data.values || [];
@@ -1120,62 +1313,47 @@ const actualizarProgresoGlobal = async (req, res) => {
     
     // Recuperar el estado de formularios existente o usar el proporcionado
     let nuevoEstadoFormularios = {};
+    const rowActual = etapasRows[filaEtapas - 1];
     
     if (estadoFormularios) {
       // Usar el estado proporcionado
-      nuevoEstadoFormularios = typeof estadoFormularios === 'string' 
-        ? JSON.parse(estadoFormularios) 
-        : estadoFormularios;
+      nuevoEstadoFormularios = parseEstadoFormularios(estadoFormularios);
     } else {
       // Recuperar estado existente o crear uno nuevo
-      if (etapasRows[filaEtapas - 1][8]) {
-        try {
-          nuevoEstadoFormularios = JSON.parse(etapasRows[filaEtapas - 1][8]);
-        } catch (e) {
-          nuevoEstadoFormularios = {
-            "1": "En progreso",
-            "2": "En progreso",
-            "3": "En progreso",
-            "4": "En progreso"
-          };
-        }
-      } else {
-        nuevoEstadoFormularios = {
-          "1": "En progreso",
-          "2": "En progreso",
-          "3": "En progreso",
-          "4": "En progreso"
-        };
-      }
+      nuevoEstadoFormularios = parseEstadoFormularios(rowActual[8]);
       
       // Actualizar el estado del formulario actual
       nuevoEstadoFormularios[parsedEtapa.toString()] = 
-        (parsedPaso >= maxPasos[parsedEtapa]) ? 'Completado' : 'En progreso';
+        (parsedPaso >= maxPasos[parsedEtapa]) ? ESTADOS_FORMULARIO.COMPLETADO : ESTADOS_FORMULARIO.EN_PROGRESO;
       
       // Marcar formularios anteriores como completados si se solicita
       if (actualizar_formularios_previos) {
         for (let i = 1; i < parsedEtapa; i++) {
-          nuevoEstadoFormularios[i.toString()] = 'Completado';
+          nuevoEstadoFormularios[i.toString()] = ESTADOS_FORMULARIO.COMPLETADO;
         }
       }
     }
     
-    // Determinar el estado global
-    const nuevoEstadoGlobal = estadoGlobal || 
-      ((parsedEtapa === 4 && parsedPaso >= maxPasos[4]) ? 'Completado' : 'En progreso');
+    // Determinar el estado global legacy (col F) y estado general (col J)
+    const estadoGeneralActual = String(rowActual[9] || '').trim();
+    const nuevoEstadoGeneral = Object.values(ESTADOS_GENERALES).includes(estadoGlobal)
+      ? estadoGlobal
+      : calculateEstadoGeneral(nuevoEstadoFormularios, estadoGeneralActual);
+    const nuevoEstadoGlobal = getEstadoGeneralLegacy(nuevoEstadoGeneral);
     
     // Actualizar la hoja
     await client.spreadsheets.values.update({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!E${filaEtapas}:I${filaEtapas}`,
+      range: `ETAPAS!E${filaEtapas}:J${filaEtapas}`,
       valueInputOption: 'RAW',
       resource: {
         values: [[
           parsedEtapa,
           nuevoEstadoGlobal,
-          etapasRows[filaEtapas - 1][6] || 'N/A', // Mantener nombre_actividad
+          rowActual[6] || 'N/A', // Mantener nombre_actividad
           parsedPaso,
-          JSON.stringify(nuevoEstadoFormularios)
+          JSON.stringify(nuevoEstadoFormularios),
+          nuevoEstadoGeneral
         ]]
       }
     });
@@ -1194,6 +1372,7 @@ const actualizarProgresoGlobal = async (req, res) => {
         etapa_actual: parsedEtapa,
         paso_actual: parsedPaso,
         estado_global: nuevoEstadoGlobal,
+        estado_general: nuevoEstadoGeneral,
         estado_formularios: nuevoEstadoFormularios
       }
     });
@@ -1272,6 +1451,7 @@ const guardarForm2Paso1 = async (req, res) => {
 
     // Mapear los campos al modelo correspondiente en Sheets
     const modelo = sheetsService.models.SOLICITUDES2;
+    const modelFields = modelo.fields || [];
     const updateValues = [];
     const columnas = [];
     
@@ -1280,8 +1460,9 @@ const guardarForm2Paso1 = async (req, res) => {
 
     // Mapear cada campo al modelo y añadir a la actualización
     campos.forEach(campo => {
-      if (modelo[campo] !== undefined) {
-        const colIndex = modelo[campo];
+      const fieldIndex = modelFields.indexOf(campo);
+      if (fieldIndex !== -1) {
+        const colIndex = fieldIndex + 1; // Columnas 1-based
         columnas.push(colIndex);
         updateValues.push(req.body[campo] !== undefined ? req.body[campo].toString() : '');
       }
@@ -1399,7 +1580,7 @@ const guardarForm2Paso2 = async (req, res) => {
       // Actualizar estado de formularios
       const etapasResponse = await sheetsService.client.spreadsheets.values.get({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I'
+        range: 'ETAPAS!A:K'
       });
       
       const etapasRows = etapasResponse.data.values || [];
@@ -1408,30 +1589,24 @@ const guardarForm2Paso2 = async (req, res) => {
       if (filaEtapa !== -1) {
         filaEtapa += 1;
         
-        // Obtener estado actual
-        let estadoFormularios = {
-          "1": "En progreso", "2": "En progreso",
-          "3": "En progreso", "4": "En progreso"
-        };
-        
-        try {
-          if (etapasRows[filaEtapa-1][8]) {
-            estadoFormularios = JSON.parse(etapasRows[filaEtapa-1][8]);
-          }
-        } catch (e) {
-          console.error("Error al parsear estado_formularios:", e);
-        }
+        const rowActual = etapasRows[filaEtapa - 1];
+        const estadoFormularios = parseEstadoFormularios(rowActual[8]);
         
         // Actualizar formulario 2 como "En progreso"
-        estadoFormularios["2"] = "En progreso";
+        estadoFormularios['2'] = ESTADOS_FORMULARIO.EN_PROGRESO;
+        const estadoGeneral = calculateEstadoGeneral(estadoFormularios, String(rowActual[9] || '').trim());
+        const estadoLegacy = getEstadoGeneralLegacy(estadoGeneral);
         
         // Guardar en ETAPAS
-        await sheetsService.client.spreadsheets.values.update({
+        await sheetsService.client.spreadsheets.values.batchUpdate({
           spreadsheetId: sheetsService.spreadsheetId,
-          range: `ETAPAS!I${filaEtapa}`,
-          valueInputOption: 'RAW',
           resource: {
-            values: [[JSON.stringify(estadoFormularios)]]
+            valueInputOption: 'RAW',
+            data: [
+              { range: `ETAPAS!F${filaEtapa}`, values: [[estadoLegacy]] },
+              { range: `ETAPAS!I${filaEtapa}`, values: [[JSON.stringify(estadoFormularios)]] },
+              { range: `ETAPAS!J${filaEtapa}`, values: [[estadoGeneral]] }
+            ]
           }
         });
         
@@ -1519,8 +1694,8 @@ const guardarForm2Paso3 = async (req, res) => {
 
     try {
       // 1. Encontrar o crear la fila para esta solicitud
-      const rowIndex = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
-      if (!rowIndex) {
+      const rowInfo = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
+      if (!rowInfo || !rowInfo.rowIndex) {
         throw new Error(`No se pudo encontrar o crear fila para solicitud ${id_solicitud}`);
       }
 
@@ -1542,7 +1717,7 @@ const guardarForm2Paso3 = async (req, res) => {
       // 4. Actualizar solo las columnas K a R (correspondiente al paso 3)
       await sheetsService.updateRequestProgress({
         sheetName: 'SOLICITUDES2',
-        rowIndex,
+        rowIndex: rowInfo.rowIndex,
         startColumn: 'K',    // Columna inicial para el paso 3
         endColumn: 'R',    // Columna final para el paso 3
         values: valoresAportes
@@ -1554,7 +1729,7 @@ const guardarForm2Paso3 = async (req, res) => {
       // 7. Actualizar estado de formularios en ETAPAS
       const etapasResponse = await sheetsService.getClient().spreadsheets.values.get({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I'
+        range: 'ETAPAS!A:K'
       });
       const etapasRows = etapasResponse.data.values || [];
       const filaEtapaIndex = etapasRows.findIndex(row => row[0] === id_solicitud.toString());
@@ -1569,23 +1744,26 @@ const guardarForm2Paso3 = async (req, res) => {
         const userIdToUpdate = id_usuario || currentUserId;
         const nameToUpdate = name || currentUserName;
         
-        let estadoFormularios = { 
-          "1": "Completado", 
-          "2": "Completado", 
-          "3": "En progreso",
-          "4": "En progreso" 
+        let estadoFormularios = {
+          '1': ESTADOS_FORMULARIO.COMPLETADO,
+          '2': ESTADOS_FORMULARIO.COMPLETADO,
+          '3': ESTADOS_FORMULARIO.EN_PROGRESO,
+          '4': ESTADOS_FORMULARIO.EN_PROGRESO
         };
         try {
           if (etapasRows[filaEtapaIndex][8]) {
             const parsedEstado = JSON.parse(etapasRows[filaEtapaIndex][8]);
             if (parsedEstado) {
               estadoFormularios = parsedEstado;
-              estadoFormularios["2"] = "Completado"; // Marcar formulario 2 como completado
+              estadoFormularios['2'] = ESTADOS_FORMULARIO.COMPLETADO; // Marcar formulario 2 como completado
             }
           }
         } catch (e) {
           console.error("Error al parsear estado_formularios:", e);
         }
+
+        const estadoGeneral = calculateEstadoGeneral(estadoFormularios, String(etapasRows[filaEtapaIndex][9] || '').trim());
+        const estadoLegacy = getEstadoGeneralLegacy(estadoGeneral);
         
         // Actualizar etapa, estado formulario, y PRESERVAR id_usuario y name
         await sheetsService.getClient().spreadsheets.values.batchUpdate({
@@ -1595,7 +1773,9 @@ const guardarForm2Paso3 = async (req, res) => {
               { range: `ETAPAS!B${filaEtapa}`, values: [[userIdToUpdate]] }, // Preservar id_usuario
               { range: `ETAPAS!D${filaEtapa}`, values: [[nameToUpdate]] },   // Preservar name
               { range: `ETAPAS!E${filaEtapa}`, values: [[3]] }, // Avanzar a etapa 3
-              { range: `ETAPAS!I${filaEtapa}`, values: [[JSON.stringify(estadoFormularios)]] }
+              { range: `ETAPAS!F${filaEtapa}`, values: [[estadoLegacy]] },
+              { range: `ETAPAS!I${filaEtapa}`, values: [[JSON.stringify(estadoFormularios)]] },
+              { range: `ETAPAS!J${filaEtapa}`, values: [[estadoGeneral]] }
             ],
             valueInputOption: 'RAW'
           }
@@ -1622,6 +1802,541 @@ const guardarForm2Paso3 = async (req, res) => {
   }
 };
 
+/**
+ * Usuario normal: envía a revisión uno o varios formularios ya realizados.
+ */
+const enviarSolicitudRevision = async (req, res) => {
+  try {
+    const { id_solicitud, userId, formularios } = req.body;
+
+    if (!id_solicitud || !userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud y userId'
+      });
+    }
+
+    const client = sheetsService.getClient();
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:K'
+    });
+
+    const rows = response.data.values || [];
+    const filaIndex = rows.findIndex((row) => String(row[0] || '').trim() === String(id_solicitud).trim());
+
+    if (filaIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+
+    const fila = rows[filaIndex];
+    const isAdmin = await userIsAdmin(userId);
+    if (!isAdmin && String(fila[1] || '').trim() !== String(userId).trim()) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tienes permisos para enviar esta solicitud a revisión'
+      });
+    }
+
+    const estadoFormularios = parseEstadoFormularios(fila[8]);
+    const formulariosSolicitados = sanitizeFormularios(formularios);
+    const formulariosRealizados = getFormulariosByEstado(estadoFormularios, [
+      ESTADOS_FORMULARIO.COMPLETADO,
+      ESTADOS_FORMULARIO.REQUIERE_CORRECCIONES,
+      ESTADOS_FORMULARIO.ENVIADO_REVISION,
+      ESTADOS_FORMULARIO.APROBADO
+    ]);
+
+    const formulariosAEnviar = formulariosSolicitados.length > 0
+      ? formulariosSolicitados
+      : formulariosRealizados.filter((formularioId) => {
+        const estado = normalizeEstadoFormulario(estadoFormularios[String(formularioId)]);
+        return estado !== ESTADOS_FORMULARIO.APROBADO && estado !== ESTADOS_FORMULARIO.ENVIADO_REVISION;
+      });
+
+    if (formulariosAEnviar.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'No hay formularios listos para enviar a revisión'
+      });
+    }
+
+    const invalidos = [];
+    formulariosAEnviar.forEach((formularioId) => {
+      const estadoActual = normalizeEstadoFormulario(estadoFormularios[String(formularioId)]);
+      if (estadoActual === ESTADOS_FORMULARIO.EN_PROGRESO || estadoActual === ESTADOS_FORMULARIO.APROBADO) {
+        invalidos.push(formularioId);
+        return;
+      }
+
+      setEstadoFormulario(estadoFormularios, formularioId, ESTADOS_FORMULARIO.ENVIADO_REVISION);
+    });
+
+    if (invalidos.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Los formularios ${invalidos.join(', ')} no se pueden enviar a revisión en su estado actual`
+      });
+    }
+
+    const estadoGeneral = calculateEstadoGeneral(estadoFormularios, String(fila[9] || '').trim());
+    const estadoLegacy = getEstadoGeneralLegacy(estadoGeneral);
+
+    const sheetRow = filaIndex + 2;
+    await client.spreadsheets.values.batchUpdate({
+      spreadsheetId: sheetsService.spreadsheetId,
+      resource: {
+        valueInputOption: 'RAW',
+        data: [
+          { range: `ETAPAS!F${sheetRow}`, values: [[estadoLegacy]] },
+          { range: `ETAPAS!I${sheetRow}`, values: [[JSON.stringify(estadoFormularios)]] },
+          { range: `ETAPAS!J${sheetRow}`, values: [[estadoGeneral]] }
+        ]
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Formularios enviados a revisión',
+      data: {
+        id_solicitud: String(id_solicitud),
+        formularios_enviados: formulariosAEnviar,
+        estado_formularios: estadoFormularios,
+        estado_general: estadoGeneral
+      }
+    });
+  } catch (error) {
+    console.error('Error en enviarSolicitudRevision:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al enviar la solicitud a revisión',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Admin: obtiene solicitudes de otros usuarios con al menos un formulario en revisión.
+ */
+const getSolicitudesRevisionAdmin = async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere userId'
+      });
+    }
+
+    const isAdmin = await userIsAdmin(userId);
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo un administrador puede consultar solicitudes en revisión'
+      });
+    }
+
+    const client = sheetsService.getClient();
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:K'
+    });
+
+    const rows = response.data.values || [];
+    const solicitudes = rows
+      .filter((row) => {
+        if (String(row[1] || '').trim() === String(userId).trim()) {
+          return false;
+        }
+
+        const estadoFormularios = parseEstadoFormularios(row[8]);
+        const formulariosEnRevision = getFormulariosByEstado(estadoFormularios, [ESTADOS_FORMULARIO.ENVIADO_REVISION]);
+        return formulariosEnRevision.length > 0;
+      })
+      .map((row) => buildEtapaSummary(row));
+
+    return res.status(200).json({
+      success: true,
+      data: solicitudes
+    });
+  } catch (error) {
+    console.error('Error en getSolicitudesRevisionAdmin:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al obtener solicitudes en revisión',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Admin: aprueba parcialmente formularios (maximo 3 por llamada).
+ */
+const aprobarSolicitudAdmin = async (req, res) => {
+  try {
+    const { id_solicitud, userId, formularios } = req.body;
+
+    if (!id_solicitud || !userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud y userId'
+      });
+    }
+
+    const isAdmin = await userIsAdmin(userId);
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo un administrador puede aprobar solicitudes'
+      });
+    }
+
+    const client = sheetsService.getClient();
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:K'
+    });
+
+    const rows = response.data.values || [];
+    const filaIndex = rows.findIndex((row) => String(row[0] || '').trim() === String(id_solicitud).trim());
+    if (filaIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+
+    const fila = rows[filaIndex];
+    const estadoFormularios = parseEstadoFormularios(fila[8]);
+    const formulariosAprobar = sanitizeFormularios(formularios);
+
+    if (formulariosAprobar.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Debes enviar al menos un formulario para aprobar'
+      });
+    }
+
+    if (formulariosAprobar.length > 3) {
+      return res.status(400).json({
+        success: false,
+        error: 'Solo puedes aprobar maximo 3 formularios por llamada'
+      });
+    }
+
+    const invalidos = [];
+    formulariosAprobar.forEach((formularioId) => {
+      const estadoActual = normalizeEstadoFormulario(estadoFormularios[String(formularioId)]);
+      if (estadoActual !== ESTADOS_FORMULARIO.ENVIADO_REVISION) {
+        invalidos.push(formularioId);
+        return;
+      }
+
+      setEstadoFormulario(estadoFormularios, formularioId, ESTADOS_FORMULARIO.APROBADO);
+    });
+
+    if (invalidos.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Los formularios ${invalidos.join(', ')} deben estar en estado Enviado a revisión para aprobarse`
+      });
+    }
+
+    const estadoGeneral = calculateEstadoGeneral(estadoFormularios, String(fila[9] || '').trim());
+    const estadoLegacy = getEstadoGeneralLegacy(estadoGeneral);
+    const sheetRow = filaIndex + 2;
+
+    await client.spreadsheets.values.batchUpdate({
+      spreadsheetId: sheetsService.spreadsheetId,
+      resource: {
+        valueInputOption: 'RAW',
+        data: [
+          { range: `ETAPAS!F${sheetRow}`, values: [[estadoLegacy]] },
+          { range: `ETAPAS!I${sheetRow}`, values: [[JSON.stringify(estadoFormularios)]] },
+          { range: `ETAPAS!J${sheetRow}`, values: [[estadoGeneral]] }
+        ]
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Formularios aprobados correctamente',
+      data: {
+        id_solicitud: String(id_solicitud),
+        formularios_aprobados: formulariosAprobar,
+        estado_formularios: estadoFormularios,
+        estado_general: estadoGeneral
+      }
+    });
+  } catch (error) {
+    console.error('Error en aprobarSolicitudAdmin:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al aprobar solicitud',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Admin: aprueba todos los formularios de una solicitud.
+ */
+const aprobarSolicitudCompletaAdmin = async (req, res) => {
+  try {
+    const { id_solicitud, userId } = req.body;
+
+    if (!id_solicitud || !userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud y userId'
+      });
+    }
+
+    const isAdmin = await userIsAdmin(userId);
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo un administrador puede aprobar la solicitud completa'
+      });
+    }
+
+    const client = sheetsService.getClient();
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:K'
+    });
+
+    const rows = response.data.values || [];
+    const filaIndex = rows.findIndex((row) => String(row[0] || '').trim() === String(id_solicitud).trim());
+    if (filaIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+
+    const fila = rows[filaIndex];
+    const estadoFormularios = parseEstadoFormularios(fila[8]);
+    const formulariosPendientes = ['1', '2', '3', '4']
+      .filter((key) => normalizeEstadoFormulario(estadoFormularios[key]) === ESTADOS_FORMULARIO.EN_PROGRESO)
+      .map((key) => parseInt(key, 10));
+
+    if (formulariosPendientes.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `No puedes aprobar solicitud completa: formularios en progreso ${formulariosPendientes.join(', ')}`
+      });
+    }
+
+    ['1', '2', '3', '4'].forEach((key) => {
+      estadoFormularios[key] = ESTADOS_FORMULARIO.APROBADO;
+    });
+
+    const sheetRow = filaIndex + 2;
+    await client.spreadsheets.values.batchUpdate({
+      spreadsheetId: sheetsService.spreadsheetId,
+      resource: {
+        valueInputOption: 'RAW',
+        data: [
+          { range: `ETAPAS!F${sheetRow}`, values: [['Completado']] },
+          { range: `ETAPAS!I${sheetRow}`, values: [[JSON.stringify(estadoFormularios)]] },
+          { range: `ETAPAS!J${sheetRow}`, values: [[ESTADOS_GENERALES.APROBADO]] }
+        ]
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Solicitud aprobada completamente',
+      data: {
+        id_solicitud: String(id_solicitud),
+        formularios_aprobados: [1, 2, 3, 4],
+        estado_formularios: estadoFormularios,
+        estado_general: ESTADOS_GENERALES.APROBADO
+      }
+    });
+  } catch (error) {
+    console.error('Error en aprobarSolicitudCompletaAdmin:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al aprobar solicitud completa',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Admin: envía correcciones por formulario.
+ */
+const enviarCorreccionesAdmin = async (req, res) => {
+  try {
+    const { id_solicitud, userId, formularios, comentarios, comentarios_por_formulario } = req.body;
+
+    if (!id_solicitud || !userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud y userId'
+      });
+    }
+
+    const isAdmin = await userIsAdmin(userId);
+    if (!isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Solo un administrador puede enviar correcciones'
+      });
+    }
+
+    const client = sheetsService.getClient();
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:K'
+    });
+
+    const rows = response.data.values || [];
+    const filaIndex = rows.findIndex((row) => String(row[0] || '').trim() === String(id_solicitud).trim());
+    if (filaIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+
+    const fila = rows[filaIndex];
+    const estadoFormularios = parseEstadoFormularios(fila[8]);
+    const comentariosMap = parseComentariosPorFormulario(fila[10] || '');
+    const formulariosCorreccion = sanitizeFormularios(formularios);
+
+    if (formulariosCorreccion.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Debes enviar al menos un formulario para correccion'
+      });
+    }
+
+    const invalidos = [];
+    formulariosCorreccion.forEach((formularioId) => {
+      const estadoActual = normalizeEstadoFormulario(estadoFormularios[String(formularioId)]);
+      if (estadoActual === ESTADOS_FORMULARIO.EN_PROGRESO || estadoActual === ESTADOS_FORMULARIO.APROBADO) {
+        invalidos.push(formularioId);
+        return;
+      }
+
+      setEstadoFormulario(estadoFormularios, formularioId, ESTADOS_FORMULARIO.REQUIERE_CORRECCIONES);
+
+      const comentarioFormulario = comentarios_por_formulario && typeof comentarios_por_formulario === 'object'
+        ? String(comentarios_por_formulario[String(formularioId)] || '').trim()
+        : '';
+      const comentarioGeneral = String(comentarios || '').trim();
+      const comentarioFinal = comentarioFormulario || comentarioGeneral;
+
+      if (comentarioFinal) {
+        comentariosMap[String(formularioId)] = comentarioFinal;
+      }
+    });
+
+    if (invalidos.length > 0) {
+      return res.status(400).json({
+        success: false,
+        error: `Los formularios ${invalidos.join(', ')} no se pueden enviar a correccion en su estado actual`
+      });
+    }
+
+    const estadoGeneral = calculateEstadoGeneral(estadoFormularios, String(fila[9] || '').trim());
+    const estadoLegacy = getEstadoGeneralLegacy(estadoGeneral);
+    const comentariosSerializados = stringifyComentariosPorFormulario(comentariosMap);
+
+    const sheetRow = filaIndex + 2;
+    await client.spreadsheets.values.batchUpdate({
+      spreadsheetId: sheetsService.spreadsheetId,
+      resource: {
+        valueInputOption: 'RAW',
+        data: [
+          { range: `ETAPAS!F${sheetRow}`, values: [[estadoLegacy]] },
+          { range: `ETAPAS!I${sheetRow}`, values: [[JSON.stringify(estadoFormularios)]] },
+          { range: `ETAPAS!J${sheetRow}`, values: [[estadoGeneral]] },
+          { range: `ETAPAS!K${sheetRow}`, values: [[comentariosSerializados]] }
+        ]
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Correcciones enviadas correctamente',
+      data: {
+        id_solicitud: String(id_solicitud),
+        formularios_con_correccion: formulariosCorreccion,
+        estado_formularios: estadoFormularios,
+        estado_general: estadoGeneral,
+        comentarios_por_formulario: comentariosMap
+      }
+    });
+  } catch (error) {
+    console.error('Error en enviarCorreccionesAdmin:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al enviar correcciones',
+      details: error.message
+    });
+  }
+};
+
+/**
+ * Usuario/Admin: obtiene estado general y comentarios de una solicitud.
+ */
+const getEstadoRevisionSolicitud = async (req, res) => {
+  try {
+    const { id_solicitud, userId } = req.query;
+
+    if (!id_solicitud || !userId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud y userId'
+      });
+    }
+
+    const client = sheetsService.getClient();
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:K'
+    });
+
+    const rows = response.data.values || [];
+    const fila = rows.find((row) => String(row[0] || '').trim() === String(id_solicitud).trim());
+
+    if (!fila) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+
+    const isAdmin = await userIsAdmin(userId);
+    if (!isAdmin && String(fila[1] || '').trim() !== String(userId).trim()) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tienes permisos para consultar esta solicitud'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: buildEtapaSummary(fila)
+    });
+  } catch (error) {
+    console.error('Error en getEstadoRevisionSolicitud:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al obtener estado de revisión de la solicitud',
+      details: error.message
+    });
+  }
+};
+
 module.exports = {
   guardarProgreso,
   createNewRequest,
@@ -1637,5 +2352,11 @@ module.exports = {
   getLastId,
   guardarForm2Paso1,
   guardarForm2Paso2,
-  guardarForm2Paso3
+  guardarForm2Paso3,
+  enviarSolicitudRevision,
+  getSolicitudesRevisionAdmin,
+  aprobarSolicitudAdmin,
+  aprobarSolicitudCompletaAdmin,
+  enviarCorreccionesAdmin,
+  getEstadoRevisionSolicitud
 };

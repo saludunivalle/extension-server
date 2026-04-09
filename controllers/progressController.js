@@ -22,7 +22,7 @@ const getProgress = async (req, res) => {
       const client = sheetsService.getClient();
       const etapasResponse = await client.spreadsheets.values.get({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I'
+        range: 'ETAPAS!A:K'
       });
       
       const etapasRows = etapasResponse.data.values || [];
@@ -57,7 +57,9 @@ const getProgress = async (req, res) => {
         etapa_actual: parseInt(filaActual[4]) || 1,
         paso: parseInt(filaActual[7]) || 1,
         estado: filaActual[5] || 'En progreso',
-        estado_formularios: estadoFormularios
+        estado_formularios: estadoFormularios,
+        estado_general: filaActual[9] || ((filaActual[5] || 'En progreso') === 'En progreso' ? 'En proceso' : 'Terminado'),
+        comentarios: filaActual[10] || ''
       };
     }
     
@@ -80,7 +82,7 @@ const getProgress = async (req, res) => {
 const updateProgress = async (req, res) => {
   try {
     const { id_solicitud } = req.params;
-    const { etapa_actual, paso, estado, estado_formularios } = req.body;
+    const { etapa_actual, paso, estado, estado_formularios, estado_general } = req.body;
     
     if (!id_solicitud) {
       return res.status(400).json({
@@ -97,7 +99,8 @@ const updateProgress = async (req, res) => {
       estado_formularios: estado_formularios || {
         "1": "En progreso", "2": "En progreso",
         "3": "En progreso", "4": "En progreso"
-      }
+      },
+      estado_general: estado_general || ((estado || 'En progreso') === 'En progreso' ? 'En proceso' : 'Terminado')
     };
     
     // Actualizar en la sesión
@@ -107,7 +110,7 @@ const updateProgress = async (req, res) => {
     const client = sheetsService.getClient();
     const etapasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A:I'
+      range: 'ETAPAS!A:K'
     });
     
     const etapasRows = etapasResponse.data.values || [];
@@ -125,7 +128,7 @@ const updateProgress = async (req, res) => {
     // Actualizar la hoja
     await client.spreadsheets.values.update({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!E${filaEtapas}:I${filaEtapas}`,
+      range: `ETAPAS!E${filaEtapas}:J${filaEtapas}`,
       valueInputOption: 'RAW',
       resource: {
         values: [[
@@ -133,7 +136,8 @@ const updateProgress = async (req, res) => {
           progressData.estado,
           etapasRows[filaEtapas - 1][6] || 'N/A',
           progressData.paso,
-          JSON.stringify(progressData.estado_formularios)
+          JSON.stringify(progressData.estado_formularios),
+          progressData.estado_general
         ]]
       }
     });
