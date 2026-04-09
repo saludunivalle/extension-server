@@ -153,8 +153,37 @@ La relacion `hoja -> nombre` se resuelve en `formController` con `getSheetName`.
 ## 8.3 Progreso y etapas
 
 - El avance se guarda en `ETAPAS` (etapa actual, paso, estado global, estado por formulario).
+- La hoja `ETAPAS` ahora usa:
+	- columna `J` = `estado_general` (`En proceso`, `Terminado`, `Enviado a revisión`, `Aprobado parcialmente`, `Aprobado`)
+	- columna `K` = `comentarios` (JSON de comentarios por formulario, con compatibilidad a texto plano)
+- `estado_formularios` (columna `I`) ahora maneja estados por formulario:
+	- `En progreso`
+	- `Completado`
+	- `Enviado a revisión`
+	- `Aprobado`
+	- `Requiere correcciones`
+- Reglas de `estado_general`:
+	- si los 4 formularios estan `Aprobado` -> `Aprobado`
+	- si hay al menos 1 formulario `Aprobado` y no todos estan aprobados -> `Aprobado parcialmente`
+	- si hay al menos 1 formulario en `Enviado a revisión` y ninguno aprobado -> `Enviado a revisión`
+	- si los 4 formularios estan `Completado` (sin aprobaciones aun) -> `Terminado`
+	- en otros casos -> `En proceso`
 - Tambien se usa sesion (`express-session`) para estado temporal.
 - `progressStateService` prioriza sesion y sincroniza con Google Sheets.
+
+## 8.5 Flujo nuevo usuario/admin
+
+1. Usuario crea/edita solicitud y completa formularios 1-4.
+2. El backend calcula `estado_general` en `ETAPAS!J`.
+3. El usuario puede enviar a revision solo los formularios que ya tenga realizados (no necesita tener los 4 completos).
+4. Usuario ejecuta `POST /enviarFormulariosRevision` (o `POST /enviarSolicitudRevision` por compatibilidad).
+5. Admin consulta pendientes con `GET /admin/solicitudesRevision` y revisa formularios puntuales.
+6. Admin puede:
+	- aprobar parcialmente hasta 3 formularios con `POST /admin/aprobarFormularios`.
+	- aprobar toda la solicitud con `POST /admin/aprobarSolicitudCompleta`.
+	- enviar correcciones por formulario con `POST /admin/enviarCorrecciones`.
+7. Si hay formularios aprobados y otros con correcciones/revision, el estado queda `Aprobado parcialmente`.
+8. El usuario consulta estados/comentarios con `GET /estadoRevisionSolicitud`.
 
 ## 8.4 Generacion de reportes
 
@@ -195,6 +224,14 @@ Nota: algunas rutas estan expuestas tanto en raiz (`/`) como bajo prefijos (`/fo
 - `POST /guardarForm2Paso1`
 - `POST /guardarForm2Paso2`
 - `POST /guardarForm2Paso3`
+- `POST /enviarFormulariosRevision`
+- `POST /enviarSolicitudRevision`
+- `GET /estadoRevisionSolicitud`
+- `GET /admin/solicitudesRevision`
+- `POST /admin/aprobarFormularios`
+- `POST /admin/aprobarSolicitud`
+- `POST /admin/aprobarSolicitudCompleta`
+- `POST /admin/enviarCorrecciones`
 
 Tambien disponibles bajo `/form/*`.
 
@@ -232,6 +269,260 @@ Tambien disponibles bajo `/form/*`.
 - `GET /getSolicitud`
 - `GET /other/getProgramasYOficinas`
 - `GET /other/getSolicitud`
+
+## 9.8 Contratos JSON del flujo de revision
+
+Todos estos endpoints estan disponibles en raiz (`/`) y tambien bajo `/form/*`.
+
+### 9.8.1 Usuario envia formularios a revision
+
+- Endpoint recomendado: `POST /enviarFormulariosRevision`
+- Endpoint compatible: `POST /enviarSolicitudRevision`
+
+Request:
+
+```json
+{
+	"id_solicitud": "123",
+	"userId": "google-user-id",
+	"formularios": [1, 2]
+}
+```
+
+Notas:
+
+- `formularios` es opcional. Si no se envia, backend intenta enviar todos los formularios ya realizados y no aprobados.
+
+Response OK:
+
+```json
+{
+	"success": true,
+	"message": "Formularios enviados a revisión",
+	"data": {
+		"id_solicitud": "123",
+		"formularios_enviados": [1, 2],
+		"estado_formularios": {
+			"1": "Enviado a revisión",
+			"2": "Enviado a revisión",
+			"3": "En progreso",
+			"4": "En progreso"
+		},
+		"estado_general": "Enviado a revisión"
+	}
+}
+```
+
+Errores comunes:
+
+- `400`: falta `id_solicitud`/`userId`, no hay formularios listos, o el estado actual no permite enviar alguno.
+- `403`: el usuario no es dueno de la solicitud.
+- `404`: la solicitud no existe en `ETAPAS`.
+
+### 9.8.2 Admin lista solicitudes en revision
+
+- Endpoint: `GET /admin/solicitudesRevision?userId=<adminId>`
+
+Response OK:
+
+```json
+{
+	"success": true,
+	"data": [
+		{
+			"id_solicitud": "123",
+			"id_usuario": "owner-user-id",
+			"fecha": "2026-04-08",
+			"name": "Usuario Solicitante",
+			"etapa_actual": 4,
+			"estado": "Completado",
+			"nombre_actividad": "Mi actividad",
+			"paso": 5,
+			"estado_formularios": {
+				"1": "Enviado a revisión",
+				"2": "Aprobado",
+				"3": "Requiere correcciones",
+				"4": "En progreso"
+			},
+			"estado_general": "Aprobado parcialmente",
+			"comentarios": "{\"3\":\"Ajustar presupuesto\"}",
+			"comentarios_por_formulario": {
+				"3": "Ajustar presupuesto"
+			},
+			"formularios_en_revision": [1],
+			"formularios_aprobados": [2],
+			"formularios_con_correcciones": [3]
+		}
+	]
+}
+```
+
+Error esperado:
+
+- `403`: `userId` no tiene rol `admin` en hoja `USUARIOS` (columna D).
+
+### 9.8.3 Admin aprueba formularios (parcial, maximo 3)
+
+- Endpoint recomendado: `POST /admin/aprobarFormularios`
+- Endpoint compatible: `POST /admin/aprobarSolicitud`
+
+Request:
+
+```json
+{
+	"id_solicitud": "123",
+	"userId": "admin-google-user-id",
+	"formularios": [1, 2, 3]
+}
+```
+
+Response OK:
+
+```json
+{
+	"success": true,
+	"message": "Formularios aprobados correctamente",
+	"data": {
+		"id_solicitud": "123",
+		"formularios_aprobados": [1, 2, 3],
+		"estado_formularios": {
+			"1": "Aprobado",
+			"2": "Aprobado",
+			"3": "Aprobado",
+			"4": "Enviado a revisión"
+		},
+		"estado_general": "Aprobado parcialmente"
+	}
+}
+```
+
+Error esperado:
+
+- `400`: se enviaron mas de 3 formularios o alguno no estaba en `Enviado a revisión`.
+
+### 9.8.4 Admin aprueba solicitud completa
+
+- Endpoint: `POST /admin/aprobarSolicitudCompleta`
+
+Request:
+
+```json
+{
+	"id_solicitud": "123",
+	"userId": "admin-google-user-id"
+}
+```
+
+Response OK:
+
+```json
+{
+	"success": true,
+	"message": "Solicitud aprobada completamente",
+	"data": {
+		"id_solicitud": "123",
+		"formularios_aprobados": [1, 2, 3, 4],
+		"estado_formularios": {
+			"1": "Aprobado",
+			"2": "Aprobado",
+			"3": "Aprobado",
+			"4": "Aprobado"
+		},
+		"estado_general": "Aprobado"
+	}
+}
+```
+
+Error esperado:
+
+- `400`: existe al menos un formulario en `En progreso`.
+
+### 9.8.5 Admin envia correcciones por formulario
+
+- Endpoint: `POST /admin/enviarCorrecciones`
+
+Request:
+
+```json
+{
+	"id_solicitud": "123",
+	"userId": "admin-google-user-id",
+	"formularios": [2, 3],
+	"comentarios_por_formulario": {
+		"2": "Ajustar presupuesto",
+		"3": "Completar mitigacion de riesgos"
+	},
+	"comentarios": "Observaciones generales opcionales"
+}
+```
+
+Response OK:
+
+```json
+{
+	"success": true,
+	"message": "Correcciones enviadas correctamente",
+	"data": {
+		"id_solicitud": "123",
+		"formularios_con_correccion": [2, 3],
+		"estado_formularios": {
+			"1": "Aprobado",
+			"2": "Requiere correcciones",
+			"3": "Requiere correcciones",
+			"4": "Enviado a revisión"
+		},
+		"estado_general": "Aprobado parcialmente",
+		"comentarios_por_formulario": {
+			"2": "Ajustar presupuesto",
+			"3": "Completar mitigacion de riesgos"
+		}
+	}
+}
+```
+
+### 9.8.6 Usuario/Admin consulta estado y comentarios
+
+- Endpoint: `GET /estadoRevisionSolicitud?id_solicitud=<id>&userId=<userId>`
+
+Response OK:
+
+```json
+{
+	"success": true,
+	"data": {
+		"id_solicitud": "123",
+		"id_usuario": "owner-user-id",
+		"fecha": "2026-04-08",
+		"name": "Usuario Solicitante",
+		"etapa_actual": 4,
+		"estado": "En progreso",
+		"nombre_actividad": "Mi actividad",
+		"paso": 4,
+		"estado_formularios": {
+			"1": "Aprobado",
+			"2": "Requiere correcciones",
+			"3": "Enviado a revisión",
+			"4": "En progreso"
+		},
+		"estado_general": "Aprobado parcialmente",
+		"comentarios": "{\"2\":\"Ajustar presupuesto\"}",
+		"comentarios_por_formulario": {
+			"2": "Ajustar presupuesto"
+		},
+		"formularios_en_revision": [3],
+		"formularios_aprobados": [1],
+		"formularios_con_correcciones": [2]
+	}
+}
+```
+
+Notas frontend:
+
+- Usuario normal solo puede consultar solicitudes propias.
+- Admin puede consultar cualquier solicitudes que tiene estado general Enviado a revisíon.
+- Para renderizar botones:
+	- usuario: mostrar `Enviar a revisión` por formulario cuando ese formulario este en `Completado` o `Requiere correcciones`.
+	- admin: mostrar checks por formulario para `Aprobar formularios` (max 3), boton `Aprobar solicitud completa` y boton `Enviar correcciones` por formulario.
 
 ## 10. CORS, sesiones y errores
 

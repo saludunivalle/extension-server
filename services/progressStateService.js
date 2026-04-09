@@ -37,15 +37,15 @@ class ProgressStateService {
     }
   }
 
-  async saveToSheets(solicitudId, progressData) {
+  async saveToSheets(solicitudId, progressData, retryCount = 0) {
     try {
-      const { etapa_actual, paso, estado, estado_formularios } = progressData;
+      const { etapa_actual, paso, estado, estado_formularios, estado_general } = progressData;
 
       // Obtener los datos actuales de ETAPAS
       const client = sheetsService.getClient();
       const etapasResponse = await client.spreadsheets.values.get({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I'
+        range: 'ETAPAS!A:K'
       });
       const etapasRows = etapasResponse.data.values || [];
 
@@ -62,7 +62,7 @@ class ProgressStateService {
       // Actualizar la fila en Google Sheets
       await client.spreadsheets.values.update({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: `ETAPAS!E${filaEtapas}:I${filaEtapas}`,
+        range: `ETAPAS!E${filaEtapas}:J${filaEtapas}`,
         valueInputOption: 'RAW',
         resource: {
           values: [[
@@ -70,7 +70,8 @@ class ProgressStateService {
             estado,
             etapasRows[filaEtapas - 1][6] || 'N/A', // Mantener nombre_actividad
             paso,
-            JSON.stringify(estado_formularios)
+            JSON.stringify(estado_formularios),
+            estado_general || (estado === 'En progreso' ? 'En proceso' : 'Terminado')
           ]]
         }
       });
@@ -99,7 +100,7 @@ class ProgressStateService {
       const client = sheetsService.getClient();
       const etapasResponse = await client.spreadsheets.values.get({
         spreadsheetId: sheetsService.spreadsheetId,
-        range: 'ETAPAS!A:I'
+        range: 'ETAPAS!A:K'
       });
       const etapasRows = etapasResponse.data.values || [];
 
@@ -127,13 +128,17 @@ class ProgressStateService {
         "1": "En progreso", "2": "En progreso",
         "3": "En progreso", "4": "En progreso"
       };
-      const version = parseInt(filaEtapas[9]) || 0;
+      const version = 0;
+      const estado_general = filaEtapas[9] || (estado === 'En progreso' ? 'En proceso' : 'Terminado');
+      const comentarios = filaEtapas[10] || '';
 
       return {
         etapa_actual,
         paso,
         estado,
         estado_formularios,
+        estado_general,
+        comentarios,
         version
       };
 
@@ -147,6 +152,8 @@ class ProgressStateService {
           "1": "En progreso", "2": "En progreso",
           "3": "En progreso", "4": "En progreso"
         },
+        estado_general: 'En proceso',
+        comentarios: '',
         version: 0
       };
     }
