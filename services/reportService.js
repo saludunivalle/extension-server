@@ -717,14 +717,26 @@ class ReportGenerationService {
       // Filtrar gastos de la solicitud actual
       const solicitudGastos = gastosRows.filter(row => row[1] === solicitudId);
       console.log(`✅ Encontrados ${solicitudGastos.length} gastos para la solicitud ${solicitudId}`);
+
+      const normalizeConceptId = (value) => String(value || '').trim();
+      const toDotId = (value) => normalizeConceptId(value).replace(/,/g, '.');
+      const toCommaId = (value) => normalizeConceptId(value).replace(/\./g, ',');
       
       // Crear un mapa de conceptos para obtener nombres
       const conceptosMap = new Map();
       conceptosRows.forEach(row => {
-        conceptosMap.set(row[0], {
+        const rawId = normalizeConceptId(row[0]);
+        if (!rawId) return;
+
+        const conceptData = {
           nombre: row[1] || row[0],
           es_padre: row[2] === 'true' || row[2] === 'TRUE'
-        });
+        };
+
+        // Guardar variantes para evitar fallos por formato 14.1 vs 14,1
+        conceptosMap.set(rawId, conceptData);
+        conceptosMap.set(toDotId(rawId), conceptData);
+        conceptosMap.set(toCommaId(rawId), conceptData);
       });
       
       // Procesar gastos normales y dinámicos separadamente
@@ -732,7 +744,7 @@ class ReportGenerationService {
       const gastosDinamicos = [];
       
       solicitudGastos.forEach(row => {
-        const idConcepto = row[0];
+        const idConcepto = normalizeConceptId(row[0]);
         const cantidad = parseFloat(row[2]) || 0;
         const valorUnit = parseFloat(row[3]) || 0;
         const valorTotal = parseFloat(row[4]) || 0;
@@ -752,6 +764,10 @@ class ReportGenerationService {
         
         // Obtener nombre del concepto
         const concepto = conceptosMap.get(idConcepto)?.nombre || idConcepto;
+
+        // Hijos del concepto 14 son dinámicos: 14.1, 14.2, 14,1, etc.
+        const idConceptoDot = toDotId(idConcepto);
+        const isGastoDinamico = /^14(\.\d+)+$/.test(idConceptoDot);
         
         // Crear objeto de gasto
         const gastoObj = {
@@ -764,11 +780,13 @@ class ReportGenerationService {
           valorTotal_formatted,
           descripcion: concepto
         };
-        
-        // Determinar si es un gasto dinámico (empieza con 8.)
-       
+
+        if (isGastoDinamico) {
+          gastosDinamicos.push(gastoObj);
+          console.log(`🧩 Gasto dinámico detectado para reporte: ${idConcepto}`);
+        } else {
           gastosNormales.push(gastoObj);
-        
+        }
       });
       
       console.log(`📊 Gastos procesados: ${gastosNormales.length} normales, ${gastosDinamicos.length} dinámicos`);

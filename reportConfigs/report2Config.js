@@ -13,11 +13,11 @@ const report2Config = {
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES2: {
-      range: 'SOLICITUDES2!A2:R',
+      range: 'SOLICITUDES2!A2:T',
       fields: [
         'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
-        'subtotal_gastos', 'imprevistos_3', 'total_gastos_imprevistos', 'diferencia',
-        'fondo_comun_porcentaje', 'fondo_comun', 'facultad_instituto_porcentaje', 'facultad_instituto',
+        'subtotal_gastos','imprevistos_porcentaje' ,'imprevistos_3', 'total_gastos_imprevistos', 'diferencia',
+        'fondo_comun_porcentaje', 'fondo_comun', 'archivo_fondo_comun', 'facultad_instituto_porcentaje', 'facultad_instituto',
         'escuela_departamento_porcentaje', 'escuela_departamento', 'total_recursos', 'observaciones'
       ]
     },
@@ -75,6 +75,7 @@ const report2Config = {
       
       // Campos de gastos
       subtotal_gastos: allData.subtotal_gastos || '0',
+      imprevistos_porcentaje: allData.imprevistos_porcentaje || '3',
       imprevistos_3: allData.imprevistos_3 || '0',
       total_gastos_imprevistos: allData.total_gastos_imprevistos || '0',
       diferencia: allData.diferencia || '0',
@@ -82,6 +83,7 @@ const report2Config = {
       // Campos de aportes
       fondo_comun_porcentaje: allData.fondo_comun_porcentaje || '30',
       fondo_comun: allData.fondo_comun || '0',
+      archivo_fondo_comun: allData.archivo_fondo_comun || '',
       facultad_instituto_porcentaje: allData.facultad_instituto_porcentaje || '5',
       facultad_instituto: allData.facultad_instituto || '0',
       escuela_departamento_porcentaje: allData.escuela_departamento_porcentaje || '0',
@@ -129,11 +131,13 @@ const report2Config = {
       ingresos_vr_unit: getField('ingresos_vr_unit'),
       total_ingresos: getField('total_ingresos'),
       subtotal_gastos: getField('subtotal_gastos'),
+      imprevistos_porcentaje: getField('imprevistos_porcentaje'),
       imprevistos_3: getField('imprevistos_3'),
       total_gastos_imprevistos: getField('total_gastos_imprevistos'),
       diferencia: getField('diferencia'),
       fondo_comun_porcentaje: getField('fondo_comun_porcentaje'),
       fondo_comun: getField('fondo_comun'),
+      archivo_fondo_comun: getField('archivo_fondo_comun'),
       facultad_instituto_porcentaje: getField('facultad_instituto_porcentaje'),
       facultad_instituto: getField('facultad_instituto'),
       escuela_departamento_porcentaje: getField('escuela_departamento_porcentaje'),
@@ -229,7 +233,7 @@ const report2Config = {
     // CASE 3: Ensure numeric fields contain valid numbers
     const numericFields = [
       'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos', 
-      'subtotal_gastos', 'imprevistos_3', 'total_gastos_imprevistos',
+      'subtotal_gastos', 'imprevistos_porcentaje', 'imprevistos_3', 'total_gastos_imprevistos',
       'fondo_comun_porcentaje', 'facultad_instituto_porcentaje', 
       'escuela_departamento_porcentaje'
     ];
@@ -477,18 +481,18 @@ const report2Config = {
       const dynamicRowsData = generateExpenseRows(gastosDinamicos);
       
       if (dynamicRowsData) {
-        // IMPORTANT: Ensure dynamic rows are inserted at row 43
-        console.log(`⚠️ CRÍTICO: Configurando inserción de filas dinámicas a partir de la fila 43`);
+        // IMPORTANT: Dynamic children of concept 14 must be inserted between concept 14 and SUB TOTAL
+        console.log(`⚠️ CRÍTICO: Configurando inserción de filas dinámicas a partir de la fila 44`);
         
         // Add special field for dynamic rows with complete structure
         transformedDataFinal['__FILAS_DINAMICAS__'] = {
           gastos: dynamicRowsData.gastos,
           rows: dynamicRowsData.rows,
-          insertarEn: "A42:AK42", // Template row range (usar fila 42 como template)
-          insertStartRow: 43 // FIXED VALUE: Always insert at row 43
+          insertarEn: "A43:AK43", // Template row range (usar fila 43 del concepto 14 como template)
+          insertStartRow: 44 // FIXED VALUE: Insertar entre concepto 14 y SUB TOTAL
         };
         
-        console.log(`✅ Configuración de filas dinámicas completada con insertStartRow=43`);
+        console.log(`✅ Configuración de filas dinámicas completada con insertStartRow=44`);
         console.log(`Estructura __FILAS_DINAMICAS__ generada:`, JSON.stringify(transformedDataFinal['__FILAS_DINAMICAS__'], null, 2));
       } else {
         console.log(`⚠️ No se pudo generar la estructura de filas dinámicas`);
@@ -521,9 +525,12 @@ const report2Config = {
     // Calcular imprevistos_3 como 3% del subtotal_gastos
     const subtotalGastos = parseFloat(transformedDataFinal.subtotal_gastos) || 0;
     // Usar exactamente 3% para imprevistos, independientemente del valor en imprevistos_3%
-    const imprevistos3 = subtotalGastos * 0.03;
+
+    const imprevistosPorcentaje =  parseFloat(transformedDataFinal.imprevistos_porcentaje) || 3; // Default to 3% if not provided
+
+    const imprevistos3 = subtotalGastos * (imprevistosPorcentaje / 100);
     transformedDataFinal.imprevistos_3 = imprevistos3.toString();
-    transformedDataFinal['imprevistos_3%'] = '3'; // Fijar el porcentaje en 3%
+   
     
     // Calcular total_gastos_imprevistos como suma del subtotal_gastos + imprevistos_3
     const totalGastosImprevistos = subtotalGastos + imprevistos3;
@@ -562,7 +569,7 @@ const report2Config = {
       transformedDataFinal.observaciones = '';
     }
     
-    console.log(`✅ Cálculos de gastos: subtotal=${subtotalGastos}, imprevistos(3%)=${imprevistos3}, total=${totalGastosImprevistos}, diferencia=${diferencia}`);
+    console.log(`✅ Cálculos de gastos: subtotal=${subtotalGastos}, imprevistos=(${imprevistosPorcentaje})% = ${imprevistos3}, total=${totalGastosImprevistos}, diferencia=${diferencia}`);
     console.log(`✅ Cálculos de aportes: fondo_comun(${fondoComunPorcentaje}%)=${fondoComun}, facultad(${facultadInstitutoPorcentaje}%)=${facultadInstituto}, escuela(${escuelaDepartamentoPorcentaje}%)=${escuelaDepartamento}, total=${totalRecursos}`);
     
     // IMPORTANTE: Eliminar marcadores no reemplazados
@@ -588,6 +595,10 @@ const report2Config = {
       if (!transformedDataFinal['anio']) transformedDataFinal['anio'] = fechaActual.getFullYear().toString();
     }
     
+    // Estos campos solo se usan en frontend/sheets y no deben imprimirse en reportes.
+    transformedDataFinal.imprevistos_porcentaje = '';
+    transformedDataFinal.archivo_fondo_comun = '';
+
     console.log("⭐ DATOS TRANSFORMADOS FINALES - FORM 2:", transformedDataFinal);
     return transformedDataFinal;
   },

@@ -18,7 +18,12 @@ class DriveService {
   constructor() {
     this.drive = google.drive({ version: 'v3', auth: jwtClient });
     this.templateFolderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; //Folder con plantillas
-    this.uploadsFolder = '1iDJTcUYCV7C7dTsa0Y3rfBAjFUUelu-x';
+    this.uploadsFolder = this.normalizeDriveFolderId(
+      process.env.DRIVE_UPLOADS_FOLDER_ID ||
+      process.env.UPLOADS_FOLDER_ID ||
+      '1iDJTcUYCV7C7dTsa0Y3rfBAjFUUelu-x'
+    );
+    this.uploadsFolderValidated = false;
     
     // IDs de plantillas de formularios
     this.templateIds = {
@@ -26,6 +31,73 @@ class DriveService {
       2: '1uv3WH1ivc5hPFPAwH8DVMg_tYsdQpBvB', //Plantilla de formulario 2
       3: '1Tq-V2BSoe17-xjOeWeqaq4Hm6bU1dLx0TG-bcIhnS_4', //Plantilla de formulario 3
       4: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0', //Plantilla de formulario 4
+    };
+  }
+
+  normalizeDriveFolderId(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    // Permite enviar directamente el ID o una URL de Drive.
+    const folderMatch = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+    if (folderMatch && folderMatch[1]) {
+      return folderMatch[1];
+    }
+
+    return raw;
+  }
+
+  async assertFolderAccessible(folderId) {
+    if (!folderId) {
+      throw new Error('No se definió DRIVE_UPLOADS_FOLDER_ID/UPLOADS_FOLDER_ID para subir adjuntos');
+    }
+
+    if (this.uploadsFolderValidated && folderId === this.uploadsFolder) {
+      return;
+    }
+
+    try {
+      const folderInfo = await this.drive.files.get({
+        fileId: folderId,
+        fields: 'id,name,mimeType,driveId',
+        supportsAllDrives: true
+      });
+
+      const mimeType = folderInfo.data?.mimeType;
+      if (mimeType !== 'application/vnd.google-apps.folder') {
+        throw new Error(`El ID ${folderId} existe pero no corresponde a una carpeta de Drive`);
+      }
+
+      this.uploadsFolderValidated = true;
+      console.log('✅ Carpeta de uploads verificada:', {
+        id: folderInfo.data.id,
+        name: folderInfo.data.name,
+        driveId: folderInfo.data.driveId || 'Mi unidad'
+      });
+
+      // Aviso preventivo: con JWT de Service Account, subir a "Mi unidad" suele fallar por cuota.
+      if (!folderInfo.data.driveId) {
+        console.warn(
+          '⚠️ La carpeta de uploads está en Mi unidad. Las Service Accounts sin delegación suelen fallar con storageQuotaExceeded. Se recomienda usar una carpeta en Shared Drive.'
+        );
+      }
+    } catch (error) {
+      const serviceAccountEmail = process.env.GOOGLE_CLIENT_EMAIL || 'SERVICE_ACCOUNT';
+      throw new Error(
+        `No hay acceso a la carpeta de Drive (${folderId}). Comparte esa carpeta con ${serviceAccountEmail} como Editor. Error original: ${error.message}`
+      );
+    }
+  }
+
+  getDriveApiError(error) {
+    const apiError = error?.response?.data?.error || {};
+    const apiErrorItem = Array.isArray(apiError.errors) ? apiError.errors[0] : null;
+    const rawErrorItem = Array.isArray(error?.errors) ? error.errors[0] : null;
+
+    return {
+      reason: apiErrorItem?.reason || rawErrorItem?.reason || '',
+      message: apiErrorItem?.message || apiError.message || rawErrorItem?.message || error?.message || 'Error desconocido',
+      status: error?.response?.status || error?.status || 500
     };
   }
 
@@ -37,14 +109,25 @@ class DriveService {
    */
 
   async uploadFile(file, folderDestination = this.uploadsFolder) {
+    const resolvedFolderId = this.normalizeDriveFolderId(folderDestination);
+
     try {
       if (!file) {
         throw new Error('No se proporcionó ningún archivo para subir');
       }
 
+      await this.assertFolderAccessible(resolvedFolderId);
+
+      console.log('📤 Iniciando upload a Drive:', {
+        originalname: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        folderDestination: resolvedFolderId
+      });
+
       const fileMetadata = {
         name: file.originalname,
-        parents: [folderDestination]
+        parents: [resolvedFolderId]
       };
       
       const media = {
@@ -55,10 +138,12 @@ class DriveService {
       const uploadedFile = await this.drive.files.create({
         requestBody: fileMetadata,
         media: media,
-        fields: 'id'
+        fields: 'id',
+        supportsAllDrives: true
       });
       
       const fileId = uploadedFile.data.id;
+      console.log('✅ Archivo creado en Drive con fileId:', fileId);
       
       // Hacer el archivo accesible públicamente
       await this.makeFilePublic(fileId);
@@ -66,7 +151,17 @@ class DriveService {
       return `https://drive.google.com/file/d/${fileId}/view`;
     } catch (error) {
       console.error('Error al subir archivo a Google Drive:', error);
-      throw new Error(`Error al subir archivo: ${error.message}`);
+
+      const { reason, message } = this.getDriveApiError(error);
+      const serviceAccountEmail = process.env.GOOGLE_CLIENT_EMAIL || 'SERVICE_ACCOUNT';
+
+      if (reason === 'storageQuotaExceeded') {
+        throw new Error(
+          `La Service Account no tiene cuota para subir en Mi unidad. Usa una carpeta en Shared Drive y compártela con ${serviceAccountEmail} como Content manager/Manager. Carpeta actual: ${resolvedFolderId}`
+        );
+      }
+
+      throw new Error(`Error al subir archivo: ${message}`);
     }
   }
 
@@ -79,6 +174,7 @@ class DriveService {
     try {
       await this.drive.permissions.create({
         fileId,
+        supportsAllDrives: true,
         requestBody: {
           role: 'reader',
           type: 'anyone'
@@ -121,8 +217,8 @@ class DriveService {
         console.log(`Procesando ${dynamicRowsData.gastos.length} gastos dinámicos para marcadores`);
         dynamicRowsData.gastos.forEach((gasto, index) => {
           // Manejar ambos formatos de ID (con coma o con punto)
-          let idConComa = gasto.id || `8,${index + 1}`;
-          let idConPunto = gasto.id || `8.${index + 1}`;
+          let idConComa = gasto.id || `14,${index + 1}`;
+          let idConPunto = gasto.id || `14.${index + 1}`;
           
           // Asegurar que tenemos ambas versiones
           if (idConComa.includes('.')) {
@@ -288,8 +384,8 @@ class DriveService {
           // Asegurarse que dynamicRowsData tiene el formato correcto
           const preparedData = {
             ...dynamicRowsData,
-            insertarEn: dynamicRowsData.insertarEn || "A44:AK44",
-            insertStartRow: dynamicRowsData.insertStartRow || 45
+            insertarEn: dynamicRowsData.insertarEn || "A43:AK43",
+            insertStartRow: dynamicRowsData.insertStartRow || 44
           };
           
           // Insertar filas dinámicas 
@@ -537,8 +633,8 @@ class DriveService {
 
         const dinamicConfig = {
           gastos: dynamicRowsData.gastos,
-          insertarEn: dynamicRowsData.insertarEn || "A44:AK44", // Default range
-          insertStartRow: dynamicRowsData.insertStartRow || 45 // Default start row
+          insertarEn: dynamicRowsData.insertarEn || "A43:AK43", // Default range
+          insertStartRow: dynamicRowsData.insertStartRow || 44 // Default start row
         };
 
         // --- FIX: Use the dedicated expensesGenerator ---
@@ -626,23 +722,47 @@ class DriveService {
     if (formNumber === 2 && data.gastosDinamicos && Array.isArray(data.gastosDinamicos) && data.gastosDinamicos.length > 0) {
       // Determinar la hoja principal (usualmente la primera)
       const sheet = workbook.worksheets[0];
-      // Convertir los objetos de gastos a arrays de celdas en el orden correcto
-      // (ajustar columnas según plantilla y templateMapperGastos)
-      const gastosRows = data.gastosDinamicos.map(gasto => {
-        // Columnas: A, B, C, D, E, ...
-        // A: subgrupo/índice, B: concepto, C: cantidad, D: Vr.Unit, E: Valor Total
-        const row = [];
-        row[0] = gasto.id || gasto.subgrupo || ''; // A: subgrupo/índice (ej: 8.1, 8.2)
-        row[1] = gasto.descripcion || gasto.concepto || ''; // B: concepto
-        row[2] = gasto.cantidad?.toString() || '0'; // C: cantidad
-        row[3] = gasto.valorUnit_formatted || gasto.valorUnit || '0'; // D: Vr.Unit
-        row[4] = gasto.valorTotal_formatted || gasto.valorTotal || '0'; // E: Valor Total
-        // El resto de columnas vacías hasta la longitud de la fila de ejemplo (puedes ajustar si necesitas más columnas)
-        while (row.length < 20) row.push('');
+
+      const parseConceptIdParts = (idValue) => String(idValue || '')
+        .trim()
+        .replace(/,/g, '.')
+        .split('.')
+        .map((segment) => {
+          const n = parseInt(segment, 10);
+          return Number.isNaN(n) ? 0 : n;
+        });
+
+      const sortedGastos = [...data.gastosDinamicos].sort((a, b) => {
+        const aParts = parseConceptIdParts(a.id || a.id_conceptos || a.id_concepto);
+        const bParts = parseConceptIdParts(b.id || b.id_conceptos || b.id_concepto);
+        const maxLen = Math.max(aParts.length, bParts.length);
+        for (let i = 0; i < maxLen; i++) {
+          const av = aParts[i] || 0;
+          const bv = bParts[i] || 0;
+          if (av !== bv) return av - bv;
+        }
+        return 0;
+      });
+
+      // Convertir los objetos de gastos a una fila ancha (A:AK) respetando columnas reales del template:
+      // E=id, F=descripcion, W=cantidad, Z=valor_unit, AC=valor_total
+      const gastosRows = sortedGastos.map(gasto => {
+        const row = new Array(37).fill('');
+        row[4] = String(gasto.id || gasto.id_conceptos || gasto.id_concepto || ''); // E
+        row[5] = String(gasto.descripcion || gasto.concepto || ''); // F
+        row[22] = Number.isNaN(parseFloat(gasto.cantidad)) ? 0 : parseFloat(gasto.cantidad); // W
+        row[25] = Number.isNaN(parseFloat(gasto.valorUnit ?? gasto.valor_unit)) ? 0 : parseFloat(gasto.valorUnit ?? gasto.valor_unit); // Z
+
+        const totalRaw = parseFloat(gasto.valorTotal ?? gasto.valor_total);
+        const computedTotal = (Number.isNaN(parseFloat(gasto.cantidad)) ? 0 : parseFloat(gasto.cantidad)) *
+          (Number.isNaN(parseFloat(gasto.valorUnit ?? gasto.valor_unit)) ? 0 : parseFloat(gasto.valorUnit ?? gasto.valor_unit));
+        row[28] = Number.isNaN(totalRaw) ? computedTotal : totalRaw; // AC
+
         return row;
       });
-      // Insertar después de la fila 42 (1-based)
-      excelUtils.insertDynamicRows(workbook, sheet.name, 42, gastosRows);
+
+      // Insertar después de la fila 43 (concepto padre 14), antes de SUB TOTAL
+      excelUtils.insertDynamicRows(workbook, sheet.name, 43, gastosRows);
     }
 
     // Si es el reporte 3 y hay riesgos dinámicos, insertar filas dinámicas
@@ -755,8 +875,8 @@ class DriveService {
     try {
       // Extraer la información de los gastos
       const gastos = dinamicConfig.gastos || [];
-      const insertarEn = dinamicConfig.insertarEn || "A44:AK44";
-      const insertStartRow = dinamicConfig.insertStartRow || 45;
+      const insertarEn = dinamicConfig.insertarEn || "A43:AK43";
+      const insertStartRow = dinamicConfig.insertStartRow || 44;
       
       if (!gastos || gastos.length === 0) {
         console.log('No hay gastos dinámicos para insertar');

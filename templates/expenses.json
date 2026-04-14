@@ -1,8 +1,8 @@
 {
   "templateRow": {
-    "range": "A42:AK42",
+    "range": "A43:AK43",
     "copyStyle": true,
-    "insertStartRow": 43,
+    "insertStartRow": 44,
     "description": "Template row for expense items that should be copied for dynamic rows"
   },
   "columns": {
@@ -16,7 +16,7 @@
       "span": 17
     },
     "quantity": {
-      "column": "X:Y",
+      "column": "W:Y",
       "description": "Quantity"
     },
     "unitValue": {

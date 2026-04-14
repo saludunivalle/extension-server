@@ -9,6 +9,10 @@ const otherRoutes = require('./other');
 const formController = require('../controllers/formController');
 const multer = require('multer');
 const upload = multer({ dest: '/tmp/uploads/' });
+const uploadAdjuntos = upload.fields([
+  { name: 'pieza_grafica', maxCount: 1 },
+  { name: 'archivo_fondo_comun', maxCount: 1 }
+]);
 
 // Middleware para verificar el token JWT
 const { verifyToken } = require('../middleware/auth');
@@ -31,7 +35,7 @@ router.post('/actualizacion-progreso', formController.actualizarProgresoGlobal);
 // Añadir esta línea para el endpoint que falta
 router.post('/actualizacion-progreso-global', formController.actualizarProgresoGlobal);
 router.get('/getLastId', formController.getLastId);
-router.post('/guardarProgreso', upload.single('pieza_grafica'), formController.guardarProgreso);
+router.post('/guardarProgreso', uploadAdjuntos, formController.guardarProgreso);
 router.post('/guardarGastos', formController.guardarGastos);
 router.post('/createNewRequest', formController.createNewRequest);
 router.get('/getRequests', formController.getRequests);
@@ -43,9 +47,11 @@ router.post('/admin/aprobarSolicitud', formController.aprobarSolicitudAdmin);
 router.post('/admin/aprobarSolicitudCompleta', formController.aprobarSolicitudCompletaAdmin);
 router.post('/admin/enviarCorrecciones', formController.enviarCorreccionesAdmin);
 router.get('/estadoRevisionSolicitud', formController.getEstadoRevisionSolicitud);
+router.post('/guardarComentarioPaso', formController.guardarComentarioPaso);
 router.get('/getProgramasYOficinas', require('../controllers/otherController').getProgramasYOficinas);
 router.get('/getSolicitud', require('../controllers/otherController').getSolicitud);
 router.post('/guardarForm2Paso2', formController.guardarForm2Paso2);
+router.post('/guardarForm2Paso3', uploadAdjuntos, formController.guardarForm2Paso3);
 
 // Añade esta línea como ruta pública (antes del middleware de autenticación)
 router.get('/getGastos', formController.getGastos);

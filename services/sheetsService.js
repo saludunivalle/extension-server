@@ -131,10 +131,11 @@ class SheetsService {
 
       // Si no existe, crear una nueva fila
       if (rowIndex === -1) {
-        // Si la hoja es SOLICITUDES2, crear la fila con 18 columnas (A-R)
+        // Si la hoja es SOLICITUDES2, crear la fila con todas las columnas del modelo
         let newRow;
         if (sheetName === 'SOLICITUDES2') {
-          newRow = Array(18).fill('');
+          const solicitudes2FieldsCount = this.models.SOLICITUDES2?.fields?.length || 20;
+          newRow = Array(solicitudes2FieldsCount).fill('');
           newRow[0] = idSolicitud.toString();
         } else {
           newRow = [idSolicitud.toString()];
@@ -228,7 +229,7 @@ class SheetsService {
     try {
       const hojas = definicionesHojas || {
         SOLICITUDES: {
-          range: 'SOLICITUDES!A2:AV',
+          range: 'SOLICITUDES!A2:BA',
           fields: this.fieldDefinitions.SOLICITUDES
         },
         SOLICITUDES2: {
@@ -348,7 +349,7 @@ class SheetsService {
         }
 
         const normalizedId = idConceptoStr.replace(/,/g, '.');
-        const esDinamico = normalizedId.startsWith('8.') || idConceptoStr.startsWith('8,');
+        const esDinamico = normalizedId.startsWith('14.') || idConceptoStr.startsWith('14,');
         const esPadre = typeof gasto.es_padre === 'boolean' 
           ? gasto.es_padre 
           : !(normalizedId.includes('.')); // Si no tiene punto después de normalizar, es un concepto padre
