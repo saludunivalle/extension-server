@@ -18,13 +18,13 @@ try {
 
 const templateMapperGastos = {
   // Default location where rows should be inserted
-  defaultInsertLocation: templateConfig?.templateRow?.range || 'A42:AK42',
+  defaultInsertLocation: templateConfig?.templateRow?.range || 'A43:AK43',
   
   // Column mappings (zero-based index from the start column)
   columns: {
     id: columnConfig('id', 'E', 0),               // Column E - ID of expense concept (e.g. "8.1")
     descripcion: columnConfig('description', 'F', 1),  // Column F - Description text
-    cantidad: columnConfig('quantity', 'X', 23),    // Column X - Quantity
+    cantidad: columnConfig('quantity', 'W', 22),    // Column W - Quantity
     valorUnit: columnConfig('unitValue', 'Z', 25),  // Column Z - Unit value
     valorTotal: columnConfig('totalValue', 'AC', 28) // Column AC - Total value
   },

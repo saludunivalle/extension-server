@@ -12,7 +12,7 @@ const report1Config = {
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES: {
-      range: 'SOLICITUDES!A2:AU',
+      range: 'SOLICITUDES!A2:BA',
       fields: [
         'id_solicitud', 'nombre_actividad','fecha_solicitud', 'programa', 'nombre_solicitante', 'dependencia_tipo',
         'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'entradas_diseño', 'introduccion',
@@ -20,9 +20,10 @@ const report1Config = {
         'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas', 'programCont',
         'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador', 'correo_coordinador',
         'tel_coordinador', 'pefil_competencia', 'formas_evaluacion', 'certificado_solicitado',
-        'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion', 'becas_convenio',
+        'calificacion_minima', 'razon_no_certificado', 'tipo_valor', 'valor_unitario', 'valor_inscripcion', 'becas_convenio',
         'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros',
-        'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act', 
+        'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act', 'extension_solidaria',
+        'costo_extension_solidaria', 'pieza_grafica', 'personal_externo',
          'observaciones_cambios', 
         'porcentaje_asistencia_minima', 'metodo_control_asistencia', 'escala_calificacion',
         'metodo_evaluacion', 'registro_calificacion_participante'
@@ -58,6 +59,20 @@ const report1Config = {
     
     // Inicializar objeto de resultado
     let transformedData = {...formDataCorregido};
+
+    // Campos usados solo para frontend/Sheets: no deben salir en el reporte.
+    const camposSoloFront = [
+      'otro_tipo_act',
+      'extension_solidaria',
+      'costo_extension_solidaria',
+      'pieza_grafica',
+      'personal_externo',
+      'tipo_valor',
+      'valor_unitario'
+    ];
+    camposSoloFront.forEach((campo) => {
+      transformedData[campo] = '';
+    });
     
     // Procesar fecha - PUNTO CRÍTICO DE ERROR
     try {
@@ -153,7 +168,7 @@ const entradaDiseñoData = {
       organizacion_ofi_ext: organizacion === 'ofi_ext' ? 'X' : '',
       organizacion_unidad_acad: organizacion === 'unidad_acad' ? 'X' : '',
       organizacion_otro: organizacion === 'otro_act' ? 'X' : '',
-      organizacion_otro_cual: organizacion === 'otro_act' ? formDataCorregido.otro_tipo_act || '' : '',
+      organizacion_otro_cual: '',
     };
     
     // Procesamiento de certificado
@@ -163,10 +178,10 @@ const entradaDiseñoData = {
 
     
     // Procesamiento de pieza gráfica
-    const piezaGrafica = formDataCorregido.pieza_grafica || '';
+    const piezaGrafica = '';
     const piezaGraficaData = {
-      pieza_grafica_si: piezaGrafica ? 'X' : '',
-      pieza_grafica_no: piezaGrafica ? '' : 'X',
+      pieza_grafica_si: '',
+      pieza_grafica_no: '',
       pieza_grafica: piezaGrafica,
     };
     

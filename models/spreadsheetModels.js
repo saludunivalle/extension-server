@@ -58,17 +58,17 @@ class SpreadsheetModel {
       'otro_tipo', 'modalidad', 'horas_trabajo_presencial', 'horas_sincronicas', 'total_horas',
       'programCont', 'dirigidoa', 'creditos', 'cupo_min', 'cupo_max', 'nombre_coordinador',
       'correo_coordinador', 'tel_coordinador', 'pefil_competencia', 'formas_evaluacion',
-      'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'valor_inscripcion',
+      'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'tipo_valor','valor_unitario','valor_inscripcion',
       'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
-      'becas_otros', 'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act',
+      'becas_otros', 'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act','extension_solidaria','costo_extension_solidaria','pieza_grafica','personal_externo',
       'observaciones_cambios'
     ],
     {
       1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'],
       2: ['K', 'L', 'M', 'N', 'O', 'P'],
       3: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA'],
-      4: ['AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ'],
-      5: ['AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU']
+      4: ['AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL'],
+      5: ['AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA']
     }
   );
   
@@ -83,22 +83,24 @@ class SpreadsheetModel {
       'ingresos_vr_unit', // E
       'total_ingresos', // F
       'subtotal_gastos', // G
-      'imprevistos_3', // H
-      'total_gastos_imprevistos', // I
-      'diferencia', // J
-      'fondo_comun_porcentaje', // K
-      'fondo_comun', // L
-      'facultad_instituto_porcentaje', // M
-      'facultad_instituto', // N
-      'escuela_departamento_porcentaje', // O
-      'escuela_departamento', // P
-      'total_recursos', // Q
-      'observaciones' // R
+      'imprevistos_porcentaje', // H (nuevo campo para el porcentaje de imprevistos)
+      'imprevistos_3', // I
+      'total_gastos_imprevistos', // J
+      'diferencia', // K
+      'fondo_comun_porcentaje', // L
+      'fondo_comun', // M
+      'archivo_fondo_comun', // N
+      'facultad_instituto_porcentaje', // O
+      'facultad_instituto', // P
+      'escuela_departamento_porcentaje', // Q
+      'escuela_departamento', // R
+      'total_recursos', // S
+      'observaciones' // T
     ],
     {
       1: ['B', 'C'], // Paso 1: nombre_actividad, fecha_solicitud
-      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J'], // Paso 2: Ingresos, Gastos Totales y Diferencia
-      3: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R'] // Paso 3: Aportes y Resumen
+      2: ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'], // Paso 2: Ingresos, Gastos Totales y Diferencia
+      3: ['L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'] // Paso 3: Aportes y Resumen
     }
   );
   

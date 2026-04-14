@@ -19,14 +19,14 @@ try {
   console.error('Error loading template configuration for expenses:', error);
   templateConfig = {
     templateRow: {
-      range: "A42:AK42",
+      range: "A43:AK43",
       copyStyle: true,
-      insertStartRow: 43
+      insertStartRow: 44
     },
     columns: {
       id: { column: "E" },
       description: { column: "F", span: 17 },
-      quantity: { column: "X" },
+      quantity: { column: "W:Y" },
       unitValue: { column: "Z" },
       totalValue: { column: "AC" }
     }
@@ -36,6 +36,33 @@ try {
 /**
  * Dynamic rows generator for expenses
  */
+
+function parseConceptIdParts(idValue) {
+  return String(idValue || '')
+    .trim()
+    .replace(/,/g, '.')
+    .split('.')
+    .map((segment) => {
+      const n = parseInt(segment, 10);
+      return Number.isNaN(n) ? 0 : n;
+    });
+}
+
+function compareDynamicConceptIds(a, b) {
+  const aParts = parseConceptIdParts(a?.id || a?.id_conceptos || a?.id_concepto);
+  const bParts = parseConceptIdParts(b?.id || b?.id_conceptos || b?.id_concepto);
+  const maxLen = Math.max(aParts.length, bParts.length);
+
+  for (let i = 0; i < maxLen; i++) {
+    const av = aParts[i] || 0;
+    const bv = bParts[i] || 0;
+    if (av !== bv) {
+      return av - bv;
+    }
+  }
+
+  return 0;
+}
 
 /**
  * Generates dynamic rows for expense data
@@ -88,8 +115,10 @@ const generateRows = (expenses) => {
       return normalized;
     });
     
+    const sortedExpenses = [...normalizedExpenses].sort(compareDynamicConceptIds);
+
     // Map each expense to the format expected by the template
-    const rows = normalizedExpenses.map(gasto => {
+    const rows = sortedExpenses.map(gasto => {
       const row = templateMapper.createRow(gasto);
       console.log(`Fila mapeada para ${gasto.id}: ${JSON.stringify(row)}`);
       return row;
@@ -97,14 +126,62 @@ const generateRows = (expenses) => {
     
     // Return formatted object for API
     return {
-      gastos: normalizedExpenses,
+      gastos: sortedExpenses,
       rows: rows,
       templateRow: templateMapper.defaultInsertLocation,
-      insertStartRow: 43 // Fixed default value - updated to match template
+      insertStartRow: 44 // Fixed default value - place rows before SUB TOTAL
     };
   } catch (error) {
     console.error('Error al generar filas dinámicas para gastos:', error);
     console.error('Stack trace:', error.stack);
+    return null;
+  }
+};
+
+/**
+ * Detects insertion anchor rows directly from sheet content.
+ * It locates concept 14 and inserts children before SUB TOTAL GASTOS.
+ */
+const detectExpenseInsertLocation = async (sheets, spreadsheetId) => {
+  try {
+    const valuesResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: 'A1:AK200'
+    });
+
+    const values = valuesResponse?.data?.values || [];
+    let concept14Row = null;
+    let subtotalRow = null;
+
+    for (let i = 0; i < values.length; i++) {
+      const row = values[i] || [];
+      const idCell = String(row[4] || '').trim().replace(',', '.'); // Columna E
+      const descCell = String(row[5] || '').trim(); // Columna F
+
+      if (!concept14Row) {
+        const idMatches14 = idCell === '14' || /^14(\.0+)?$/.test(idCell);
+        const descLooks14 = /^14\s/.test(descCell) || /COSTOS ADMINISTRATIVOS DEL PROYECTO/i.test(descCell);
+        if (idMatches14 || descLooks14) {
+          concept14Row = i + 1;
+        }
+      }
+
+      if (!subtotalRow && /SUB\s*TOTAL\s*GASTOS/i.test(descCell)) {
+        subtotalRow = i + 1;
+      }
+    }
+
+    if (concept14Row) {
+      return {
+        templateRange: `A${concept14Row}:AK${concept14Row}`,
+        insertStartRow: concept14Row + 1,
+        subtotalRow
+      };
+    }
+
+    return null;
+  } catch (error) {
+    console.warn('⚠️ No fue posible detectar ancla dinámica para gastos:', error.message);
     return null;
   }
 };
@@ -131,8 +208,15 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
     
     // Extraer información esencial para inserción
     const rowsData = dynamicRowsData.gastos; // Datos originales de gastos
-    const templateRange = dynamicRowsData.insertarEn || "A42:AK42"; // Rango de template
-    const insertStartRow = dynamicRowsData.insertStartRow || 43; // Fila para comenzar inserción
+    let templateRange = dynamicRowsData.insertarEn || "A43:AK43"; // Rango de template
+    let insertStartRow = dynamicRowsData.insertStartRow || 44; // Fila para comenzar inserción
+
+    const detectedLocation = await detectExpenseInsertLocation(sheets, fileId);
+    if (detectedLocation) {
+      templateRange = detectedLocation.templateRange;
+      insertStartRow = detectedLocation.insertStartRow;
+      console.log('✅ Ancla de gastos detectada automáticamente:', detectedLocation);
+    }
     
     console.log(`Insertando ${rowsData.length} filas dinámicas en la hoja ${fileId}`);
     console.log(`Configuración: templateRange=${templateRange}, insertStartRow=${insertStartRow}`);
@@ -170,7 +254,7 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
               startIndex: insertStartRow - 1, // Convertir a 0-based
               endIndex: (insertStartRow - 1) + rowsData.length
             },
-            inheritFromBefore: true
+            inheritFromBefore: false
           }
         }]
       }
@@ -230,21 +314,66 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
     
     console.log(`✅ Formato copiado correctamente`);
     
+    const getFallbackMergeRanges = () => {
+      const fallback = [];
+      const configured = [
+        templateConfig?.columns?.description?.column,
+        templateConfig?.columns?.quantity?.column,
+        templateConfig?.columns?.unitValue?.column,
+        templateConfig?.columns?.totalValue?.column
+      ].filter(Boolean);
+
+      configured.forEach((columnRange) => {
+        const [start, end] = String(columnRange).split(':').map((v) => v.trim());
+        if (start && end) {
+          fallback.push({
+            startColumnIndex: colToIndex(start),
+            endColumnIndex: colToIndex(end) + 1
+          });
+        }
+      });
+
+      if (fallback.length === 0) {
+        return [
+          { startColumnIndex: colToIndex('F'), endColumnIndex: colToIndex('V') + 1 },
+          { startColumnIndex: colToIndex('W'), endColumnIndex: colToIndex('Y') + 1 },
+          { startColumnIndex: colToIndex('Z'), endColumnIndex: colToIndex('AB') + 1 },
+          { startColumnIndex: colToIndex('AC'), endColumnIndex: colToIndex('AK') + 1 }
+        ];
+      }
+
+      return fallback;
+    };
+
     // 5. PASO 5: Recrear celdas combinadas en las nuevas filas
     // Identificar las celdas combinadas que afectan a la fila de plantilla
     const templateRowMerges = merges.filter(merge => {
       return merge.startRowIndex === templateRowNum - 1 && merge.endRowIndex === templateRowNum;
     });
-    
-    if (templateRowMerges.length > 0) {
-      console.log(`Encontradas ${templateRowMerges.length} celdas combinadas en la fila plantilla`);
-      
+    const fallbackMergeRanges = getFallbackMergeRanges();
+
+    const mergeRangesByKey = new Map();
+    templateRowMerges.forEach((merge) => {
+      const key = `${merge.startColumnIndex}-${merge.endColumnIndex}`;
+      mergeRangesByKey.set(key, {
+        startColumnIndex: merge.startColumnIndex,
+        endColumnIndex: merge.endColumnIndex
+      });
+    });
+    fallbackMergeRanges.forEach((merge) => {
+      const key = `${merge.startColumnIndex}-${merge.endColumnIndex}`;
+      if (!mergeRangesByKey.has(key)) {
+        mergeRangesByKey.set(key, merge);
+      }
+    });
+
+    const mergeRangesToApply = [...mergeRangesByKey.values()];
+    if (mergeRangesToApply.length > 0) {
+      console.log(`Aplicando ${mergeRangesToApply.length} rangos combinados en filas dinámicas`);
+
       const mergeCellRequests = [];
-      
-      // Para cada fila insertada
       for (let i = 0; i < rowsData.length; i++) {
-        // Para cada combinación de celdas en la plantilla
-        templateRowMerges.forEach(merge => {
+        mergeRangesToApply.forEach((merge) => {
           mergeCellRequests.push({
             mergeCells: {
               range: {
@@ -259,16 +388,117 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
           });
         });
       }
-      
-      if (mergeCellRequests.length > 0) {
-        await sheets.spreadsheets.batchUpdate({
-          spreadsheetId: fileId,
-          resource: {
-            requests: mergeCellRequests
+
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: fileId,
+        resource: {
+          requests: mergeCellRequests
+        }
+      });
+      console.log(`✅ Creadas ${mergeCellRequests.length} celdas combinadas en las nuevas filas`);
+    }
+
+    // 5.1 PASO EXTRA: centrar solo campos numéricos de gastos dinámicos
+    const alignmentRequests = [];
+    for (let i = 0; i < rowsData.length; i++) {
+      const rowStart = insertStartRow - 1 + i;
+      const rowEnd = rowStart + 1;
+      [
+        { start: 'W', end: 'Y' },
+        { start: 'Z', end: 'AB' },
+        { start: 'AC', end: 'AK' }
+      ].forEach((segment) => {
+        alignmentRequests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: rowStart,
+              endRowIndex: rowEnd,
+              startColumnIndex: colToIndex(segment.start),
+              endColumnIndex: colToIndex(segment.end) + 1
+            },
+            cell: {
+              userEnteredFormat: {
+                horizontalAlignment: 'CENTER',
+                verticalAlignment: 'MIDDLE'
+              }
+            },
+            fields: 'userEnteredFormat(horizontalAlignment,verticalAlignment)'
           }
         });
-        console.log(`✅ Creadas ${mergeCellRequests.length} celdas combinadas en las nuevas filas`);
-      }
+      });
+    }
+
+    if (alignmentRequests.length > 0) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: fileId,
+        resource: {
+          requests: alignmentRequests
+        }
+      });
+      console.log(`✅ Alineación centrada aplicada en ${alignmentRequests.length} rangos numéricos dinámicos`);
+    }
+
+    // 5.2 PASO EXTRA: formato numérico sin símbolo de moneda para dinámicos
+    const numberFormatRequests = [];
+    for (let i = 0; i < rowsData.length; i++) {
+      const rowStart = insertStartRow - 1 + i;
+      const rowEnd = rowStart + 1;
+
+      numberFormatRequests.push({
+        repeatCell: {
+          range: {
+            sheetId,
+            startRowIndex: rowStart,
+            endRowIndex: rowEnd,
+            startColumnIndex: colToIndex('W'),
+            endColumnIndex: colToIndex('Y') + 1
+          },
+          cell: {
+            userEnteredFormat: {
+              numberFormat: {
+                type: 'NUMBER',
+                pattern: '#,##0'
+              }
+            }
+          },
+          fields: 'userEnteredFormat.numberFormat'
+        }
+      });
+
+      ['Z', 'AC'].forEach((startCol) => {
+        const endCol = startCol === 'Z' ? 'AB' : 'AK';
+        numberFormatRequests.push({
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: rowStart,
+              endRowIndex: rowEnd,
+              startColumnIndex: colToIndex(startCol),
+              endColumnIndex: colToIndex(endCol) + 1
+            },
+            cell: {
+              userEnteredFormat: {
+                numberFormat: {
+                  type: 'NUMBER',
+                  pattern: '#,##0'
+                }
+              }
+            },
+            fields: 'userEnteredFormat.numberFormat'
+          }
+        });
+      });
+    }
+
+    if (numberFormatRequests.length > 0) {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId: fileId,
+        resource: {
+          requests: numberFormatRequests
+        }
+      });
+      console.log(`✅ Formato numérico sin moneda aplicado en ${numberFormatRequests.length} rangos dinámicos`);
     }
     
     // 6. PASO 6: Insertar datos en las celdas
@@ -279,7 +509,7 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
       const gasto = rowsData[i];
       
       // Manejar ambos formatos de ID (con coma o con punto)
-      let idValue = gasto.id || gasto.id_conceptos || `8,${i+1}`;
+      let idValue = gasto.id || gasto.id_conceptos || `14,${i+1}`;
       
       // Convertir formato a coma si viene con punto
       if (idValue.includes('.')) {
@@ -288,9 +518,15 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
       
       // Extraer valores con manejo de diferentes nombres de propiedades
       const descripcionValue = gasto.descripcion || gasto.concepto || '';
-      const cantidadValue = gasto.cantidad?.toString() || '0';
-      const valorUnitValue = gasto.valorUnit_formatted || gasto.valor_unit_formatted || `$${gasto.valorUnit || gasto.valor_unit || 0}`;
-      const valorTotalValue = gasto.valorTotal_formatted || gasto.valor_total_formatted || `$${gasto.valorTotal || gasto.valor_total || 0}`;
+      const cantidadRaw = parseFloat(gasto.cantidad);
+      const valorUnitRaw = parseFloat(gasto.valorUnit ?? gasto.valor_unit);
+      const valorTotalRaw = parseFloat(gasto.valorTotal ?? gasto.valor_total);
+
+      const cantidadValue = Number.isNaN(cantidadRaw) ? 0 : cantidadRaw;
+      const valorUnitValue = Number.isNaN(valorUnitRaw) ? 0 : valorUnitRaw;
+      const valorTotalValue = Number.isNaN(valorTotalRaw)
+        ? cantidadValue * valorUnitValue
+        : valorTotalRaw;
       
       // Log para depuración
       console.log(`Fila ${rowIndex}, ID: ${idValue}, Descripción: ${descripcionValue}, Cantidad: ${cantidadValue}, ValorUnit: ${valorUnitValue}, ValorTotal: ${valorTotalValue}`);
@@ -307,7 +543,7 @@ const insertDynamicRows = async (fileId, dynamicRowsData) => {
       });
       
       valueRequests.push({
-        range: `X${rowIndex}`, // Cantidad
+        range: `W${rowIndex}`, // Cantidad
         values: [[cantidadValue]]
       });
       

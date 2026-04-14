@@ -339,28 +339,94 @@ const loadTemplateWorkbook = async (templatePath) => {
     } else {
       // --- Copiar merges de la fila de ejemplo a las filas nuevas (solo para gastos) ---
       try {
-        const merges = Object.keys(sheet._merges || {}).map(range => {
-          const match = range.match(/^([A-Z]+)(\d+):([A-Z]+)(\d+)$/);
-          if (match) {
-            const startCol = match[1];
-            const startRow = parseInt(match[2], 10);
-            const endCol = match[3];
-            const endRow = parseInt(match[4], 10);
-            if (startRow === exampleRowNumber && endRow === exampleRowNumber) {
-              return { startCol, endCol };
-            }
+        // Forzar rangos esperados para gastos dinámicos
+        const forcedExpenseMerges = [
+          { startCol: 'F', endCol: 'V' },
+          { startCol: 'W', endCol: 'Y' },
+          { startCol: 'Z', endCol: 'AB' },
+          { startCol: 'AC', endCol: 'AK' }
+        ];
+
+        const parseMergeRange = (mergeKey, mergeValue) => {
+          const top = mergeValue?.top ?? mergeValue?.model?.top;
+          const left = mergeValue?.left ?? mergeValue?.model?.left;
+          const bottom = mergeValue?.bottom ?? mergeValue?.model?.bottom;
+          const right = mergeValue?.right ?? mergeValue?.model?.right;
+
+          if (top && left && bottom && right) {
+            return {
+              startCol: indexToColName(left - 1),
+              startRow: top,
+              endCol: indexToColName(right - 1),
+              endRow: bottom,
+              range: `${indexToColName(left - 1)}${top}:${indexToColName(right - 1)}${bottom}`
+            };
           }
-          return null;
-        }).filter(Boolean);
+
+          const match = /^\$?([A-Z]+)\$?(\d+):\$?([A-Z]+)\$?(\d+)$/.exec(mergeKey);
+          if (!match) return null;
+          return {
+            startCol: match[1],
+            startRow: parseInt(match[2], 10),
+            endCol: match[3],
+            endRow: parseInt(match[4], 10),
+            range: `${match[1]}${match[2]}:${match[3]}${match[4]}`
+          };
+        };
+
+        const clearDynamicExpenseMerges = (rowNum) => {
+          const targetStartCol = colNameToIndex('F');
+          const targetEndCol = colNameToIndex('AK');
+
+          const mergeEntries = Object.entries(sheet._merges || {});
+          const mergesToClear = mergeEntries
+            .map(([mergeKey, mergeValue]) => parseMergeRange(mergeKey, mergeValue))
+            .filter((parsed) => {
+            if (!parsed) return false;
+
+            const mergeStartCol = colNameToIndex(parsed.startCol);
+            const mergeEndCol = colNameToIndex(parsed.endCol);
+            const rowOverlaps = parsed.startRow <= rowNum && parsed.endRow >= rowNum;
+            const colOverlaps = mergeStartCol <= targetEndCol && mergeEndCol >= targetStartCol;
+
+            return rowOverlaps && colOverlaps;
+            })
+            .map((parsed) => parsed.range);
+
+          [...new Set(mergesToClear)].forEach((range) => {
+            try {
+              sheet.unMergeCells(range);
+            } catch (e) {
+              // Ignorar y continuar para no bloquear el resto de merges
+            }
+          });
+        };
 
         for (let i = 0; i < rowsData.length; i++) {
           const rowNum = insertStart + i;
-          merges.forEach(({ startCol, endCol }) => {
+          // Limpiar merges heredados en la fila y reaplicar estructura exacta de gastos
+          clearDynamicExpenseMerges(rowNum);
+
+          forcedExpenseMerges.forEach(({ startCol, endCol }) => {
             const mergeRange = `${startCol}${rowNum}:${endCol}${rowNum}`;
-            // Descombinar si ya existe (por herencia de merges)
-            try { sheet.unMergeCells(mergeRange); } catch (e) {/* ignorar */}
-            // Combinar
-            try { sheet.mergeCells(mergeRange); } catch (e) {/* ignorar */}
+            try {
+              sheet.mergeCells(mergeRange);
+            } catch (e) {
+              console.warn(`⚠️ No se pudo combinar ${mergeRange}: ${e.message}`);
+            }
+          });
+
+          // Centrar campos numéricos para dinámicos: cantidad, valor unitario, valor total
+          ['W', 'Z', 'AC'].forEach((startCol) => {
+            const cell = sheet.getCell(`${startCol}${rowNum}`);
+            cell.alignment = {
+              ...(cell.alignment || {}),
+              horizontal: 'center',
+              vertical: 'middle'
+            };
+
+            // Formato numérico sin símbolo de moneda para filas dinámicas de gastos
+            cell.numFmt = '#,##0';
           });
         }
       } catch (error) {

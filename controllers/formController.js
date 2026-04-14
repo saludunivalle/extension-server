@@ -19,6 +19,30 @@ const ESTADOS_FORMULARIO = Object.freeze({
   REQUIERE_CORRECCIONES: 'Requiere correcciones'
 });
 
+function getUploadedFile(req, fieldName) {
+  if (req.files && Array.isArray(req.files[fieldName]) && req.files[fieldName].length > 0) {
+    return req.files[fieldName][0];
+  }
+
+  if (req.file && req.file.fieldname === fieldName) {
+    return req.file;
+  }
+
+  return null;
+}
+
+function isValidImage(file) {
+  return Boolean(file && typeof file.mimetype === 'string' && file.mimetype.startsWith('image/'));
+}
+
+function isValidImageOrPdf(file) {
+  return Boolean(
+    file &&
+    typeof file.mimetype === 'string' &&
+    (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf')
+  );
+}
+
 // Sistema de caché para ETAPAS
 const etapasCache = {
   datos: null,
@@ -278,8 +302,25 @@ function buildEtapaSummary(row) {
 */
 
 const guardarProgreso = async (req, res) => {
+  let requestData = req.body || {};
+  if (typeof requestData.formData === 'string') {
+    try {
+      requestData = {
+        ...requestData,
+        ...JSON.parse(requestData.formData)
+      };
+    } catch (error) {
+      console.warn('No se pudo parsear formData en guardarProgreso, se usarán campos directos de req.body');
+    }
+  } else if (requestData.formData && typeof requestData.formData === 'object') {
+    requestData = {
+      ...requestData,
+      ...requestData.formData
+    };
+  }
+
   // Extraer nombre_actividad explícitamente para asegurar que se capture correctamente
-  const { id_solicitud, paso, hoja, id_usuario, name, nombre_actividad, ...restFormData } = req.body;
+  const { id_solicitud, paso, hoja, id_usuario, name, nombre_actividad, ...restFormData } = requestData;
   // Reconstruir formData incluyendo nombre_actividad explícitamente
   const formData = { nombre_actividad, ...restFormData };
 
@@ -303,12 +344,36 @@ const guardarProgreso = async (req, res) => {
       '';
   }
 
+  // Compatibilidad de nombres para imprevistos_porcentaje (typo histórico: imprevistos_procentaje)
+  if (
+    formData.imprevistos_porcentaje === undefined ||
+    formData.imprevistos_porcentaje === null ||
+    formData.imprevistos_porcentaje === ''
+  ) {
+    formData.imprevistos_porcentaje =
+      formData.imprevistos_procentaje ||
+      formData.imprevistosPorcentaje ||
+      '';
+  }
 
-  const piezaGrafica = req.file;
+
+  const piezaGrafica = getUploadedFile(req, 'pieza_grafica');
+  const archivoFondoComun = getUploadedFile(req, 'archivo_fondo_comun');
 
   console.log('Recibiendo datos para guardar progreso:', { id_solicitud, paso, hoja, id_usuario, name });
   console.log('Datos del formulario:', formData);
-  console.log('Archivo adjunto:', req.file);
+  console.log('Archivo adjunto (legacy req.file):', req.file);
+  console.log('Archivos recibidos (req.files):', req.files ? Object.keys(req.files) : []);
+  console.log('pieza_grafica detectada:', piezaGrafica ? {
+    originalname: piezaGrafica.originalname,
+    mimetype: piezaGrafica.mimetype,
+    size: piezaGrafica.size
+  } : null);
+  console.log('archivo_fondo_comun detectado:', archivoFondoComun ? {
+    originalname: archivoFondoComun.originalname,
+    mimetype: archivoFondoComun.mimetype,
+    size: archivoFondoComun.size
+  } : null);
 
   const parsedPaso = parseInt(paso, 10);
   const parsedHoja = parseInt(hoja, 10);
@@ -379,15 +444,55 @@ const guardarProgreso = async (req, res) => {
     let piezaGraficaUrl = '';
     if (piezaGrafica) {
       try {
+        console.log('🖼️ Procesando pieza_grafica para subida a Drive...');
+        if (!isValidImage(piezaGrafica)) {
+          return res.status(400).json({
+            success: false,
+            error: 'El campo pieza_grafica solo acepta imágenes'
+          });
+        }
+
         piezaGraficaUrl = await driveService.uploadFile(piezaGrafica);
+        console.log('✅ pieza_grafica subida a Drive:', piezaGraficaUrl);
         // Si la columna de pieza gráfica está dentro del rango de este paso, actualizar el valor
         if (piezaGraficaColIndex >= columnaInicialIndex && piezaGraficaColIndex <= columnaFinalIndex) {
           valoresOrdenados[piezaGraficaColIndex - columnaInicialIndex] = piezaGraficaUrl;
+          console.log(`✅ URL pieza_grafica escrita en índice relativo ${piezaGraficaColIndex - columnaInicialIndex}`);
+        } else {
+          console.log(`ℹ️ pieza_grafica subida pero no escrita en este paso. Columna absoluta=${piezaGraficaColIndex}, rango actual=${columnaInicialIndex}-${columnaFinalIndex}`);
         }
       } catch (error) {
         console.error('Error al subir la pieza gráfica a Google Drive:', error);
         // Considerar si devolver un error o continuar sin la URL
         // return res.status(500).json({ error: 'Error al subir la pieza gráfica' });
+      }
+    } else if (sheetName === 'SOLICITUDES') {
+      console.log('ℹ️ No se recibió archivo en el campo pieza_grafica para esta solicitud/paso.');
+    }
+
+    // Manejar archivo de fondo común (imagen/pdf) y guardar URL en archivo_fondo_comun
+    const archivoFondoComunFieldName = 'archivo_fondo_comun';
+    const archivoFondoComunColIndex = allFields.indexOf(archivoFondoComunFieldName);
+    if (archivoFondoComun) {
+      try {
+        console.log('📎 Procesando archivo_fondo_comun para subida a Drive...');
+        if (!isValidImageOrPdf(archivoFondoComun)) {
+          return res.status(400).json({
+            success: false,
+            error: 'El campo archivo_fondo_comun solo acepta imágenes o PDF'
+          });
+        }
+
+        const archivoFondoComunUrl = await driveService.uploadFile(archivoFondoComun);
+        console.log('✅ archivo_fondo_comun subido a Drive:', archivoFondoComunUrl);
+        if (archivoFondoComunColIndex >= columnaInicialIndex && archivoFondoComunColIndex <= columnaFinalIndex) {
+          valoresOrdenados[archivoFondoComunColIndex - columnaInicialIndex] = archivoFondoComunUrl;
+          console.log(`✅ URL archivo_fondo_comun escrita en índice relativo ${archivoFondoComunColIndex - columnaInicialIndex}`);
+        } else {
+          console.log(`ℹ️ archivo_fondo_comun subido pero no escrito en este paso. Columna absoluta=${archivoFondoComunColIndex}, rango actual=${columnaInicialIndex}-${columnaFinalIndex}`);
+        }
+      } catch (error) {
+        console.error('Error al subir archivo_fondo_comun a Google Drive:', error);
       }
     }
 
@@ -1514,6 +1619,30 @@ const guardarForm2Paso1 = async (req, res) => {
 const guardarForm2Paso2 = async (req, res) => {
   try {
     const { id_solicitud, formData } = req.body;
+    let payloadData = formData;
+    if (typeof payloadData === 'string') {
+      try {
+        payloadData = JSON.parse(payloadData);
+      } catch (error) {
+        payloadData = {};
+      }
+    }
+
+    if (!payloadData || typeof payloadData !== 'object') {
+      payloadData = req.body || {};
+    }
+
+    // Compatibilidad de nombres para imprevistos_porcentaje
+    if (
+      payloadData.imprevistos_porcentaje === undefined ||
+      payloadData.imprevistos_porcentaje === null ||
+      payloadData.imprevistos_porcentaje === ''
+    ) {
+      payloadData.imprevistos_porcentaje =
+        payloadData.imprevistos_procentaje ||
+        payloadData.imprevistosPorcentaje ||
+        '';
+    }
     
     if (!id_solicitud) {
       return res.status(400).json({
@@ -1522,7 +1651,7 @@ const guardarForm2Paso2 = async (req, res) => {
       });
     }
 
-    console.log('📝 DATOS RECIBIDOS:', formData);
+    console.log('📝 DATOS RECIBIDOS:', payloadData);
     
     // 1. Buscar la fila de la solicitud
     const resultado = await sheetsService.findOrCreateRequestRow('SOLICITUDES2', id_solicitud);
@@ -1532,22 +1661,16 @@ const guardarForm2Paso2 = async (req, res) => {
       });
     }
     
-    // 2. Preparar datos para guardar - CORREGIDO EL MAPEO
+    // 2. Preparar datos del paso 2 (columnas D-K)
     const campos = [
-      'nombre_actividad',
-      'fecha_solicitud',
       'ingresos_cantidad',
       'ingresos_vr_unit',
       'total_ingresos',
       'subtotal_gastos',
-      'imprevistos_3', // IMPORTANTE: Este valor se guardará en la columna 'imprevistos_3%'
+      'imprevistos_porcentaje',
+      'imprevistos_3',
       'total_gastos_imprevistos',
-      'fondo_comun_porcentaje',
-      'fondo_comun',
-      'facultad_instituto',
-      'escuela_departamento_porcentaje',
-      'escuela_departamento',
-      'total_recursos'
+      'diferencia'
     ];
     
     // 3. Crear array de valores
@@ -1556,19 +1679,19 @@ const guardarForm2Paso2 = async (req, res) => {
     // Mapear campos del formData a sus valores
     campos.forEach(campo => {
       // Para el caso especial de imprevistos_3
-      if (campo === 'imprevistos_3' && formData['imprevistos_3%'] !== undefined) {
-        valores.push(formData['imprevistos_3%'] || '');
+      if (campo === 'imprevistos_3' && payloadData['imprevistos_3%'] !== undefined) {
+        valores.push(payloadData['imprevistos_3%'] || '');
       }
       // Para el resto de campos
       else {
-        valores.push(formData[campo] || '');
+        valores.push(payloadData[campo] || '');
       }
     });
 
-    // 4. Actualizar en Google Sheets
+    // 4. Actualizar en Google Sheets (D-K)
     await sheetsService.client.spreadsheets.values.update({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `SOLICITUDES2!B${resultado.rowIndex}:M${resultado.rowIndex}`,
+      range: `SOLICITUDES2!D${resultado.rowIndex}:K${resultado.rowIndex}`,
       valueInputOption: 'USER_ENTERED',
       resource: {
         values: [valores]
@@ -1646,12 +1769,27 @@ const guardarForm2Paso2 = async (req, res) => {
  */
 const guardarForm2Paso3 = async (req, res) => {
   try {
+    const archivoFondoComunFile = getUploadedFile(req, 'archivo_fondo_comun');
+
+    let requestData = req.body || {};
+    if (typeof requestData.formData === 'string') {
+      try {
+        requestData = {
+          ...requestData,
+          ...JSON.parse(requestData.formData)
+        };
+      } catch (error) {
+        console.warn('No se pudo parsear formData en guardarForm2Paso3, se usarán campos directos de req.body');
+      }
+    }
+
     const { 
       id_solicitud, 
       id_usuario, // Capturar explícitamente id_usuario del request
       name,       // Capturar explícitamente el nombre del request
       fondo_comun_porcentaje, 
       fondo_comun,
+      archivo_fondo_comun,
       facultad_instituto_porcentaje, // Campo editable
       facultad_instituto, 
       escuela_departamento_porcentaje, 
@@ -1661,12 +1799,19 @@ const guardarForm2Paso3 = async (req, res) => {
       ingresos_vr_unit,
       total_ingresos,
       subtotal_gastos,
+      imprevistos_porcentaje,
       imprevistos_3,
       total_gastos_imprevistos,
-      observaciones // Campo de observaciones
-    } = req.body;
+      observaciones, // Campo de observaciones
+      diferencia
+    } = requestData;
 
-    console.log('Datos recibidos en guardarForm2Paso3:', req.body);
+    const imprevistosPorcentajeInput =
+      requestData.imprevistos_porcentaje ??
+      requestData.imprevistos_procentaje ??
+      requestData.imprevistosPorcentaje;
+
+    console.log('Datos recibidos en guardarForm2Paso3:', requestData);
 
     if (!id_solicitud) {
       return res.status(400).json({ error: 'ID de solicitud no proporcionado' });
@@ -1688,6 +1833,37 @@ const guardarForm2Paso3 = async (req, res) => {
     const facultadInstitutoValor = parseFloat(facultad_instituto) || (totalIngresos * facultadInstitutoPorcentaje / 100); // Usar porcentaje editable
     const escuelaDepartamentoValor = parseFloat(escuela_departamento) || (totalIngresos * escuelaDepartamentoPorcentaje / 100);
     const totalRecursosValor = parseFloat(total_recursos) || (fondoComun + facultadInstitutoValor + escuelaDepartamentoValor);
+    const diferenciaValor = parseFloat(diferencia) || (totalIngresos - (parseFloat(total_gastos_imprevistos) || 0));
+
+    const subtotalGastosValor = parseFloat(subtotal_gastos) || 0;
+    let imprevistosPorcentajeValor = parseFloat(imprevistosPorcentajeInput);
+    if (isNaN(imprevistosPorcentajeValor)) {
+      const imprevistos3Raw = parseFloat(imprevistos_3);
+      imprevistosPorcentajeValor = subtotalGastosValor > 0 && !isNaN(imprevistos3Raw)
+        ? (imprevistos3Raw * 100) / subtotalGastosValor
+        : 3;
+    }
+
+    let imprevistos3Valor = parseFloat(imprevistos_3);
+    if (isNaN(imprevistos3Valor)) {
+      imprevistos3Valor = subtotalGastosValor * (imprevistosPorcentajeValor / 100);
+    }
+
+    let totalGastosImprevistosValor = parseFloat(total_gastos_imprevistos);
+    if (isNaN(totalGastosImprevistosValor)) {
+      totalGastosImprevistosValor = subtotalGastosValor + imprevistos3Valor;
+    }
+
+    let archivoFondoComunUrl = archivo_fondo_comun || '';
+    if (archivoFondoComunFile) {
+      if (!isValidImageOrPdf(archivoFondoComunFile)) {
+        return res.status(400).json({
+          success: false,
+          error: 'El campo archivo_fondo_comun solo acepta imágenes o PDF'
+        });
+      }
+      archivoFondoComunUrl = await driveService.uploadFile(archivoFondoComunFile);
+    }
     
     // Asegurar que observaciones tenga valor
     const observacionesValor = observaciones || '';
@@ -1700,27 +1876,55 @@ const guardarForm2Paso3 = async (req, res) => {
       }
 
       // 2. Actualizar la hoja SOLICITUDES2 con los valores calculados
-      // Solo actualizar las columnas K-R que corresponden al paso 3
+      // Actualizar las columnas L-T que corresponden al paso 3
       const valoresAportes = [
-        fondoComunPorcentaje.toString(), // Columna K: fondo_comun_porcentaje
-        fondoComun.toString(), // Columna L: fondo_comun
-        facultadInstitutoPorcentaje.toString(), // Columna M: facultad_instituto_porcentaje (editable)
-        facultadInstitutoValor.toString(), // Columna N: facultad_instituto
-        escuelaDepartamentoPorcentaje.toString(), // Columna O: escuela_departamento_porcentaje
-        escuelaDepartamentoValor.toString(), // Columna P: escuela_departamento
-        totalRecursosValor.toString(), // Columna Q: total_recursos
-        observacionesValor // Columna R: observaciones
+        fondoComunPorcentaje.toString(), // Columna L: fondo_comun_porcentaje
+        fondoComun.toString(), // Columna M: fondo_comun
+        archivoFondoComunUrl, // Columna N: archivo_fondo_comun
+        facultadInstitutoPorcentaje.toString(), // Columna O: facultad_instituto_porcentaje (editable)
+        facultadInstitutoValor.toString(), // Columna P: facultad_instituto
+        escuelaDepartamentoPorcentaje.toString(), // Columna Q: escuela_departamento_porcentaje
+        escuelaDepartamentoValor.toString(), // Columna R: escuela_departamento
+        totalRecursosValor.toString(), // Columna S: total_recursos
+        observacionesValor // Columna T: observaciones
       ];
 
       console.log(`Actualizando datos de aportes en SOLICITUDES2 para la solicitud ${id_solicitud}: `, valoresAportes);
 
-      // 4. Actualizar solo las columnas K a R (correspondiente al paso 3)
+      // 4. Actualizar solo las columnas L a T (correspondiente al paso 3)
       await sheetsService.updateRequestProgress({
         sheetName: 'SOLICITUDES2',
         rowIndex: rowInfo.rowIndex,
-        startColumn: 'K',    // Columna inicial para el paso 3
-        endColumn: 'R',    // Columna final para el paso 3
+        startColumn: 'L',    // Columna inicial para el paso 3
+        endColumn: 'T',      // Columna final para el paso 3
         values: valoresAportes
+      });
+
+      // Asegurar persistencia de campos de imprevistos (H:J) aunque el front salte/mezcle rutas.
+      await sheetsService.updateRequestProgress({
+        sheetName: 'SOLICITUDES2',
+        rowIndex: rowInfo.rowIndex,
+        startColumn: 'H',
+        endColumn: 'J',
+        values: [
+          imprevistosPorcentajeValor.toString(),
+          imprevistos3Valor.toString(),
+          totalGastosImprevistosValor.toString()
+        ]
+      });
+      console.log('✅ Campos de imprevistos (H:J) actualizados en paso 3:', {
+        imprevistos_porcentaje: imprevistosPorcentajeValor,
+        imprevistos_3: imprevistos3Valor,
+        total_gastos_imprevistos: totalGastosImprevistosValor
+      });
+
+      // Preservar diferencia (columna K) cuando venga en el request
+      await sheetsService.updateRequestProgress({
+        sheetName: 'SOLICITUDES2',
+        rowIndex: rowInfo.rowIndex,
+        startColumn: 'K',
+        endColumn: 'K',
+        values: [diferenciaValor.toString()]
       });
       
       // 5. Actualizar el progreso global de la solicitud
@@ -1974,7 +2178,7 @@ const getSolicitudesRevisionAdmin = async (req, res) => {
 };
 
 /**
- * Admin: aprueba parcialmente formularios (maximo 3 por llamada).
+ * Admin: aprueba formularios (1 a 4 por llamada).
  */
 const aprobarSolicitudAdmin = async (req, res) => {
   try {
@@ -2021,10 +2225,10 @@ const aprobarSolicitudAdmin = async (req, res) => {
       });
     }
 
-    if (formulariosAprobar.length > 3) {
+    if (formulariosAprobar.length > 4) {
       return res.status(400).json({
         success: false,
-        error: 'Solo puedes aprobar maximo 3 formularios por llamada'
+        error: 'Solo puedes aprobar maximo 4 formularios por llamada'
       });
     }
 
@@ -2337,6 +2541,121 @@ const getEstadoRevisionSolicitud = async (req, res) => {
   }
 };
 
+/**
+ * Usuario/Admin: guarda comentario por formulario y paso en ETAPAS.K
+ * Estructura en comentarios: { pasos: { "2": { "3": "comentario" } }, ... }
+ */
+const guardarComentarioPaso = async (req, res) => {
+  try {
+    const { id_solicitud, userId, formulario, paso, comentario } = req.body;
+
+    if (!id_solicitud || !userId || formulario === undefined || paso === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requieren id_solicitud, userId, formulario y paso'
+      });
+    }
+
+    const formularioInt = parseInt(formulario, 10);
+    const pasoInt = parseInt(paso, 10);
+
+    if (!Number.isInteger(formularioInt) || formularioInt < 1 || formularioInt > 4) {
+      return res.status(400).json({
+        success: false,
+        error: 'formulario debe estar entre 1 y 4'
+      });
+    }
+
+    if (!Number.isInteger(pasoInt) || pasoInt < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'paso debe ser un entero mayor o igual a 1'
+      });
+    }
+
+    const client = sheetsService.getClient();
+    const response = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'ETAPAS!A2:K'
+    });
+
+    const rows = response.data.values || [];
+    const filaIndex = rows.findIndex((row) => String(row[0] || '').trim() === String(id_solicitud).trim());
+
+    if (filaIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        error: `No se encontró la solicitud con ID ${id_solicitud}`
+      });
+    }
+
+    const fila = rows[filaIndex];
+    const isAdmin = await userIsAdmin(userId);
+    const isOwner = String(fila[1] || '').trim() === String(userId).trim();
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({
+        success: false,
+        error: 'No tienes permisos para comentar esta solicitud'
+      });
+    }
+
+    const comentariosMap = parseComentariosPorFormulario(fila[10] || '');
+    if (!comentariosMap.pasos || typeof comentariosMap.pasos !== 'object' || Array.isArray(comentariosMap.pasos)) {
+      comentariosMap.pasos = {};
+    }
+
+    const formKey = String(formularioInt);
+    const pasoKey = String(pasoInt);
+    if (!comentariosMap.pasos[formKey] || typeof comentariosMap.pasos[formKey] !== 'object' || Array.isArray(comentariosMap.pasos[formKey])) {
+      comentariosMap.pasos[formKey] = {};
+    }
+
+    const comentarioFinal = String(comentario || '').trim();
+    if (comentarioFinal) {
+      comentariosMap.pasos[formKey][pasoKey] = comentarioFinal;
+    } else {
+      delete comentariosMap.pasos[formKey][pasoKey];
+      if (Object.keys(comentariosMap.pasos[formKey]).length === 0) {
+        delete comentariosMap.pasos[formKey];
+      }
+      if (Object.keys(comentariosMap.pasos).length === 0) {
+        delete comentariosMap.pasos;
+      }
+    }
+
+    const comentariosSerializados = stringifyComentariosPorFormulario(comentariosMap);
+    const sheetRow = filaIndex + 2;
+
+    await client.spreadsheets.values.update({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: `ETAPAS!K${sheetRow}`,
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[comentariosSerializados]]
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Comentario por paso guardado correctamente',
+      data: {
+        id_solicitud: String(id_solicitud),
+        formulario: formularioInt,
+        paso: pasoInt,
+        comentario: comentarioFinal,
+        comentarios_por_formulario: comentariosMap
+      }
+    });
+  } catch (error) {
+    console.error('Error en guardarComentarioPaso:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al guardar comentario por paso',
+      details: error.message
+    });
+  }
+};
+
 module.exports = {
   guardarProgreso,
   createNewRequest,
@@ -2358,5 +2677,6 @@ module.exports = {
   aprobarSolicitudAdmin,
   aprobarSolicitudCompletaAdmin,
   enviarCorreccionesAdmin,
-  getEstadoRevisionSolicitud
+  getEstadoRevisionSolicitud,
+  guardarComentarioPaso
 };

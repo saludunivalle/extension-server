@@ -83,13 +83,19 @@ client_secret=tu_oauth_client_secret
 
 # Google Spreadsheet principal
 SPREADSHEET_ID=tu_spreadsheet_id
+
+# Carpeta de Drive para adjuntos (ID o URL de carpeta)
+DRIVE_UPLOADS_FOLDER_ID=1dQg29-rgkGta-o58iDQ_lrbZ8unLFTje
 ```
 
 Notas importantes:
 
 - `GOOGLE_PRIVATE_KEY` debe mantener los `\\n` en el `.env`.
 - En produccion, `SESSION_SECRET` es obligatorio y el servidor se detiene si no esta definido.
-- El servicio tiene IDs de carpetas/plantillas hardcodeados en `services/driveService.js`. Si usas otro entorno de Drive, debes actualizarlos.
+- Para adjuntos, puedes usar `DRIVE_UPLOADS_FOLDER_ID` con un ID o URL de carpeta de Drive.
+- La carpeta de adjuntos debe estar compartida con `GOOGLE_CLIENT_EMAIL` (Service Account) con rol Editor.
+- Si no hay acceso a carpeta, backend responderá error explícito indicando que se comparta con la Service Account.
+- Si la carpeta está en `Mi unidad`, Google puede devolver `storageQuotaExceeded` para Service Accounts (sin cuota propia). Recomendado: usar carpeta dentro de un Shared Drive.
 
 ## 6. Instalacion y ejecucion local
 
@@ -179,7 +185,7 @@ La relacion `hoja -> nombre` se resuelve en `formController` con `getSheetName`.
 4. Usuario ejecuta `POST /enviarFormulariosRevision` (o `POST /enviarSolicitudRevision` por compatibilidad).
 5. Admin consulta pendientes con `GET /admin/solicitudesRevision` y revisa formularios puntuales.
 6. Admin puede:
-	- aprobar parcialmente hasta 3 formularios con `POST /admin/aprobarFormularios`.
+	- aprobar parcialmente hasta 4 formularios con `POST /admin/aprobarFormularios`.
 	- aprobar toda la solicitud con `POST /admin/aprobarSolicitudCompleta`.
 	- enviar correcciones por formulario con `POST /admin/enviarCorrecciones`.
 7. Si hay formularios aprobados y otros con correcciones/revision, el estado queda `Aprobado parcialmente`.
@@ -217,7 +223,7 @@ Nota: algunas rutas estan expuestas tanto en raiz (`/`) como bajo prefijos (`/fo
 - `GET /getActiveRequests`
 - `GET /getCompletedRequests`
 - `GET /getLastId`
-- `POST /guardarProgreso` (con archivo `pieza_grafica` opcional)
+- `POST /guardarProgreso` (con adjuntos opcionales `pieza_grafica` y `archivo_fondo_comun`)
 - `POST /guardarGastos`
 - `GET /getGastos`
 - `GET /getFormDataForm2`
@@ -269,6 +275,34 @@ Tambien disponibles bajo `/form/*`.
 - `GET /getSolicitud`
 - `GET /other/getProgramasYOficinas`
 - `GET /other/getSolicitud`
+
+
+- Lo del Salario Mínimo, se debe poder automático. Y la entrada es en pesos -x
+- Preguntar primero, si en pesos o en salarios -x
+- El porcentaje de los imprevistos debe ser editable, de 0 a 5 -x
+- En presupuesto:
+- los porcentajes del Otros Gastos deben calcularse -x
+- Si el Fondo Comun cambia del 30% a otro valor, deben adjuntar el Formato de Viavilidad y aportes al fondo comun, firmado por el jefe de la Sección de Presupuesto.
+- El porcentaje para Facultad o Instituto, es 5%, fijo -x
+- Los ingresos no se estan guardando
+- Si es Extensión Solidaria, los Ingresos van en Cero.
+------ Se debe poner un texto para observaciones, y no debe ser en blanco
+- Poner un texto label sieempre de advertencia en ese campo
+
+-Matriz de riesgos es obligatoria cuando la actividad sea mayor o igual a 16 horas
+-Mercadeo es sugerido
+
+En el formulario de Mercadeo, cambiar en el paso3, 
+ -¿Cuál de las siguientes estrategias han utilizado para sondear previamente el interés de las personas? -x
+por 
+¿Cuál(es) de las siguientes estrategias han utilizado para sondear previamente el interés de las personas? -x
+
+- Ajustar nombre del archivo resultante -x
+- Cambiar botones de "Enviar" a "Finalizar"
+
+Salario minimo legal vigente: 1,750,905
+
+Link carpeta de drive donde se guardan adjuntos y piezas graficas
 
 ## 9.8 Contratos JSON del flujo de revision
 
@@ -361,7 +395,7 @@ Error esperado:
 
 - `403`: `userId` no tiene rol `admin` en hoja `USUARIOS` (columna D).
 
-### 9.8.3 Admin aprueba formularios (parcial, maximo 3)
+### 9.8.3 Admin aprueba formularios (parcial, 1 a 4)
 
 - Endpoint recomendado: `POST /admin/aprobarFormularios`
 - Endpoint compatible: `POST /admin/aprobarSolicitud`
@@ -398,7 +432,7 @@ Response OK:
 
 Error esperado:
 
-- `400`: se enviaron mas de 3 formularios o alguno no estaba en `Enviado a revisión`.
+- `400`: se enviaron mas de 4 formularios o alguno no estaba en `Enviado a revisión`.
 
 ### 9.8.4 Admin aprueba solicitud completa
 
@@ -522,7 +556,258 @@ Notas frontend:
 - Admin puede consultar cualquier solicitudes que tiene estado general Enviado a revisíon.
 - Para renderizar botones:
 	- usuario: mostrar `Enviar a revisión` por formulario cuando ese formulario este en `Completado` o `Requiere correcciones`.
-	- admin: mostrar checks por formulario para `Aprobar formularios` (max 3), boton `Aprobar solicitud completa` y boton `Enviar correcciones` por formulario.
+	- admin: mostrar checks por formulario para `Aprobar formularios` (1 a 4), boton `Aprobar solicitud completa` y boton `Enviar correcciones` por formulario.
+
+## 9.9 Cambios Abril 2026 (campos nuevos y adjuntos)
+
+### 9.9.1 Formulario 1 (`SOLICITUDES`)
+
+Se agregaron estos campos para guardar en Sheets (uso frontend/backoffice):
+
+- `otro_tipo_act`
+- `extension_solidaria`
+- `costo_extension_solidaria`
+- `pieza_grafica`
+- `personal_externo`
+- `tipo_valor`
+- `valor_unitario`
+
+Importante:
+
+- estos campos se guardan en `SOLICITUDES` y se devuelven en consultas
+- no se muestran en los reportes XLSX/PDF generados
+- `pieza_grafica` se guarda como URL pública de Drive (no binario en Sheets)
+
+### 9.9.2 Formulario 2 (`SOLICITUDES2`)
+
+Se agregaron estos campos para guardar en Sheets:
+
+- `imprevistos_porcentaje`
+- `archivo_fondo_comun`
+
+Importante:
+
+- `archivo_fondo_comun` admite imagen o PDF
+- el backend sube el archivo a la misma carpeta de Drive de adjuntos y guarda en Sheets la URL pública
+- estos campos no se muestran en el reporte final
+
+### 9.9.3 Qué debe enviar el frontend (adjuntos)
+
+Para `POST /guardarProgreso` y `POST /guardarForm2Paso3` cuando haya archivos:
+
+- usar `multipart/form-data`
+- enviar campos de texto normales
+- enviar archivo en la llave `pieza_grafica` (solo imagen)
+- enviar archivo en la llave `archivo_fondo_comun` (imagen o pdf)
+
+Ejemplo mínimo (conceptual):
+
+```text
+Content-Type: multipart/form-data
+
+id_solicitud=123
+hoja=1
+paso=5
+...
+pieza_grafica=<archivo imagen>
+```
+
+```text
+Content-Type: multipart/form-data
+
+id_solicitud=123
+fondo_comun_porcentaje=30
+...
+archivo_fondo_comun=<archivo imagen o pdf>
+```
+
+El valor que persiste en Sheets para esos dos campos es siempre la URL del archivo en Drive.
+
+### 9.9.4 Filas dinámicas en Formulario 2 (gastos)
+
+Para filas dinámicas de presupuesto en frontend no se agregan columnas nuevas en `SOLICITUDES2`.
+
+Qué espera este backend:
+
+- enviar los ítems dinámicos en `POST /guardarGastos`
+- payload con `id_solicitud` y arreglo `gastos`
+- cada ítem debe incluir al menos: `id_conceptos`, `descripcion` (o `nombre_conceptos`), `cantidad`, `valor_unit`, `valor_total`
+- los gastos dinámicos para reporte de presupuesto son los hijos del concepto `14`:
+	- formatos válidos: `14.1`, `14.2`, `14,1`, `14,2`, etc.
+	- el backend los detecta automáticamente para inserción dinámica en el Excel
+
+Ejemplo:
+
+```json
+{
+	"id_solicitud": "123",
+	"gastos": [
+		{
+			"id_conceptos": "14.1",
+			"descripcion": "Honorarios externos",
+			"cantidad": 2,
+			"valor_unit": 500000,
+			"valor_total": 1000000
+		}
+	]
+}
+```
+
+Qué se debe tener en Sheets:
+
+- mantener hojas `CONCEPTO$` y `GASTOS` disponibles (ya usadas por el backend)
+- no crear columnas extra en `SOLICITUDES2` para estas filas dinámicas
+- el backend crea/actualiza conceptos dinámicos y valores en `GASTOS`
+
+## 9.10 Flujos de revisión por subconjunto (frontend)
+
+Este backend soporta que una solicitud trabaje solo con algunos formularios (por ejemplo 1 y 2) y que se revisen/aprueben por lotes parciales o completos.
+
+### 9.10.1 Usuario envía a revisión uno, varios o todos
+
+- Endpoint: `POST /enviarFormulariosRevision`
+- `formularios` acepta subconjuntos: `[1]`, `[1,2]`, `[2,3]`, `[1,2,3,4]`
+- Si omites `formularios`, backend intenta enviar todos los formularios realizados y no aprobados.
+
+### 9.10.2 Admin aprueba uno, varios o cuatro en la misma llamada
+
+- Endpoint: `POST /admin/aprobarFormularios`
+- `formularios` acepta 1 a 4 ids por llamada.
+- También existe `POST /admin/aprobarSolicitudCompleta` para aprobar los 4 de una vez con validación de estado.
+
+### 9.10.3 Admin envía correcciones a uno, varios o cuatro
+
+- Endpoint: `POST /admin/enviarCorrecciones`
+- `formularios` acepta subconjuntos (`[2]`, `[2,3]`, `[1,2,3,4]`) siempre que esos formularios no estén en `En progreso` ni `Aprobado`.
+
+### 9.10.4 Ejemplos directos (2, 3 y 4 formularios)
+
+#### A) Enviar a revisión (`POST /enviarFormulariosRevision`)
+
+```json
+{
+	"id_solicitud": 123,
+	"id_usuario": 45,
+	"formularios": [2, 3]
+}
+```
+
+```json
+{
+	"id_solicitud": 123,
+	"id_usuario": 45,
+	"formularios": [1, 2, 3]
+}
+```
+
+```json
+{
+	"id_solicitud": 123,
+	"id_usuario": 45,
+	"formularios": [1, 2, 3, 4]
+}
+```
+
+#### B) Aprobar parcial (`POST /admin/aprobarFormularios`)
+
+```json
+{
+	"id_solicitud": 123,
+	"userId": 999,
+	"formularios": [2, 3]
+}
+```
+
+```json
+{
+	"id_solicitud": 123,
+	"userId": 999,
+	"formularios": [1, 2, 3]
+}
+```
+
+```json
+{
+	"id_solicitud": 123,
+	"userId": 999,
+	"formularios": [1, 2, 3, 4]
+}
+```
+
+Nota:
+
+- para aprobar exactamente los 4 también puedes usar `POST /admin/aprobarSolicitudCompleta`.
+
+#### C) Enviar correcciones (`POST /admin/enviarCorrecciones`)
+
+```json
+{
+	"id_solicitud": 123,
+	"userId": 999,
+	"formularios": [2, 3],
+	"comentarios": {
+		"2": "Ajustar aportes",
+		"3": "Corregir archivo de soporte"
+	}
+}
+```
+
+```json
+{
+	"id_solicitud": 123,
+	"userId": 999,
+	"formularios": [1, 2, 3],
+	"comentarios": {
+		"1": "Completar datos del coordinador",
+		"2": "Ajustar imprevistos",
+		"3": "Actualizar observaciones"
+	}
+}
+```
+
+```json
+{
+	"id_solicitud": 123,
+	"userId": 999,
+	"formularios": [1, 2, 3, 4],
+	"comentarios": {
+		"1": "Corregir formulario 1",
+		"2": "Corregir formulario 2",
+		"3": "Corregir formulario 3",
+		"4": "Corregir formulario 4"
+	}
+}
+```
+
+Recomendación frontend:
+
+- Mostrar checkboxes por formulario y permitir selección múltiple.
+- Enviar solo formularios visibles/activos para la solicitud.
+- Mantener UI preparada para escenarios parciales (solicitud solo de formularios 1 y 2).
+
+### 9.10.5 Comentarios por paso (nuevo)
+
+- Endpoint: `POST /guardarComentarioPaso`
+- Disponible en raíz y también bajo `/form/guardarComentarioPaso`
+- Guarda comentarios por formulario y paso dentro de `ETAPAS.K` (JSON)
+
+Request:
+
+```json
+{
+	"id_solicitud": 123,
+	"userId": 45,
+	"formulario": 2,
+	"paso": 3,
+	"comentario": "Validar el soporte del fondo común"
+}
+```
+
+Notas:
+
+- Permite guardar/actualizar comentario puntual por paso.
+- Si `comentario` viene vacío, elimina el comentario de ese paso.
+- El estado de comentarios se consulta en `GET /estadoRevisionSolicitud` dentro de `comentarios_por_formulario`.
 
 ## 10. CORS, sesiones y errores
 
