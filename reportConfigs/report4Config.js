@@ -14,7 +14,7 @@ const report4Config = {
     SOLICITUDES: {
       range: 'SOLICITUDES!A2:AU',
       fields: [
-        'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'nombre_solicitante',
+        'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'programa', 'nombre_solicitante',
         'dependencia_tipo', 'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia'
       ]
     },

@@ -842,6 +842,25 @@ Antes de desplegar, valida:
 - Estado/progreso inconsistente:
 	- revisar valores de `ETAPAS` y payload de `actualizarPasoMaximo` / `actualizacion-progreso`.
 
+### 12.1 Evitar agotamiento de cuota en Google Sheets (HTTP 429)
+
+La API de Google Sheets aplica cuotas por minuto (aprox. 300 solicitudes/min por proyecto y 60 solicitudes/min por usuario/proyecto). Si se exceden, responde `429 Too many requests`.
+
+Recomendaciones aplicadas y sugeridas en este backend:
+
+- Reducir llamadas por operación:
+	- usar `batchGet` y `batchUpdate` cuando sea posible, en vez de múltiples `values.get`/`values.update`.
+	- en este proyecto ya se optimizó lectura de datos de solicitud y lectura de `GASTOS` + `CONCEPTO$` con `batchGet`.
+- Implementar reintentos con backoff exponencial con jitter para `429` y errores transitorios (`503`, `500`).
+- Evitar polling agresivo desde frontend:
+	- no consultar progreso cada pocos segundos.
+	- sugerido: intervalo de 10-20s o modelo basado en eventos/acciones del usuario.
+- Aplicar cache corta en backend para lecturas repetidas (ej. 10-30 segundos por `id_solicitud`), especialmente en endpoints de consulta.
+- Agrupar escrituras de un mismo flujo en una sola petición cuando sea viable.
+- Mantener payloads livianos (Google recomienda alrededor de 2 MB por solicitud).
+
+Si ocurre `429`, no reintentar en bucle inmediato: usar backoff y volver a intentar tras unos segundos.
+
 ## 13. Resumen funcional rapido
 
 Este backend centraliza el ciclo de vida de una solicitud de extension:
