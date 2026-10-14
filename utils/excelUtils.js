@@ -2,6 +2,7 @@ const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const JSZip = require('jszip');
 
 /**
  * Utilidades para trabajar con archivos Excel
@@ -23,7 +24,7 @@ const loadTemplateWorkbook = async (templatePath) => {
       throw new Error(`Error al cargar plantilla Excel: ${error.message}`);
     }
   };
-  
+
   /**
    * Crea un libro de Excel desde un stream de datos
    * @param {ReadableStream} stream - Stream de datos de Excel
@@ -53,6 +54,37 @@ const loadTemplateWorkbook = async (templatePath) => {
    * @param {Object} data - Datos para reemplazar los marcadores
    * @param {Boolean} debug - Si es verdadero, muestra información de depuración
    */
+  // Formato monetario colombiano. Se aplica como formato de Excel (no como
+  // texto) para que los valores continúen siendo utilizables en fórmulas.
+  const COP_NUM_FORMAT = '"$" #,##0';
+  const monetaryFields = new Set([
+    'valor_unitario', 'valor_inscripcion', 'valor_inscripcion_individual',
+    'ingresos_vr_unit', 'total_ingresos', 'subtotal_gastos', 'imprevistos_3',
+    'total_gastos_imprevistos', 'diferencia', 'fondo_comun',
+    'facultad_instituto', 'escuela_departamento', 'total_recursos',
+    'costos_indirectos_cantidad', 'administracion_cantidad',
+    'descuentos_cantidad', 'total_costo_actividad', 'excedente_cantidad'
+  ]);
+
+  const isMonetaryField = (field) => {
+    const base = String(field).replace(/_formatted$/, '');
+    return monetaryFields.has(base) ||
+      /^gasto_.+_valor_(unit|total)$/.test(base);
+  };
+
+  const parseNumericValue = (value) => {
+    if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+    if (typeof value !== 'string') return null;
+    const cleaned = value.replace(/[^\d,.-]/g, '').trim();
+    if (!cleaned) return null;
+    // Valores formateados por Intl.NumberFormat('es-CO'): 1.234.567,89.
+    const normalized = cleaned.includes(',')
+      ? cleaned.replace(/\./g, '').replace(',', '.')
+      : cleaned.replace(/,/g, '');
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
   const replaceMarkers = (workbook, data, debug = false) => {
     if (!data) return;
     
@@ -82,7 +114,13 @@ const loadTemplateWorkbook = async (templatePath) => {
               // Verificamos si el marcador existe en los datos
               if (data[marker] !== undefined) {
                 // Reemplazamos el marcador por el valor correspondiente
-                newValue = newValue.replace(`{{${marker}}}`, data[marker]);
+                // Cuando la celda contiene únicamente un campo monetario,
+                // guardarlo como número permite que Excel calcule sobre él.
+                const numericValue = isMonetaryField(marker)
+                  ? parseNumericValue(data[marker])
+                  : null;
+                const replacement = numericValue !== null ? numericValue : data[marker];
+                newValue = newValue.replace(`{{${marker}}}`, replacement);
                 markersReplaced.add(marker);
                 replaced = true;
               } else if (debug) {
@@ -92,7 +130,15 @@ const loadTemplateWorkbook = async (templatePath) => {
             
             // Solo actualizamos la celda si hubo reemplazos
             if (replaced) {
-              cell.value = newValue;
+              const exactMarker = /^\{\{([^}]+)\}\}$/.exec(cellValue);
+              const exactField = exactMarker ? exactMarker[1].trim() : null;
+              const numericValue = exactField && isMonetaryField(exactField)
+                ? parseNumericValue(data[exactField])
+                : null;
+              cell.value = numericValue !== null ? numericValue : newValue;
+              if (exactField && isMonetaryField(exactField)) {
+                cell.numFmt = COP_NUM_FORMAT;
+              }
             }
           }
         });
@@ -425,8 +471,8 @@ const loadTemplateWorkbook = async (templatePath) => {
               vertical: 'middle'
             };
 
-            // Formato numérico sin símbolo de moneda para filas dinámicas de gastos
-            cell.numFmt = '#,##0';
+            // Formato monetario para filas dinámicas de gastos
+            cell.numFmt = COP_NUM_FORMAT;
           });
         }
       } catch (error) {
@@ -439,6 +485,17 @@ const loadTemplateWorkbook = async (templatePath) => {
    * Limpia los archivos temporales
    * @param {Array<string>} filePaths - Rutas de archivos a eliminar
    */
+  const preserveTemplateVml = async (templatePath, outputPath) => {
+    const source = await JSZip.loadAsync(fs.readFileSync(templatePath));
+    const target = await JSZip.loadAsync(fs.readFileSync(outputPath));
+    for (const name of Object.keys(source.files)) {
+      if (/^xl\/drawings\/vmlDrawing\d+\.vml$/.test(name)) {
+        target.file(name, await source.file(name).async('nodebuffer'));
+      }
+    }
+    fs.writeFileSync(outputPath, await target.generateAsync({ type: 'nodebuffer' }));
+  };
+
   const cleanupTempFiles = (filePaths) => {
     filePaths.forEach(filePath => {
       try {
@@ -497,5 +554,6 @@ const loadTemplateWorkbook = async (templatePath) => {
     cleanupTempFiles,
     ensureTempDir,
     rowsToObjects,
+    preserveTemplateVml,
     insertDynamicRows // Exportar la nueva función
   };
