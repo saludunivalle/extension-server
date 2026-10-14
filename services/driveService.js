@@ -862,6 +862,7 @@ class DriveService {
     }
     // Guardar archivo temporal
     const tempFilePath = await excelUtils.saveToTempFile(workbook, `Formulario${formNumber}_${solicitudId}`);
+    await excelUtils.preserveTemplateVml(plantillaPath, tempFilePath);
     return { filePath: tempFilePath, fileName };
   }
 
