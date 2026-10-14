@@ -489,7 +489,8 @@ const loadTemplateWorkbook = async (templatePath) => {
     const source = await JSZip.loadAsync(fs.readFileSync(templatePath));
     const target = await JSZip.loadAsync(fs.readFileSync(outputPath));
     for (const name of Object.keys(source.files)) {
-      if (/^xl\/drawings\/vmlDrawing\d+\.vml$/.test(name)) {
+      if (/^xl\/drawings\/(drawing\d+\.xml|vmlDrawing\d+\.vml)$/.test(name) ||
+          /^xl\/drawings\/_rels\/drawing\d+\.xml\.rels$/.test(name)) {
         target.file(name, await source.file(name).async('nodebuffer'));
       }
     }
