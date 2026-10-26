@@ -353,16 +353,31 @@ const getConsultationQueue = async (req, res, next) => {
       const current = latestCorteByRequest.get(id);
       if (!current || Number(corte.id_corte) > Number(current.id_corte)) latestCorteByRequest.set(id, corte);
     });
+    const signatures = (await readRows('FIRMAS')).map((row, i) =>
+      rowObject(sheetsService.fieldDefinitions.FIRMAS, row, i));
+    const history = (await readRows('HISTORIAL_ETAPAS')).map((row, i) =>
+      rowObject(sheetsService.fieldDefinitions.HISTORIAL_ETAPAS, row, i));
+    const signaturesByRequest = new Map();
+    signatures.forEach((signature) => {
+      const id = text(signature.id_solicitud);
+      const current = signaturesByRequest.get(id) || [];
+      current.push(signature);
+      signaturesByRequest.set(id, current);
+    });
+    const historyByRequest = new Map();
+    history.forEach((entry) => {
+      const id = text(entry.id_solicitud);
+      const current = historyByRequest.get(id) || [];
+      current.push(entry);
+      historyByRequest.set(id, current);
+    });
     let data = [];
     if (['revisor_1', 'revisor_2'].includes(role)) {
       data = stages;
     } else if (role === 'director') {
-      const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(sheetsService.fieldDefinitions.FIRMAS, row, i));
       const ids = new Set(signatures.filter(item => item.tipo_firma === 'director_escuela').map(item => text(item.id_solicitud)));
       data = stages.filter(item => item.etapa_codigo === STAGES.FIRMAS || ids.has(text(item.id_solicitud)));
     } else {
-      const history = (await readRows('HISTORIAL_ETAPAS')).map((row, i) =>
-        rowObject(sheetsService.fieldDefinitions.HISTORIAL_ETAPAS, row, i));
       const reviewedIds = new Set(history
         .filter(item => text(item.rol_actor).toLowerCase() === role)
         .map(item => text(item.id_solicitud)));
@@ -374,6 +389,16 @@ const getConsultationQueue = async (req, res, next) => {
       role,
       data: data.map(item => ({
         ...item,
+        ...(signaturesByRequest.has(text(item.id_solicitud)) ? (() => {
+          const requestSignatures = signaturesByRequest.get(text(item.id_solicitud));
+          return {
+            firma_solicitante: requestSignatures.some(signature => signature.tipo_firma === 'solicitante' && signature.estado === 'firmada'),
+            firma_director: requestSignatures.some(signature => signature.tipo_firma === 'director_escuela' && signature.estado === 'firmada'),
+            firmas_completas: requestSignatures.some(signature => signature.tipo_firma === 'solicitante' && signature.estado === 'firmada') &&
+              requestSignatures.some(signature => signature.tipo_firma === 'director_escuela' && signature.estado === 'firmada')
+          };
+        })() : {}),
+        historial: historyByRequest.get(text(item.id_solicitud)) || [],
         ...(latestCorteByRequest.has(text(item.id_solicitud))
           ? { corte_decanato: latestCorteByRequest.get(text(item.id_solicitud)) }
           : {}),
@@ -602,10 +627,7 @@ const sign = async (req, res, next) => {
     const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
       .filter(item => text(item.id_solicitud) === text(req.params.idSolicitud) && item.estado === 'firmada');
     const bothSigned = signatures.some(item => item.tipo_firma === 'solicitante') && signatures.some(item => item.tipo_firma === 'director_escuela');
-    const updated = bothSigned ? await updateStage(stage, {
-      etapa_codigo: STAGES.DECANATO, etapa_actual: STAGES.DECANATO, rol_responsable: 'decanato',
-      estado_etapa: 'pendiente', usuario_asignado: '', fecha_fin: now()
-    }) : await updateStage(stage, { estado_etapa: 'en_revision' });
+    const updated = await updateStage(stage, { estado_etapa: 'en_revision' });
     await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'firmar', stage.estado_etapa, bothSigned ? 'completas' : 'parcial', req);
 
     const recipient = type === 'solicitante' ? await findRoleEmail('director') : await findUserEmail(stage.id_usuario);
@@ -614,34 +636,50 @@ const sign = async (req, res, next) => {
       event: 'firma_registrada',
       recipient,
       subject: `Firma registrada - solicitud ${stage.id_solicitud}`,
-      body: `Se registró una firma en la solicitud ${stage.id_solicitud}. ${bothSigned ? 'La solicitud pasó a Decanato.' : 'Aún falta una firma.'}`
+      body: `Se registró una firma en la solicitud ${stage.id_solicitud}. ${bothSigned ? 'La solicitud está lista para ser enviada a Decanato.' : 'Aún falta una firma.'}`
     });
-    let decanatoNotifications = [];
-    if (bothSigned) {
-      const defaultSubject = `Solicitud enviada a Decanato - ${stage.id_solicitud}`;
-      const defaultBody = `La solicitud ${stage.id_solicitud} de ${stage.nombre_solicitante || 'un solicitante'} ya cuenta con ambas firmas y está pendiente de revisión por Decanato.`;
-      const subject = text(req.body.asunto_decanato) || defaultSubject;
-      const body = renderEmailTemplate(text(req.body.cuerpo_decanato) || defaultBody, stage);
-      const recipients = [
-        ...(await findRoleEmails('decanato')),
-        ...parseRecipients(req.body.destinatarios_decanato)
-      ];
-      decanatoNotifications = await notifyRecipients({
-        stage,
-        event: 'solicitud_enviada_decanato',
-        recipients,
-        subject,
-        body
-      });
-    }
     res.json({
       success: true,
-      data: { firma: signature, firmas: signatures, etapa: updated, notificacion: notification, notificaciones_decanato: decanatoNotifications }
+      data: { firma: signature, firmas: signatures, etapa: updated, notificacion: notification, notificaciones_decanato: [] }
     });
   } catch (error) {
     if (req.file?.path) fs.unlink(req.file.path, () => {});
     next(error);
   }
+};
+
+const sendToDecanato = async (req, res, next) => {
+  try {
+    const role = assertRole(req, ['revisor_1', 'revisor_2']);
+    const stage = await findStage(req.params.idSolicitud);
+    if (!stage || stage.etapa_codigo !== STAGES.FIRMAS) return res.status(409).json({ success: false, error: 'La solicitud no está en la etapa de firmas' });
+    const fields = sheetsService.fieldDefinitions.FIRMAS;
+    const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
+      .filter(item => text(item.id_solicitud) === text(req.params.idSolicitud) && item.estado === 'firmada');
+    const bothSigned = signatures.some(item => item.tipo_firma === 'solicitante') && signatures.some(item => item.tipo_firma === 'director_escuela');
+    if (!bothSigned) return res.status(409).json({ success: false, error: 'La solicitud aún no cuenta con las dos firmas' });
+    const defaultSubject = `Solicitud enviada a Decanato - ${stage.id_solicitud}`;
+    const defaultBody = `La solicitud ${stage.id_solicitud} de ${stage.nombre_solicitante || 'un solicitante'} ya cuenta con ambas firmas y está pendiente de revisión por Decanato.`;
+    const subject = text(req.body.asunto_decanato) || defaultSubject;
+    const body = renderEmailTemplate(text(req.body.cuerpo_decanato) || defaultBody, stage);
+    const recipients = [
+      ...(await findRoleEmails('decanato')),
+      ...parseRecipients(req.body.destinatarios_decanato)
+    ];
+    const notifications = await notifyRecipients({
+      stage,
+      event: 'solicitud_enviada_decanato',
+      recipients,
+      subject,
+      body
+    });
+    const updated = await updateStage(stage, {
+      etapa_codigo: STAGES.DECANATO, etapa_actual: STAGES.DECANATO, rol_responsable: 'decanato',
+      estado_etapa: 'pendiente', usuario_asignado: '', fecha_fin: now()
+    });
+    await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'enviar_decanato', stage.estado_etapa, 'decanato', req);
+    res.json({ success: true, data: { etapa: updated, notificaciones_decanato: notifications, rol: role } });
+  } catch (error) { next(error); }
 };
 
 const remindSignature = async (req, res, next) => {
@@ -708,6 +746,7 @@ const createCorte = async (req, res, next) => {
 module.exports = {
   getQueue,
   getConsultationQueue,
+  sendToDecanato,
   getPendingSignatures,
   take,
   decide,
