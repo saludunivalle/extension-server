@@ -174,7 +174,8 @@ class SpreadsheetModel {
   const RIESGOS = new SpreadsheetModel(
     'RIESGOS',
     [
-      'id_riesgo', 'nombre_riesgo', 'aplica', 'mitigacion', 'id_solicitud', 'categoria'
+      'id_riesgos', 'nombre_riesgo', 'aplica', 'Mitigación', 'id_solicitud', 'categoria',
+      'id_revision', 'estado_revision', 'observaciones_revision'
     ],
     {
       1: ['A', 'B', 'C', 'D', 'E', 'F']
@@ -187,15 +188,25 @@ class SpreadsheetModel {
     [
       'id_solicitud',
       'id_usuario',
-      'fecha',
-      'name',
+      'fecha_creacion',
+      'nombre_solicitante',
       'etapa_actual',
-      'estado',
+      'estado_formularios',
       'nombre_actividad',
       'paso',
-      'estado_formularios',
+      'estado_formulario',
       'estado_general',
-      'comentarios'
+      'comentarios',
+      'comentarios_por_formulario',
+      'etapa_codigo',
+      'rol_responsable',
+      'usuario_asignado',
+      'estado_etapa',
+      'fecha_inicio',
+      'fecha_fin',
+      'etapa_anterior',
+      'updated_at',
+      'version'
     ]
   );
   
@@ -203,10 +214,39 @@ class SpreadsheetModel {
   const USUARIOS = new SpreadsheetModel(
     'USUARIOS',
     [
-      'id', 'email', 'name', 'role'
+      'id_usuario', 'correo_usuario', 'nombre_usuario', 'role'
     ]
   );
-  
+
+  const CORTES_DECANATO = new SpreadsheetModel('CORTES_DECANATO', [
+    'id_corte', 'fecha_corte', 'id_solicitud', 'estado_corte',
+    'id_usuario_envia', 'fecha_envio', 'resultado', 'observaciones', 'resolucion',
+    'estado_final'
+  ]);
+
+  const FIRMAS = new SpreadsheetModel('FIRMAS', [
+    'id_firma', 'id_solicitud', 'tipo_firma', 'id_firmante',
+    'nombre_firmante', 'estado', 'fecha_firma', 'evidencia_firma',
+    'observaciones', 'fecha_solicitud_firma'
+  ]);
+
+  const REVISIONES = new SpreadsheetModel('REVISIONES', [
+    'id_revision', 'id_solicitud', 'etapa', 'rol_revisor',
+    'id_usuario_revisor', 'estado', 'observaciones', 'fecha_inicio',
+    'fecha_respuesta', 'comentarios_por_formulario', 'numero_intento',
+    'id_usuario_toma', 'fecha_toma'
+  ]);
+
+  const HISTORIAL_ETAPAS = new SpreadsheetModel('HISTORIAL_ETAPAS', [
+    'id_historial', 'id_solicitud', 'etapa', 'accion', 'estado_anterior',
+    'estado_nuevo', 'rol_actor', 'fecha', 'comentario','id_usuario_actor'
+  ]);
+
+  const NOTIFICACIONES = new SpreadsheetModel('NOTIFICACIONES', [
+    'id_notificacion', 'id_solicitud', 'evento', 'estado', 'intentos',
+    'fecha_creacion', 'fecha_envio', 'ultimo_error'
+  ]);
+
   module.exports = {
     SpreadsheetModel,
     SOLICITUDES,
@@ -218,6 +258,11 @@ class SpreadsheetModel {
     RIESGOS,
     ETAPAS,
     USUARIOS,
+    CORTES_DECANATO,
+    FIRMAS,
+    REVISIONES,
+    HISTORIAL_ETAPAS,
+    NOTIFICACIONES,
     // Método auxiliar para obtener todos los modelos como objeto
     getModels() {
       return {
@@ -229,6 +274,11 @@ class SpreadsheetModel {
         RIESGOS: this.RIESGOS,
         ETAPAS: this.ETAPAS,
         USUARIOS: this.USUARIOS,
+        CORTES_DECANATO: this.CORTES_DECANATO,
+        FIRMAS: this.FIRMAS,
+        REVISIONES: this.REVISIONES,
+        HISTORIAL_ETAPAS: this.HISTORIAL_ETAPAS,
+        NOTIFICACIONES: this.NOTIFICACIONES,
       };
     }
   };

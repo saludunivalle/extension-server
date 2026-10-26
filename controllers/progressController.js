@@ -37,9 +37,9 @@ const getProgress = async (req, res) => {
       
       // Extraer datos de la fila
       let estadoFormularios = {};
-      if (filaActual[8]) {
+      if (filaActual[5]) {
         try {
-          estadoFormularios = JSON.parse(filaActual[8]);
+          estadoFormularios = JSON.parse(filaActual[5]);
         } catch (e) {
           estadoFormularios = {
             "1": "En progreso", "2": "En progreso",
@@ -56,7 +56,7 @@ const getProgress = async (req, res) => {
       progress = {
         etapa_actual: parseInt(filaActual[4]) || 1,
         paso: parseInt(filaActual[7]) || 1,
-        estado: filaActual[5] || 'En progreso',
+        estado: filaActual[9] || 'En proceso',
         estado_formularios: estadoFormularios,
         estado_general: filaActual[9] || ((filaActual[5] || 'En progreso') === 'En progreso' ? 'En proceso' : 'Terminado'),
         comentarios: filaActual[10] || ''
@@ -128,15 +128,15 @@ const updateProgress = async (req, res) => {
     // Actualizar la hoja
     await client.spreadsheets.values.update({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: `ETAPAS!E${filaEtapas}:J${filaEtapas}`,
+      range: `ETAPAS!E${filaEtapas}:K${filaEtapas}`,
       valueInputOption: 'RAW',
       resource: {
         values: [[
           progressData.etapa_actual,
-          progressData.estado,
+          JSON.stringify(progressData.estado_formularios),
           etapasRows[filaEtapas - 1][6] || 'N/A',
           progressData.paso,
-          JSON.stringify(progressData.estado_formularios),
+          progressData.estado,
           progressData.estado_general
         ]]
       }

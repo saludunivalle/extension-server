@@ -16,9 +16,10 @@ const riskReportService = require('./riskReportService');
 
 class DriveService {
   constructor() {
-    this.drive = google.drive({ version: 'v3', auth: jwtClient });
+    this.drive = google.drive({ version: 'v3', auth: this.createDriveAuth() });
     this.templateFolderId = '12bxb0XEArXMLvc7gX2ndqJVqS_sTiiUE'; //Folder con plantillas
     this.uploadsFolder = this.normalizeDriveFolderId(
+      process.env.DRIVE_UPLOADS_FOLDER ||
       process.env.DRIVE_UPLOADS_FOLDER_ID ||
       process.env.UPLOADS_FOLDER_ID ||
       '1iDJTcUYCV7C7dTsa0Y3rfBAjFUUelu-x'
@@ -32,6 +33,25 @@ class DriveService {
       3: '1Tq-V2BSoe17-xjOeWeqaq4Hm6bU1dLx0TG-bcIhnS_4', //Plantilla de formulario 3
       4: '1FTC7Vq3O4ultexRPXYrJKOpL9G0071-0', //Plantilla de formulario 4
     };
+  }
+
+  createDriveAuth() {
+    const refreshToken = String(process.env.GOOGLE_DRIVE_REFRESH_TOKEN || '').trim();
+    if (!refreshToken) return jwtClient;
+
+    const clientId = process.env.GOOGLE_CLIENT_ID || process.env.client_id;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET || process.env.client_secret;
+    const redirectUri = process.env.GOOGLE_DRIVE_REDIRECT_URI ||
+      process.env.DRIVE_OAUTH_REDIRECT_URI ||
+      'http://localhost:3002/oauth2callback';
+
+    if (!clientId || !clientSecret) {
+      throw new Error('Para usar GOOGLE_DRIVE_REFRESH_TOKEN también se requieren GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET');
+    }
+
+    const oauthClient = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
+    oauthClient.setCredentials({ refresh_token: refreshToken });
+    return oauthClient;
   }
 
   normalizeDriveFolderId(value) {
@@ -105,10 +125,11 @@ class DriveService {
    * Sube un archivo a Google Drive
    * @param {Object} file - Objeto de archivo de Multer
    * @param {String} folderDestination - ID de carpeta destino (opcional)
+   * @param {String} fileName - Nombre opcional para el archivo en Drive
    * @returns {Promise<String>} - URL del archivo subido
    */
 
-  async uploadFile(file, folderDestination = this.uploadsFolder) {
+  async uploadFile(file, folderDestination = this.uploadsFolder, fileName = file?.originalname) {
     const resolvedFolderId = this.normalizeDriveFolderId(folderDestination);
 
     try {
@@ -126,7 +147,7 @@ class DriveService {
       });
 
       const fileMetadata = {
-        name: file.originalname,
+        name: fileName || file.originalname,
         parents: [resolvedFolderId]
       };
       
