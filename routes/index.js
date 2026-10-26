@@ -6,6 +6,7 @@ const userRoutes = require('./user');
 const authRoutes = require('./auth');
 const riskRoutes = require('./risk');
 const otherRoutes = require('./other');
+const workflowRoutes = require('./workflow');
 const formController = require('../controllers/formController');
 const multer = require('multer');
 const upload = multer({ dest: '/tmp/uploads/' });
@@ -75,6 +76,7 @@ router.delete('/riesgos/:id_riesgo', require('../controllers/riskController').de
 router.use('/risk', riskRoutes);
 
 router.use('/other', otherRoutes);
+router.use('/workflow', workflowRoutes);
 
 // Ruta de ejemplo
 router.get('/', (req, res) => {

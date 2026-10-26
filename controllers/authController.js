@@ -46,13 +46,13 @@ const googleAuth = async (req, res) => {
           (row) => String(row[3] || '').trim().toLowerCase() === 'admin'
         ) || matchingRows[0];
 
-        userRole = String(preferredRow[3] || '').trim().toLowerCase() === 'admin' ? 'admin' : '';
+        userRole = String(preferredRow[3] || '').trim().toLowerCase();
       }
     }
 
     
     if (!userExists) {
-      userRole = '';
+      userRole = 'solicitante';
       const userRange = 'USUARIOS!A2:D2';
       const userValues = [[userId, userEmail, userName, userRole]]; // Agrega un rol predeterminado si no se proporciona
       console.log('Usuario no encontrado, guardando nuevo usuario:', { userId, userEmail, userName, userRole });
@@ -71,7 +71,7 @@ const googleAuth = async (req, res) => {
         id: userId,
         email: userEmail,
         name: userName,
-        role: userRole || '' // Devuelve el rol del usuario si está disponible
+        role: userRole || 'solicitante'
       }
     });
     console.log(`Usuario autenticado: ${userEmail} (ID: ${userId}, Rol: ${userRole || 'sin rol'})`);

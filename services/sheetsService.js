@@ -27,7 +27,7 @@ class SheetsService {
       // Verificar si el usuario ya existe
       if (!existingUsers.includes(userId)) {
         const userRange = 'USUARIOS!A2:D2';
-        const normalizedRole = String(role || '').trim().toLowerCase() === 'admin' ? 'admin' : '';
+        const normalizedRole = String(role || '').trim().toLowerCase() || 'solicitante';
         const userValues = [[userId, email, name, normalizedRole]];
   
         await this.client.spreadsheets.values.append({

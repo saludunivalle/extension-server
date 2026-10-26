@@ -1,0 +1,397 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Flujo de aprobación Extensión vertical</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<style>
+/* Layout: una sola columna estrecha. Inicio = listas simples; detalle = etapas apiladas en vertical, colapsables, con la etapa actual abierta. */
+:root{
+  --bg:#f5f5f5; --surface:#ffffff; --surface2:#eef0f3; --head:#e3e4e6; --line:#d9dce1;
+  --fg:#1f2933; --muted:#5f6b7a; --primary:#1976d2; --primary-soft:#e3f0fd; --on-primary:#ffffff;
+  --accent:#9c27b0; --accent-soft:#f6e6f9; --brand:#e5000f;
+  --ok:#2e7d32; --ok-soft:#e5f3e6; --warn:#a85b00; --warn-soft:#fdf0dc; --bad:#c62828; --bad-soft:#fbe4e4;
+  --shadow:0 1px 3px rgba(20,30,50,.18);
+  --font:'Roboto',system-ui,-apple-system,'Segoe UI',Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#12151a; --surface:#1b2027; --surface2:#242b34; --head:#222831; --line:#323b47;
+  --fg:#e6eaf0; --muted:#9aa6b5; --primary:#5aa7ee; --primary-soft:#1b3550; --on-primary:#0d1b2a;
+  --accent:#d27be0; --accent-soft:#3a2442; --brand:#ff4a55;
+  --ok:#6fcf74; --ok-soft:#1c3320; --warn:#f0b35a; --warn-soft:#38290f; --bad:#ff8a8a; --bad-soft:#3b1d1d;
+  --shadow:0 1px 3px rgba(0,0,0,.6); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151a; --surface:#1b2027; --surface2:#242b34; --head:#222831; --line:#323b47;
+  --fg:#e6eaf0; --muted:#9aa6b5; --primary:#5aa7ee; --primary-soft:#1b3550; --on-primary:#0d1b2a;
+  --accent:#d27be0; --accent-soft:#3a2442; --brand:#ff4a55;
+  --ok:#6fcf74; --ok-soft:#1c3320; --warn:#f0b35a; --warn-soft:#38290f; --bad:#ff8a8a; --bad-soft:#3b1d1d;
+  --shadow:0 1px 3px rgba(0,0,0,.6); color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.45}
+button,select,input,textarea{font:inherit;color:inherit}
+.wrap{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+header.top{background:var(--head);box-shadow:0 3px 8px rgba(0,0,0,.12)}
+.top .wrap{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding-block:10px}
+.logo{display:flex;align-items:center;gap:10px;color:var(--brand);font-weight:700;font-size:19px;text-decoration:underline}
+.ttl{flex:1;min-width:200px;text-align:center}
+.ttl h1{margin:0;font-size:20px;font-weight:700;text-wrap:balance}
+.ttl p{margin:0;color:var(--muted);font-size:12px}
+.tools{display:flex;align-items:center;gap:10px}
+.tools select{padding:6px 8px;border-radius:4px;border:1px dashed var(--accent);background:var(--surface);min-height:34px;max-width:200px}
+main{padding-block:24px 56px;max-width:760px;margin:0 auto}
+h2{font-size:22px;font-weight:500;margin:0;text-wrap:balance}
+h3{font-size:15px;font-weight:500;margin:0}
+.muted{color:var(--muted)}.sm{font-size:13px}
+.btn{border:0;border-radius:4px;padding:9px 16px;min-height:38px;font-weight:500;letter-spacing:.03em;text-transform:uppercase;font-size:13px;cursor:pointer;background:var(--primary);color:var(--on-primary);box-shadow:var(--shadow)}
+.btn.pur{background:var(--accent);color:#fff}
+.btn.out{background:transparent;color:var(--accent);border:1px solid var(--accent);box-shadow:none}
+.btn.ghost{background:transparent;color:var(--primary);box-shadow:none;padding-inline:8px}
+.btn.sm{padding:5px 10px;min-height:30px;font-size:12px}
+.btn:disabled{background:var(--surface2);color:var(--muted);box-shadow:none;cursor:not-allowed;border:0}
+:focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+.icon{background:none;border:0;cursor:pointer;position:relative;padding:6px;border-radius:50%;color:var(--muted)}
+.dot{position:absolute;top:0;right:0;background:var(--accent);color:#fff;border-radius:9px;font-size:10px;min-width:16px;height:16px;line-height:16px;text-align:center}
+.pill{display:inline-flex;align-items:center;padding:2px 10px;border-radius:12px;font-size:12px;font-weight:500;white-space:nowrap}
+.t-neutral{background:var(--surface2);color:var(--muted)}
+.t-info{background:var(--primary-soft);color:var(--primary)}
+.t-ok{background:var(--ok-soft);color:var(--ok)}
+.t-warn{background:var(--warn-soft);color:var(--warn)}
+.t-bad{background:var(--bad-soft);color:var(--bad)}
+.t-acc{background:var(--accent-soft);color:var(--accent)}
+/* home */
+.top-actions{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.grp{margin-top:14px;background:var(--surface);border-radius:6px;box-shadow:var(--shadow);overflow:hidden}
+.grp>button.gh{width:100%;display:flex;align-items:center;gap:10px;padding:14px 16px;background:none;border:0;cursor:pointer;text-align:left;font-weight:500}
+.gh .n{margin-left:auto;display:flex;gap:8px;align-items:center}
+.chev{display:inline-block;width:8px;height:8px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);transition:transform .15s;margin:0 4px 3px 4px;flex:none}
+[aria-expanded="true"]>.chev,[aria-expanded="true"] .chev{transform:rotate(-135deg);margin-bottom:-3px}
+.grp>.it{margin:10px 12px 0;border-radius:6px}
+.grp:has(.it){padding-bottom:12px}
+.it.tone-ok{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--ok) 45%,transparent)}
+.it.tone-warn{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--warn) 45%,transparent)}
+.it.tone-bad{box-shadow:inset 0 0 0 1px color-mix(in srgb,var(--bad) 45%,transparent)}
+.it>.item{border-radius:6px}
+.tone-ok{background:var(--ok-soft)}.tone-warn{background:var(--warn-soft)}.tone-bad{background:var(--bad-soft)}
+.item{display:flex;align-items:center;gap:12px;padding:12px 16px;cursor:pointer;background:none;border:0;width:100%;text-align:left}
+.item:hover{filter:brightness(.97)}
+.it .pill{background:var(--surface);color:var(--fg);box-shadow:inset 0 0 0 1px var(--line)}
+.ib{padding:4px 16px 12px 16px}
+.ib .sb{margin-bottom:6px}
+.legend{display:flex;gap:6px 16px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted);margin:14px 0 0}
+.sw{display:inline-block;width:14px;height:14px;border-radius:3px;margin-right:-8px;box-shadow:inset 0 0 0 1px var(--line)}
+.sw.tone-ok{background:var(--ok)}.sw.tone-warn{background:var(--warn)}.sw.tone-bad{background:var(--bad)}
+.item .t{flex:1;min-width:0}
+.item .nm{font-weight:500;overflow-wrap:anywhere}
+.gact{padding:0 16px 12px}
+.empty{color:var(--muted);font-size:13px;padding:14px 16px;border-top:1px solid var(--line)}
+/* detail: etapas verticales */
+.back{margin:0 0 6px -8px}
+.dh{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px}
+.dh h2{font-weight:700;font-size:24px}
+.stages{display:flex;flex-direction:column}
+.st{position:relative;padding-left:44px}
+.st::before{content:"";position:absolute;left:15px;top:34px;bottom:-2px;width:2px;background:var(--line)}
+.st:last-child::before{display:none}
+.st.done::before{background:var(--primary)}
+.mk{position:absolute;left:0;top:6px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-size:14px;font-weight:700;background:var(--surface);border:2px solid var(--line);color:var(--muted);z-index:1}
+.done .mk{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.cur .mk{border-color:var(--accent);color:var(--accent)}
+.cur.ret .mk{border-color:var(--warn);color:var(--warn)}
+.sh{width:100%;display:flex;align-items:center;gap:10px;background:none;border:0;padding:12px 4px;cursor:pointer;text-align:left;border-radius:6px;min-height:44px}
+.sh:hover{background:var(--surface2)}
+.sh b{font-weight:500;font-size:16px}
+.cur .sh b{font-weight:700}
+.sh .sum{margin-left:auto;color:var(--muted);font-size:13px;text-align:right}
+.pend-st .sh b{color:var(--muted)}
+.sb{background:var(--surface);border-radius:6px;box-shadow:var(--shadow);padding:16px;margin:2px 0 14px;display:flex;flex-direction:column;gap:12px}
+.forms{display:flex;flex-direction:column}
+.fr{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--line)}
+.fr:last-child{border:0}
+.fr .nm{flex:1}
+.obs{display:flex;flex-direction:column;gap:8px}
+.orow{display:flex;gap:8px;align-items:center}
+.orow input[type=text]{flex:1;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:var(--surface)}
+.orow input[type=text][readonly]{background:var(--surface2);border-color:transparent}
+.orow label{display:flex;gap:6px;align-items:center;font-size:13px;white-space:nowrap;color:var(--muted)}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--primary)}
+.x{background:none;border:0;cursor:pointer;color:var(--muted);font-size:20px;line-height:1;padding:4px 8px;border-radius:4px}
+.acts{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.nav{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:nowrap;border-top:1px solid var(--line);padding-top:12px}
+.nav .btn{white-space:nowrap}
+@media(max-width:520px){.nav .btn{padding-inline:10px;font-size:12px}}
+.hint{font-size:13px;color:var(--muted);margin:0}
+.banner{padding:10px 12px;border-radius:6px;font-size:13px}
+.sig{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--line)}
+.sig:last-of-type{border:0}
+.field{display:flex;flex-direction:column;gap:4px}
+.field label{font-size:13px;color:var(--muted)}
+.field select,.field input{padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:var(--surface);width:100%}
+.hist{margin:0;padding-left:16px;color:var(--muted);font-size:13px}
+.scrim{position:fixed;inset:0;background:rgba(10,14,20,.55);display:grid;place-items:center;padding:16px;z-index:30}
+.modal{background:var(--surface);border-radius:8px;max-width:560px;width:100%;max-height:90vh;overflow:auto;padding:20px;display:flex;flex-direction:column;gap:12px}
+.pick{display:flex;gap:10px;align-items:center;padding:8px 10px;border-radius:6px;background:var(--surface2)}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(380px,100%);background:var(--surface);z-index:40;padding:16px;overflow:auto;box-shadow:-4px 0 16px rgba(0,0,0,.3)}
+.mail{padding:10px 0;border-bottom:1px solid var(--line)}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:max(20px,env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:10px 16px;border-radius:6px;z-index:50;max-width:92vw}
+.protobar{font-size:12px;color:var(--muted);margin:0 0 14px}
+@media(max-width:520px){.sh .sum{display:none}.orow{flex-wrap:wrap}}
+</style>
+
+<header class="top"><div class="wrap">
+  <div class="logo"><svg width="42" height="42" viewBox="0 0 46 46" aria-hidden="true"><rect width="46" height="46" fill="#e5000f"/><path d="M6 6h34v12L30 40h-6L14 18H6z" fill="#fff"/><path d="M14 11h22v6L28 33h-3L17 17h-3z" fill="#e5000f"/></svg><span>Universidad del Valle</span></div>
+  <div class="ttl"><h1>Solicitud Actividades de Extensión</h1><p>Sistema Interno De Calidad Academica Facultad De Salud</p></div>
+  <div class="tools">
+    <select id="role" aria-label="Simular rol (solo prototipo)"></select>
+    <button class="icon" id="bell" aria-label="Correos enviados"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2zm6-6V11c0-3.1-1.600-5.600-4.500-6.300V4a1.500 1.500 0 0 0-3 0v.7C7.600 5.400 6 7.900 6 11v5l-2 2v1h16v-1z"/></svg><span class="dot" id="bellN" hidden></span></button>
+    <button class="btn sm" id="exit">Salir</button>
+  </div>
+</div></header>
+<main class="wrap" id="app"></main>
+<div id="layer"></div>
+
+<script>
+const FORMS=['Aprobación','Presupuesto','Matriz de riesgos','Mercadeo'];
+const STAGES=[{k:'sol',n:'Solicitud'},{k:'r1',n:'Revisión 1'},{k:'r2',n:'Revisión 2'},{k:'pres',n:'Presupuesto'},{k:'firm',n:'Firmas'},{k:'dec',n:'Decanato'},{k:'fin',n:'Finalizado'}];
+const ROLES={sol:'Solicitante (profesor)',r1:'Extensión · Revisor 1',r2:'Extensión · Revisor 2',pres:'Presupuesto',dir:'Director de escuela'};
+const WHO={sol:'Solicitante',r1:'Revisor 1 de Extensión',r2:'Revisor 2 de Extensión',pres:'Presupuesto',firm:'Solicitante y director',dec:'Decanato',fin:'—'};
+let uid=50;
+const O=(from,text,status,sent)=>({id:uid++,from,text,status,sent});
+const mk=(id,name,owner,unit,mode,forms,stage,x={})=>Object.assign({id,name,owner,unit,mode,needsRisk:mode==='Presencial con prácticas',forms,stage,returned:false,backTo:null,resub:false,obs:[],sigs:{dir:false,sol:false},result:null,resNo:'',hist:[{t:'Ejemplo',x:'Datos de muestra del prototipo'}]},x);
+const R=[
+ mk(1,'PRuebas Extensión','me','Aseguramiento de la Calidad','Virtual',[1,1,0,1],'sol'),
+ mk(2,'Curso de primeros auxilios psicológicos','me','Escuela de Salud Pública','Presencial con prácticas',[1,1,0,0],'sol'),
+ mk(3,'Taller de bioseguridad en laboratorio','me','Escuela de Bacteriología','Presencial con prácticas',[1,1,1,0],'sol',{returned:true,backTo:'r2',obs:[
+   O('r1','Falta el riesgo de manejo de residuos biológicos.','pend',true),
+   O('r2','El valor de inscripción no coincide con el punto de equilibrio.','corr',true),
+   O('r2','Indicar la intensidad horaria total.','pend',true)]}),
+ mk(4,'Seminario de salud mental comunitaria','me','Escuela de Medicina','Virtual',[1,1,0,1],'r2',{resub:true,backTo:'r2',obs:[
+   O('r1','Adjuntar hoja de vida del coordinador.','corr',true),
+   O('r2','Incluir honorarios de conferencistas.','ok',true)]}),
+ mk(5,'Jornada de nutrición pediátrica','me','Escuela de Enfermería','Virtual',[1,1,0,1],'firm',{sigs:{dir:false,sol:true}}),
+ mk(6,'Curso de actualización en soporte vital','ana','Escuela de Medicina','Presencial con prácticas',[1,1,1,0],'r1'),
+ mk(7,'Diplomado en gestión de calidad en salud','luis','Escuela de Salud Pública','Virtual',[1,1,0,1],'r2',{obs:[O('r1','Aclarar el perfil de ingreso de los participantes.','pend',false)]}),
+ mk(8,'Curso de ecografía clínica básica','marta','Escuela de Medicina','Presencial con prácticas',[1,1,1,1],'pres'),
+ mk(9,'Congreso de enfermería basada en evidencia','paula','Escuela de Enfermería','Presencial con prácticas',[1,1,1,1],'firm',{sigs:{dir:true,sol:true}}),
+ mk(10,'Especialización en epidemiología de campo','nora','Escuela de Salud Pública','Virtual',[1,1,0,1],'dec',{sigs:{dir:true,sol:true}}),
+ mk(11,'Diplomado en fisioterapia deportiva','me','Escuela de Rehabilitación Humana','Virtual',[1,1,0,1],'fin',{result:'aprobada',resNo:'Resolución 214 de 2026',sigs:{dir:true,sol:true}}),
+];
+R.push(mk(12,'Curso de cuidado paliativo domiciliario','me','Escuela de Enfermería','Virtual',[1,1,0,0],'fin',{result:'rechazada',sigs:{dir:true,sol:true}}));
+const D={1:0,2:1,3:6,4:2,5:7,6:1,7:3,8:1,9:0,10:2,11:0,12:0};
+R.forEach(r=>{r.days=D[r.id]||0;r.key=r.stage+(r.returned?'r':'')});
+const S={role:'sol',view:{t:'home'},sel:{},open:{},grp:{},modal:null,drawer:false,toast:'',mails:[]};
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const byId=id=>R.find(r=>r.id===id);
+const now=()=>new Date().toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+const log=(r,x)=>r.hist.unshift({t:now(),x});
+const mail=(to,x)=>S.mails.unshift({to,x,t:now()});
+const toast=x=>{S.toast=x;draw();setTimeout(()=>{if(S.toast===x){S.toast='';draw()}},3200)};
+const pill=(l,c)=>`<span class="pill t-${c}">${l}</span>`;
+const mine=r=>r.owner==='me';
+const idx=k=>STAGES.findIndex(s=>s.k===k);
+function missing(r){const m=[];if(!r.forms[0])m.push('Aprobación');if(!r.forms[1])m.push('Presupuesto');if(r.needsRisk&&!r.forms[2])m.push('Matriz de riesgos');return m}
+function status(r){const n=r.sigs.dir+r.sigs.sol;
+ switch(r.stage){
+  case 'sol':return r.returned?{l:'Con observaciones',c:'warn'}:{l:'Borrador',c:'neutral'};
+  case 'r1':return{l:'En revisión 1',c:'info'};
+  case 'r2':return r.resub?{l:'Verificando correcciones',c:'acc'}:{l:'En revisión 2',c:'info'};
+  case 'pres':return r.resub?{l:'Presupuesto verifica',c:'acc'}:{l:'En presupuesto',c:'info'};
+  case 'firm':return n===2?{l:'Lista para corte',c:'ok'}:{l:'Firmas '+n+'/2',c:'warn'};
+  case 'dec':return{l:'En decanato',c:'info'};
+  default:return r.result==='aprobada'?{l:'Aprobada',c:'ok'}:{l:'Rechazada',c:'bad'}}}
+function turn(r){const ro=S.role;
+ if(r.stage==='sol')return ro==='sol'&&mine(r);
+ if(r.stage==='firm')return (ro==='sol'&&mine(r)&&!r.sigs.sol)||(ro==='dir'&&!r.sigs.dir)||((ro==='r1'||ro==='r2')&&r.sigs.dir&&r.sigs.sol);
+ if(r.stage==='dec')return ro==='r1'||ro==='r2';
+ return r.stage===ro}
+const readyCorte=()=>R.filter(r=>r.stage==='firm'&&r.sigs.dir&&r.sigs.sol);
+
+/* ---------- inicio ---------- */
+const DELAY=5;
+function days(r){const k=r.stage+(r.returned?'r':'');if(r.key!==k){r.key=k;r.days=0}return r.days}
+function tone(r){const d=days(r),dd=d+(d===1?' día':' días');
+ if(r.stage==='fin')return r.result==='aprobada'?{c:'ok',t:'Aprobada · '+r.resNo}:{c:'bad',t:'Rechazada por el Consejo'};
+ if(r.stage==='sol'&&r.returned){const n=r.obs.filter(o=>o.sent&&o.status==='pend').length;return{c:'bad',t:n+(n===1?' observación por corregir':' observaciones por corregir')+(d?' · '+dd:'')}}
+ if(r.stage==='firm'&&r.sigs.dir&&r.sigs.sol)return{c:'ok',t:'Firmas completas, lista para corte'};
+ const base={sol:'Falta enviarla a revisión',r1:'Esperando Revisión 1',r2:r.resub?'Verificando correcciones':'Esperando Revisión 2',pres:r.resub?'Presupuesto verifica':'Esperando presupuesto',firm:'Faltan firmas ('+(r.sigs.dir+r.sigs.sol)+'/2)',dec:'Esperando respuesta del Consejo'}[r.stage];
+ return d>=DELAY?{c:'bad',t:base+' · demorada, '+dd}:{c:'warn',t:base+(d?' · '+dd:'')}}
+const legend=()=>`<p class="legend"><span><span class="sw tone-ok"></span> &nbsp;&nbsp;En orden</span><span><span class="sw tone-warn"></span> &nbsp;&nbsp;Algo pendiente</span><span><span class="sw tone-bad"></span> &nbsp;&nbsp;Hay que corregir o va demorada (${DELAY} días o más)</span></p>`;
+function item(r){const t=tone(r),o=!!S.sel[r.id];
+ return `<div class="it tone-${t.c}"><button class="item" data-a="open" data-id="${r.id}" aria-expanded="${o}"><span class="t"><span class="nm">${esc(r.name)}</span><br><span class="sm">${esc(t.t)}</span></span><span class="pill">${STAGES[idx(r.stage)].n}</span><span class="chev"></span></button>${o?`<div class="ib">${S.role==='r1'||S.role==='r2'?detailExt(r):detail(r)}</div>`:''}</div>`}
+function detailExt(r){ // el grupo ya indica la etapa: solo formularios y la acción de esa etapa
+ return `<div class="sb"><div class="muted sm">${esc(r.unit)} · ${r.mode}</div>${body(r,'sol')}</div>`+(r.stage==='sol'?'':`<div class="sb">${body(r,r.stage)}</div>`)+
+ `<details><summary class="muted sm" style="cursor:pointer">Historial</summary><ul class="hist" style="margin:8px 0">${r.hist.map(h=>`<li><b>${h.t}</b> · ${esc(h.x)}</li>`).join('')}</ul></details>`}
+function group(key,title,L,extra){
+ const o=S.grp[key]??(L.length>0&&key!=='efin');
+ return `<section class="grp"><button class="gh" data-a="grp" data-k="${key}" aria-expanded="${o}">${title}<span class="n"><span class="pill t-neutral">${L.length}</span></span><span class="chev"></span></button>
+ ${o?(extra||'')+(L.length?L.map(item).join(''):'<div class="empty">Nada por aquí.</div>'):''}</section>`}
+function home(){
+ const ro=S.role;let h='';
+ if(ro==='sol'){
+  const L=R.filter(mine);
+  h=`<div class="top-actions"><h2>Mis solicitudes</h2><button class="btn" data-a="toast" data-x="Se abre el formulario de 4 pasos, como hoy">Crear nueva solicitud</button></div>
+  <div class="grp" style="margin-top:14px">${L.map(item).join('')}</div>`;
+ }else if(ro==='dir'){
+  h=`<h2>Firmas pendientes</h2><p class="muted">Llegaste desde el enlace del correo.</p>`+
+   group('d1','Por firmar',R.filter(r=>r.stage==='firm'&&!r.sigs.dir))+group('d2','Ya firmadas',R.filter(r=>r.sigs.dir&&r.stage!=='sol'&&!(r.stage==='firm'&&!r.sigs.dir)))
+ }else if(ro==='pres'){
+  h=`<h2>Revisión de presupuesto</h2>`+group('p1','Por revisar',R.filter(r=>r.stage==='pres'))+group('p2','Ya revisadas',R.filter(r=>['firm','dec','fin'].includes(r.stage)))
+ }else{
+  const c=readyCorte().length;
+  h=`<h2>Solicitudes de extensión</h2>`+STAGES.filter(s=>s.k!=='sol'||true).map(s=>{
+    const L=R.filter(r=>r.stage===s.k);
+    const t=s.k==='sol'?'Con el solicitante':s.n;
+    const ex=s.k==='firm'?`<div class="gact"><button class="btn pur sm" data-a="corte" ${c?'':'disabled'}>Enviar al decanato (${c})</button></div>`:'';
+    return group('e'+s.k,t,L,ex)}).join('');
+ }
+ return h}
+
+/* ---------- detalle ---------- */
+function stSummary(r,k){
+ const L=k==='r1'||k==='r2'||k==='pres'?r.obs.filter(o=>o.from===k&&o.text.trim()):[];
+ const ci=idx(r.stage),i=idx(k);
+ if(k==='sol')return r.stage==='sol'?(r.returned?r.obs.filter(o=>o.sent&&o.status==='pend').length+' por corregir':'Borrador'):'Enviada';
+ if(k==='firm')return i<ci||(r.stage==='firm'&&false)?'2/2 firmas':r.stage==='firm'?(r.sigs.dir+r.sigs.sol)+'/2 firmas':'';
+ if(k==='dec')return i<ci?'Enviada':r.stage==='dec'?'Esperando respuesta':'';
+ if(k==='fin')return r.stage==='fin'?(r.result==='aprobada'?'Aprobada':'Rechazada'):'';
+ if(i>ci)return '';
+ return L.length?L.length+' observación'+(L.length>1?'es':''):i<ci?'Sin observaciones':'En curso'}
+function detail(r){
+ const ci=idx(r.stage),s=status(r);
+ const defOpen=r.stage;
+ const rows=STAGES.map((st,i)=>{
+  const open=S.open[r.id+st.k]??(st.k===defOpen);
+  const cls=i<ci||r.stage==='fin'?'done':i===ci?'cur'+(r.returned?' ret':''):'pend-st';
+  const mark=i<ci||r.stage==='fin'?'✓':i+1;
+  return `<div class="st ${cls}"><span class="mk">${mark}</span>
+   <button class="sh" data-a="tog" data-k="${r.id}${st.k}" data-def="${st.k===defOpen}" aria-expanded="${open}"><b>${st.n}</b><span class="sum">${stSummary(r,st.k)}</span><span class="chev"></span></button>
+   ${open?`<div class="sb">${body(r,st.k)}</div>`:''}</div>`}).join('');
+ return `<div class="muted sm" style="margin:2px 0 8px">${esc(r.unit)} · ${r.mode}</div>
+ <div class="stages">${rows}</div>
+ <details style="margin-top:20px"><summary class="muted sm" style="cursor:pointer">Historial</summary><ul class="hist" style="margin-top:8px">${r.hist.map(h=>`<li><b>${h.t}</b> · ${esc(h.x)}</li>`).join('')}</ul></details>`}
+
+function obsBlock(r,k){
+ // observaciones de la etapa k: inputs de texto con "Agregar otra"
+ const ext=['r1','r2','pres'].includes(S.role);
+ const list=r.obs.filter(o=>(o.from===k||(k==='r2'&&r.resub&&o.from==='r1'))&&(o.sent||ext)&&(o.sent||o.text.trim()||S.role===k));
+ const edit=S.role===k&&r.stage===k;
+ const verify=edit&&r.resub&&k!=='r1';
+ let h='<div class="obs">';
+ list.forEach(o=>{
+  const ro=o.sent||!edit;
+  h+=`<div class="orow"><input type="text" id="o${o.id}" value="${esc(o.text)}" data-oid="${o.id}" data-rid="${r.id}" ${ro?'readonly':''} placeholder="Escribe una observación" aria-label="Observación">
+   ${verify&&o.sent?`<label><input type="checkbox" data-a="okobs" data-id="${r.id}" data-o="${o.id}" ${o.status==='ok'?'checked':''}> Subsanada</label>`:o.sent?pill({pend:'Pendiente',corr:'Corregida',ok:'Subsanada'}[o.status],{pend:'warn',corr:'acc',ok:'ok'}[o.status]):''}
+   ${!o.sent&&edit?`<button class="x" data-a="delobs" data-id="${r.id}" data-o="${o.id}" aria-label="Quitar observación">×</button>`:''}</div>`});
+ if(!list.length&&!edit)h+='<p class="hint">Sin observaciones.</p>';
+ h+='</div>';
+ if(edit)h+=`<div class="acts"><button class="btn out sm" data-a="addobs" data-id="${r.id}" data-k="${k}">+ Agregar otra</button></div>`;
+ if(k==='r1'&&!edit&&list.some(o=>!o.sent))h+='<p class="hint">Internas: el solicitante las ve cuando el Revisor 2 las envía.</p>';
+ return h}
+const gate=(r,k)=>r.obs.filter(o=>(k==='pres'?o.from==='pres':o.from!=='pres')&&o.text.trim());
+function reviewActions(r,k){
+ if(S.role!==k||r.stage!==k)return `<p class="hint">Etapa a cargo de ${WHO[k]}.</p>`;
+ const g=gate(r,k),unres=g.some(o=>o.status!=='ok'),send=g.some(o=>o.status==='pend'&&(!o.sent||true));
+ if(k==='r1')return `<div class="nav"><span></span><button class="btn pur" data-a="toR2" data-id="${r.id}">Aprobar y seguir <span aria-hidden="true">↓</span></button></div>`;
+ return `<div class="nav"><button class="btn out" data-a="back" data-id="${r.id}" ${send?'':'disabled'}><span aria-hidden="true">↑</span> Devolver con observaciones</button>
+ <button class="btn pur" data-a="pass" data-id="${r.id}" ${unres?'disabled':''}>Aprobar y seguir <span aria-hidden="true">↓</span></button></div>
+ ${unres?'<p class="hint">Para aprobar, deja todas las observaciones subsanadas.</p>':''}`}
+
+function body(r,k){
+ const ci=idx(r.stage),i=idx(k);
+ if(k==='sol'){
+  let h='';
+  if(r.returned&&mine(r)&&S.role==='sol'){
+   h+='<h3>Corrige y marca cada observación</h3><div class="obs">'+r.obs.filter(o=>o.sent).map(o=>`<div class="orow"><input type="text" value="${esc(o.text)}" readonly aria-label="Observación"><label><input type="checkbox" data-a="markcorr" data-id="${r.id}" data-o="${o.id}" ${o.status!=='pend'?'checked':''}> Corregida</label></div>`).join('')+'</div>';
+  }else if(r.returned)h+='<p class="hint">Esperando que el solicitante corrija las observaciones.</p>';
+  const m=missing(r);
+  h+=`<div class="forms">${FORMS.map((f,j)=>{const req=j<2||(j===2&&r.needsRisk),on=r.forms[j];
+    return `<div class="fr"><span class="nm">${f}</span><span class="muted sm">${req?'obligatorio':'opcional'}</span>${on?pill('Listo','ok'):req?pill('Falta','warn'):pill('—','neutral')}<button class="btn ghost sm" data-a="toast" data-x="${on?'Se abre el formulario '+f:'Se abre para diligenciar '+f}">${on?'Ver':'Diligenciar'}</button></div>`}).join('')}</div>`;
+  if(S.role==='sol'&&mine(r)&&r.stage==='sol'){
+   h+=r.returned?`<div class="acts"><button class="btn pur" data-a="resend" data-id="${r.id}" ${r.obs.every(o=>o.status!=='pend')?'':'disabled'}>Enviar a revisión</button></div>`
+     :`<div class="acts"><button class="btn pur" data-a="send" data-id="${r.id}" ${m.length?'disabled':''}>Enviar a revisión</button></div>${m.length?`<p class="hint">Para enviar falta: ${m.join(', ')}.</p>`:''}`}
+  return h}
+ if(k==='r1'||k==='r2'||k==='pres'){
+  if(i>ci)return '<p class="hint">Aún no llega a esta etapa.</p>';
+  return obsBlock(r,k)+(i===ci?reviewActions(r,k):'')}
+ if(k==='firm'){
+  if(i>ci)return '<p class="hint">Se habilita cuando Presupuesto aprueba.</p>';
+  const row=(kk,l)=>`<div class="sig"><span>${l}</span>${r.sigs[kk]?pill('✓ Firmado','ok'):r.stage==='firm'&&((kk==='dir'&&S.role==='dir')||(kk==='sol'&&S.role==='sol'&&mine(r)))?`<button class="btn pur sm" data-a="sign" data-id="${r.id}" data-k="${kk}">Registrar firma</button>`:pill('Pendiente','warn')}</div>`;
+  let h=row('dir','Director de escuela')+row('sol','Solicitante');
+  if(r.stage==='firm'){h+=r.sigs.dir&&r.sigs.sol?`<div class="banner t-ok">Firmas completas. Queda lista para el próximo corte.</div>`+((S.role==='r1'||S.role==='r2')?`<div class="acts"><button class="btn pur" data-a="corte">Enviar al decanato…</button></div>`:''):`<div class="acts"><button class="btn out sm" data-a="remind" data-id="${r.id}">Recordar por correo</button></div>`}
+  return h}
+ if(k==='dec'){
+  if(i>ci)return '<p class="hint">Se habilita cuando Extensión envía el corte al decanato.</p>';
+  if(r.stage!=='dec')return '<p class="hint">Enviada al decanato en el cuadro resumen.</p>';
+  if(S.role!=='r1'&&S.role!=='r2')return '<p class="hint">El Consejo decide fuera del sistema. Extensión registrará la respuesta.</p>';
+  return `<p class="muted" style="margin:0">Registra lo que notificó la vicedecanatura.</p>
+  <div class="field"><label for="res">Resultado</label><select id="res"><option value="aprobada">Aprobada</option><option value="rechazada">Rechazada</option></select></div>
+  <div class="field"><label for="resno">N.º de resolución (si fue aprobada)</label><input id="resno" type="text" placeholder="Ej. Resolución 230 de 2026"></div>
+  <div class="field"><label for="resf">Resolución en PDF</label><input id="resf" type="file" accept="application/pdf"></div>
+  <div class="acts"><button class="btn pur" data-a="close" data-id="${r.id}">Cerrar solicitud</button></div><p class="hint">Se avisa al solicitante y al director.</p>`}
+ if(r.stage!=='fin')return '<p class="hint">Aún no finaliza.</p>';
+ return `<div class="banner t-${r.result==='aprobada'?'ok':'bad'}">${r.result==='aprobada'?'Actividad aprobada. '+esc(r.resNo):'Actividad rechazada por el Consejo de Facultad.'}</div>`}
+
+/* ---------- modales ---------- */
+function corteModal(){const m=S.modal,rd=readyCorte(),d=new Date(),late=(d.getDay()===3&&d.getHours()>=12)||d.getDay()===4,n=m.sel.length+m.extras.length;
+ return `<div class="scrim" data-a="closemodal"><div class="modal" role="dialog" aria-modal="true" aria-label="Enviar al decanato"><h2 style="font-size:20px">Enviar al decanato</h2>
+ <div class="banner ${late?'t-warn':'t-info'}">${late?'Es miércoles por la tarde o jueves: no se asegura que queden para el siguiente Consejo.':'Si se envía el miércoles por la tarde o el jueves, no se asegura que queden para el siguiente Consejo.'}</div>
+ ${rd.length?rd.map(r=>`<label class="pick"><input type="checkbox" data-a="selt" data-id="${r.id}" ${m.sel.includes(r.id)?'checked':''}><span>${esc(r.name)}</span></label>`).join(''):'<p class="hint">No hay solicitudes con las dos firmas.</p>'}
+ ${m.extras.map((x,i)=>`<div class="pick"><span style="flex:1">${esc(x)}</span><button class="x" data-a="delx" data-i="${i}" aria-label="Quitar">×</button></div>`).join('')}
+ <div class="field"><label for="xtxt">Añadir otra solicitud de otro tema</label><div class="acts"><input id="xtxt" type="text" style="flex:1;min-width:160px;padding:9px 10px;border:1px solid var(--line);border-radius:4px;background:var(--surface)"><button class="btn out sm" data-a="addx">Añadir</button></div></div>
+ <div class="acts" style="justify-content:flex-end"><button class="btn ghost" data-a="closemodal">Cancelar</button><button class="btn pur" data-a="sendcorte" ${n?'':'disabled'}>Enviar ${n}</button></div></div></div>`}
+function drawer(){return `<div class="scrim" style="place-items:stretch end;padding:0" data-a="closedrawer"><aside class="drawer"><div class="acts" style="justify-content:space-between"><h3>Correos enviados</h3><button class="btn ghost sm" data-a="closedrawer">Cerrar</button></div><p class="muted sm">Simulación de notificaciones.</p>
+ ${S.mails.length?S.mails.map(m=>`<div class="mail"><div class="sm muted">${m.t} · Para: ${m.to}</div><div>${esc(m.x)}</div></div>`).join(''):'<p class="hint">Aún no hay correos. Haz una acción del flujo.</p>'}</aside></div>`}
+
+function draw(){
+ const v=S.view;
+ $('#app').innerHTML=`<p class="protobar">Prototipo B: etapas verticales. Cambia el rol arriba para recorrer el flujo. Datos de ejemplo.</p>`+home().replace(/<(section|div) class="grp"/,m=>legend()+m);
+ $('#layer').innerHTML=(S.modal?corteModal():'')+(S.drawer?drawer():'')+(S.toast?`<div class="toast" role="status">${esc(S.toast)}</div>`:'');
+ const n=S.mails.length;$('#bellN').hidden=!n;$('#bellN').textContent=n;
+}
+function clean(r){r.obs=r.obs.filter(o=>o.sent||o.text.trim())}
+function act(a,d,el){
+ const r=d.id?byId(+d.id):null;
+ switch(a){
+ case 'home':S.view={t:'home'};break;
+ case 'open':S.sel[+d.id]=!S.sel[+d.id];break;
+ case 'grp':{const cur=S.grp[d.k]??(el.getAttribute('aria-expanded')==='true');S.grp[d.k]=!cur;break}
+ case 'tog':S.open[d.k]=el.getAttribute('aria-expanded')!=='true';break;
+ case 'toast':return toast(d.x);
+ case 'send':r.stage='r1';r.resub=false;log(r,'Enviada a revisión');mail('Revisor 1 de Extensión','Nueva solicitud: '+r.name);S.view={t:'home'};return toast('Enviada a revisión.');
+ case 'toR2':clean(r);r.stage='r2';log(r,'Revisión 1 terminada');mail('Revisor 2 de Extensión','Revisión 1 lista: '+r.name);S.view={t:'home'};return toast('Pasó a Revisión 2.');
+ case 'addobs':{clean(r);const e=r.obs.find(o=>!o.sent&&!o.text.trim()&&o.from===d.k);if(!e)r.obs.push(O(d.k,'','pend',false));draw();const l=[...document.querySelectorAll('.orow input[type=text]:not([readonly])')].pop();if(l)l.focus();return}
+ case 'delobs':r.obs=r.obs.filter(o=>o.id!==+d.o);break;
+ case 'back':{const k=r.stage;clean(r);r.obs.forEach(o=>{if(o.status==='pend')o.sent=true});r.backTo=k;r.stage='sol';r.returned=true;r.resub=false;log(r,'Observaciones enviadas al solicitante');mail('Solicitante','Tu solicitud "'+r.name+'" tiene observaciones.');S.view={t:'home'};return toast('Observaciones enviadas al solicitante.')}
+ case 'markcorr':r.obs.find(o=>o.id===+d.o).status=el.checked?'corr':'pend';break;
+ case 'resend':r.stage=r.backTo;r.returned=false;r.resub=true;log(r,'Solicitante envió correcciones');mail(r.backTo==='pres'?'Presupuesto':'Revisor 2 de Extensión','Correcciones recibidas: '+r.name);S.view={t:'home'};return toast('Enviada a revisión nuevamente.');
+ case 'okobs':r.obs.find(o=>o.id===+d.o).status=el.checked?'ok':'corr';break;
+ case 'pass':clean(r);if(r.stage==='r2'){r.stage='pres';r.resub=false;log(r,'Pasa a presupuesto');mail('Presupuesto','Solicitud para revisar: '+r.name);toast('Enviada a presupuesto.')}
+   else{r.stage='firm';r.resub=false;log(r,'Presupuesto aprobó');mail('Solicitante','Presupuesto aprobó "'+r.name+'". Falta firmar.');mail('Director de escuela','Firma pendiente (enlace): '+r.name);toast('Aprobada. Se habilitaron las firmas.')}
+   S.view={t:'home'};break;
+ case 'sign':r.sigs[d.k]=true;log(r,'Firma: '+(d.k==='dir'?'Director':'Solicitante'));if(r.sigs.dir&&r.sigs.sol)mail('Oficina de Extensión','Firmas completas: '+r.name);toast('Firma registrada.');break;
+ case 'remind':mail(r.sigs.dir?'Solicitante':'Director de escuela','Recordatorio de firma: '+r.name);return toast('Recordatorio enviado.');
+ case 'corte':S.modal={sel:readyCorte().map(x=>x.id),extras:[]};break;
+ case 'closemodal':S.modal=null;break;
+ case 'selt':{const i=+d.id,s=S.modal.sel;S.modal.sel=el.checked?[...s,i]:s.filter(x=>x!==i);break}
+ case 'addx':{const t=$('#xtxt').value.trim();if(t)S.modal.extras.push(t);break}
+ case 'delx':S.modal.extras.splice(+d.i,1);break;
+ case 'sendcorte':{const n=S.modal.sel.length,e=S.modal.extras.length;S.modal.sel.forEach(i=>{const q=byId(i);q.stage='dec';log(q,'Enviada al decanato')});mail('Decanato','Cuadro resumen: '+(n+e)+' solicitudes ('+n+' de extensión, '+e+' de otros temas).');S.modal=null;return toast(n+' enviada(s) al decanato.')}
+ case 'close':{const res=$('#res').value,no=$('#resno').value.trim();if(res==='aprobada'&&!no)return toast('Indica el número de resolución.');
+   r.result=res;r.resNo=no;r.stage='fin';log(r,res==='aprobada'?'Aprobada. '+no:'Rechazada');const x=res==='aprobada'?'"'+r.name+'" fue aprobada. '+no:'"'+r.name+'" fue rechazada por el Consejo.';mail('Solicitante',x);mail('Director de escuela',x);S.view={t:'home'};return toast('Proceso cerrado. Se notificó al solicitante y al director.')}
+ case 'closedrawer':S.drawer=false;break;
+ }
+ draw();
+}
+document.addEventListener('click',e=>{const t=e.target.closest('[data-a]');if(!t)return;
+ if(['selt','markcorr','okobs'].includes(t.dataset.a))return;
+ if(t.classList.contains('scrim')&&e.target!==t)return;
+ act(t.dataset.a,t.dataset,t)});
+document.addEventListener('change',e=>{const t=e.target.closest('[data-a]');if(t&&['selt','markcorr','okobs'].includes(t.dataset.a))act(t.dataset.a,t.dataset,t)});
+document.addEventListener('input',e=>{const t=e.target;if(t.dataset&&t.dataset.oid){const o=byId(+t.dataset.rid).obs.find(o=>o.id===+t.dataset.oid);if(o)o.text=t.value}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&(S.modal||S.drawer)){S.modal=null;S.drawer=false;draw()}});
+$('#role').innerHTML=Object.entries(ROLES).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
+$('#role').onchange=e=>{S.role=e.target.value;S.sel={};draw()};
+$('#bell').onclick=()=>{S.drawer=true;draw()};
+$('#exit').onclick=()=>toast('En el sistema real esto cierra la sesión.');
+draw();
+</script>
+
+</body></html>
