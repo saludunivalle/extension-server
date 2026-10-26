@@ -343,7 +343,7 @@ const getQueue = async (req, res, next) => {
 
 const getConsultationQueue = async (req, res, next) => {
   try {
-    const role = assertRole(req, ['revisor_1', 'revisor_2', 'presupuesto', 'director']);
+    const role = assertRole(req, ['revisor_1', 'revisor_2', 'presupuesto', 'director', 'admin']);
     const fields = sheetsService.fieldDefinitions.ETAPAS;
     const stages = (await readRows('ETAPAS')).map((row, i) => rowObject(fields, row, i));
     const cortes = (await readRows('CORTES_DECANATO')).map((row, i) =>
@@ -373,7 +373,7 @@ const getConsultationQueue = async (req, res, next) => {
       historyByRequest.set(id, current);
     });
     let data = [];
-    if (['revisor_1', 'revisor_2'].includes(role)) {
+    if (role === 'admin' || ['revisor_1', 'revisor_2'].includes(role)) {
       data = stages;
     } else if (role === 'director') {
       const ids = new Set(signatures.filter(item => item.tipo_firma === 'director_escuela').map(item => text(item.id_solicitud)));
@@ -409,14 +409,18 @@ const getConsultationQueue = async (req, res, next) => {
         ...(latestCorteByRequest.has(text(item.id_solicitud))
           ? { corte_decanato: latestCorteByRequest.get(text(item.id_solicitud)) }
           : {}),
-        puede_actuar: role === 'revisor_1'
+        puede_actuar: role === 'admin'
+          ? false
+          : role === 'revisor_1'
           ? item.etapa_codigo === STAGES.REVISION_1
           : role === 'revisor_2'
             ? item.etapa_codigo === STAGES.REVISION_2
             : role === 'presupuesto'
               ? item.etapa_codigo === STAGES.PRESUPUESTO
               : item.etapa_codigo === STAGES.FIRMAS && !item.usuario_asignado,
-        motivo_sin_permiso: 'La consulta es de solo lectura fuera de la etapa asignada'
+        motivo_sin_permiso: role === 'admin'
+          ? 'La vista global de administración es de solo lectura'
+          : 'La consulta es de solo lectura fuera de la etapa asignada'
       }))
     });
   } catch (error) { next(error); }
@@ -463,7 +467,6 @@ const decide = async (req, res, next) => {
     const action = text(req.body.accion).toLowerCase();
     const comment = text(req.body.comentario);
     if (!['aprobar', 'devolver'].includes(action)) return res.status(400).json({ success: false, error: 'Acción inválida; el cierre se registra en Decanato' });
-    if (action === 'devolver' && !comment) return res.status(400).json({ success: false, error: 'El comentario es obligatorio' });
     if (action === 'devolver') {
       const inlineObservations = Array.isArray(req.body.observaciones) ? req.body.observaciones : [];
       const existingObservations = parseObservationStore(stage.comentarios)[stage.etapa_codigo] || [];
@@ -721,12 +724,12 @@ const createCorte = async (req, res, next) => {
     const role = assertRole(req, ['decanato', 'revisor_1', 'revisor_2']);
     const { id_solicitud, estado_corte = 'finalizado', resultado = '', observaciones = '', resolucion = '' } = req.body;
     if (!id_solicitud || !resultado) return res.status(400).json({ success: false, error: 'Se requieren id_solicitud y resultado' });
+    if (!text(resolucion)) return res.status(400).json({ success: false, error: 'El nombre o número de resolución es obligatorio' });
     const stage = await findStage(id_solicitud);
     if (!stage || stage.etapa_codigo !== STAGES.DECANATO) return res.status(409).json({ success: false, error: 'La solicitud no está en Decanato' });
     if (stage.usuario_asignado && stage.usuario_asignado !== req.user.id && role !== 'admin') {
       return res.status(403).json({ success: false, error: 'La solicitud fue tomada por otro usuario' });
     }
-    if (resultado.toLowerCase() === 'aprobada' && !req.file) return res.status(400).json({ success: false, error: 'La resolución PDF es obligatoria para una decisión aprobada' });
     if (req.file && req.file.mimetype !== 'application/pdf') return res.status(400).json({ success: false, error: 'La resolución debe ser un archivo PDF' });
     let resolution = text(resolucion);
     if (req.file) {
