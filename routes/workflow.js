@@ -17,6 +17,7 @@ router.get('/:idSolicitud/observaciones', controller.getObservations);
 router.post('/:idSolicitud/observaciones', controller.addObservation);
 router.patch('/:idSolicitud/observaciones/:idObservacion', controller.updateObservation);
 router.post('/:idSolicitud/firma', upload.single('evidencia_firma'), controller.sign);
+router.post('/:idSolicitud/enviar-decanato', controller.sendToDecanato);
 router.post('/:idSolicitud/firma/recordatorio', controller.remindSignature);
 router.post('/cortes-decanato', upload.single('pdf_resolucion'), controller.createCorte);
 

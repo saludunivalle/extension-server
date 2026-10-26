@@ -2132,6 +2132,13 @@ const enviarSolicitudRevision = async (req, res) => {
     }
 
     const estadoFormularios = parseEstadoFormularios(fila[5]);
+    const solicitudResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'SOLICITUDES!A:V'
+    });
+    const solicitudRow = (solicitudResponse.data.values || []).slice(1)
+      .find((row) => String(row[0] || '').trim() === String(id_solicitud).trim());
+    const totalHoras = Number(solicitudRow?.[21] || 0);
     const formulariosSolicitados = sanitizeFormularios(formularios);
     const formulariosRealizados = getFormulariosByEstado(estadoFormularios, [
       ESTADOS_FORMULARIO.COMPLETADO,
@@ -2153,6 +2160,18 @@ const enviarSolicitudRevision = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'No hay formularios listos para enviar a revisión'
+      });
+    }
+
+    const form3Estado = normalizeEstadoFormulario(estadoFormularios['3']);
+    const form3Satisfecho = formulariosAEnviar.includes(3)
+      || form3Estado === ESTADOS_FORMULARIO.APROBADO
+      || form3Estado === ESTADOS_FORMULARIO.ENVIADO_REVISION;
+    if (totalHoras >= 16 && !form3Satisfecho) {
+      return res.status(400).json({
+        success: false,
+        code: 'MATRIZ_RIESGOS_OBLIGATORIA',
+        error: 'La Matriz de riesgos es obligatoria cuando el total de horas es mayor o igual a 16'
       });
     }
 
