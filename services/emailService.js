@@ -13,7 +13,7 @@ class EmailService {
     });
   }
 
-  async send({ to, subject, text }) {
+  async send({ to, subject, text, attachments = [] }) {
     if (!to) throw new Error('No hay destinatario para la notificación');
     if (!process.env.SMTP_USER || !process.env.SMTP_PASSWORD) {
       throw new Error('Faltan SMTP_USER o SMTP_PASSWORD');
@@ -23,7 +23,8 @@ class EmailService {
       from: process.env.SMTP_FROM || process.env.SMTP_USER,
       to,
       subject,
-      text
+      text,
+      attachments
     });
   }
 }

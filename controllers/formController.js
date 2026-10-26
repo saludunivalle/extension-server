@@ -2183,7 +2183,10 @@ const enviarSolicitudRevision = async (req, res) => {
         return;
       }
 
-      setEstadoFormulario(estadoFormularios, formularioId, ESTADOS_FORMULARIO.ENVIADO_REVISION);
+      // El formulario ya fue diligenciado por el solicitante. El avance del
+      // workflow se registra en ETAPAS; el estado del formulario permanece
+      // como Completado para no confundirlo con la etapa de revisión.
+      setEstadoFormulario(estadoFormularios, formularioId, ESTADOS_FORMULARIO.COMPLETADO);
     });
 
     if (invalidos.length > 0) {
@@ -2354,7 +2357,7 @@ const aprobarSolicitudAdmin = async (req, res) => {
     const invalidos = [];
     formulariosAprobar.forEach((formularioId) => {
       const estadoActual = normalizeEstadoFormulario(estadoFormularios[String(formularioId)]);
-      if (estadoActual !== ESTADOS_FORMULARIO.ENVIADO_REVISION) {
+      if (![ESTADOS_FORMULARIO.ENVIADO_REVISION, ESTADOS_FORMULARIO.COMPLETADO].includes(estadoActual)) {
         invalidos.push(formularioId);
         return;
       }
