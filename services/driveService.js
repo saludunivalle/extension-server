@@ -186,6 +186,40 @@ class DriveService {
     }
   }
 
+  async exportFileAsPdf(fileId, outputPath) {
+    const response = await this.drive.files.export(
+      { fileId, mimeType: 'application/pdf' },
+      { responseType: 'arraybuffer' }
+    );
+    await fs.promises.writeFile(outputPath, Buffer.from(response.data));
+    return outputPath;
+  }
+
+  async uploadXlsxAsGoogleSheet(filePath, fileName) {
+    const response = await this.drive.files.create({
+      requestBody: {
+        name: fileName,
+        parents: [this.templateFolderId],
+        mimeType: 'application/vnd.google-apps.spreadsheet'
+      },
+      media: {
+        mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        body: fs.createReadStream(filePath)
+      },
+      fields: 'id'
+    });
+    await this.makeFilePublic(response.data.id);
+    return response.data.id;
+  }
+
+  async downloadFileBuffer(fileId) {
+    const response = await this.drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'arraybuffer' }
+    );
+    return Buffer.from(response.data);
+  }
+
   /**
    * Hace público un archivo en Google Drive
    * @param {String} fileId - ID del archivo

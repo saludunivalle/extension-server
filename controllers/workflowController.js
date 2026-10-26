@@ -2,6 +2,7 @@ const fs = require('fs');
 const sheetsService = require('../services/sheetsService');
 const driveService = require('../services/driveService');
 const emailService = require('../services/emailService');
+const { createDecanatoAttachments } = require('../services/workflowAttachmentService');
 
 const STAGES = Object.freeze({
   SOLICITUD: 'solicitud',
@@ -121,14 +122,14 @@ function renderEmailTemplate(template, stage) {
     .replaceAll('{{fecha}}', now());
 }
 
-async function notifyRecipients({ stage, event, recipients, subject, body }) {
+async function notifyRecipients({ stage, event, recipients, subject, body, attachments = [] }) {
   const uniqueRecipients = [...new Set(recipients.map(item => text(item).toLowerCase()).filter(Boolean))];
   if (!uniqueRecipients.length) {
-    return notifySignatureEvent({ stage, event, recipient: '', subject, body });
+    return notifySignatureEvent({ stage, event, recipient: '', subject, body, attachments });
   }
   const notifications = [];
   for (const recipient of uniqueRecipients) {
-    notifications.push(await notifySignatureEvent({ stage, event, recipient, subject, body }));
+    notifications.push(await notifySignatureEvent({ stage, event, recipient, subject, body, attachments }));
   }
   return notifications;
 }
@@ -270,7 +271,7 @@ async function appendObservation(stage, req, payload) {
   return data;
 }
 
-async function recordNotification(id, event, recipient, subject, body) {
+async function recordNotification(id, event, recipient, subject, body, attachments = []) {
   const fields = sheetsService.fieldDefinitions.NOTIFICACIONES;
   const data = {
     id_notificacion: await sheetsService.getLastId('NOTIFICACIONES') + 1,
@@ -284,7 +285,7 @@ async function recordNotification(id, event, recipient, subject, body) {
   };
 
   try {
-    await emailService.send({ to: recipient, subject, text: body });
+    await emailService.send({ to: recipient, subject, text: body, attachments });
     data.estado = 'enviada';
     data.fecha_envio = now();
   } catch (error) {
@@ -297,7 +298,7 @@ async function recordNotification(id, event, recipient, subject, body) {
   return data;
 }
 
-async function notifySignatureEvent({ stage, event, recipient, subject, body }) {
+async function notifySignatureEvent({ stage, event, recipient, subject, body, attachments = [] }) {
   if (!recipient) {
     console.warn(`No se envió ${event}: no se encontró correo destinatario para ${stage.id_solicitud}`);
     const fields = sheetsService.fieldDefinitions.NOTIFICACIONES;
@@ -314,7 +315,7 @@ async function notifySignatureEvent({ stage, event, recipient, subject, body }) 
     await append('NOTIFICACIONES', fields, data);
     return data;
   }
-  return recordNotification(stage.id_solicitud, event, recipient, subject, body);
+  return recordNotification(stage.id_solicitud, event, recipient, subject, body, attachments);
 }
 
 const getQueue = async (req, res, next) => {
@@ -381,8 +382,14 @@ const getConsultationQueue = async (req, res, next) => {
       const reviewedIds = new Set(history
         .filter(item => text(item.rol_actor).toLowerCase() === role)
         .map(item => text(item.id_solicitud)));
-      data = stages.filter(item => reviewedIds.has(text(item.id_solicitud)) ||
-        text(item.etapa_anterior).toLowerCase() === STAGES.PRESUPUESTO);
+      data = stages.filter(item => (
+        // La solicitud actualmente asignada a Presupuesto debe aparecer,
+        // aunque todavía no tenga historial de una acción de ese rol.
+        text(item.etapa_codigo).toLowerCase() === STAGES.PRESUPUESTO
+        || text(item.rol_responsable).toLowerCase() === role
+        || reviewedIds.has(text(item.id_solicitud))
+        || text(item.etapa_anterior).toLowerCase() === STAGES.PRESUPUESTO
+      ));
     }
     res.json({
       success: true,
@@ -666,19 +673,25 @@ const sendToDecanato = async (req, res, next) => {
       ...(await findRoleEmails('decanato')),
       ...parseRecipients(req.body.destinatarios_decanato)
     ];
-    const notifications = await notifyRecipients({
-      stage,
-      event: 'solicitud_enviada_decanato',
-      recipients,
-      subject,
-      body
-    });
-    const updated = await updateStage(stage, {
-      etapa_codigo: STAGES.DECANATO, etapa_actual: STAGES.DECANATO, rol_responsable: 'decanato',
-      estado_etapa: 'pendiente', usuario_asignado: '', fecha_fin: now()
-    });
-    await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'enviar_decanato', stage.estado_etapa, 'decanato', req);
-    res.json({ success: true, data: { etapa: updated, notificaciones_decanato: notifications, rol: role } });
+    const { attachments, tempDir } = await createDecanatoAttachments({ stage, signatures });
+    try {
+      const notifications = await notifyRecipients({
+        stage,
+        event: 'solicitud_enviada_decanato',
+        recipients,
+        subject,
+        body,
+        attachments
+      });
+      const updated = await updateStage(stage, {
+        etapa_codigo: STAGES.DECANATO, etapa_actual: STAGES.DECANATO, rol_responsable: 'decanato',
+        estado_etapa: 'pendiente', usuario_asignado: '', fecha_fin: now()
+      });
+      await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'enviar_decanato', stage.estado_etapa, 'decanato', req);
+      res.json({ success: true, data: { etapa: updated, notificaciones_decanato: notifications, adjuntos: attachments.map(item => item.filename), rol: role } });
+    } finally {
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
+    }
   } catch (error) { next(error); }
 };
 
