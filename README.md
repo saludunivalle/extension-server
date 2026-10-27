@@ -1502,7 +1502,7 @@ id_corte, fecha_corte, id_solicitud, estado_corte, id_usuario_envia, fecha_envio
 
 - `revisor_1` y `revisor_2` consultan colas distintas.
 - El botÃ³n de aprobar depende de `etapa_codigo`.
-- Devolver requiere comentario; el rechazo definitivo se registra en Decanato.
+- Devolver requiere al menos una observación específica; el comentario general es opcional.
 - Presupuesto solo actÃºa en `presupuesto`.
 - En firmas deben aparecer dos acciones independientes: solicitante y director.
 - Decanato solo recibe solicitudes con las dos firmas.
@@ -1536,7 +1536,7 @@ Esta tabla refleja el estado actual del backend.
 | Resultado final de Decanato | Implementado | `CORTES_DECANATO.resultado` |
 | Cierre por revisor 1/2 en Decanato | Implementado | `POST /workflow/cortes-decanato` con rol `revisor_1` o `revisor_2` |
 | Nombre de resolución de Decanato | Implementado | `CORTES_DECANATO.resolucion` |
-| PDF de resolución | Implementado | Decanato carga `pdf_resolucion` y se guarda la URL en `CORTES_DECANATO.resolucion` |
+| PDF de resolución | Implementado | Decanato carga `pdf_resolucion` y se guarda la URL en `CORTES_DECANATO.archivo_resolucion`; el nombre queda en `CORTES_DECANATO.resolucion` |
 | Notificaciones por correo | Implementado | Firmas, recordatorios y envío automático a Decanato; se registra en `NOTIFICACIONES` |
 
 ### 17.1 Obtener solicitudes por rol
