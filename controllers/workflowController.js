@@ -731,9 +731,10 @@ const createCorte = async (req, res, next) => {
       return res.status(403).json({ success: false, error: 'La solicitud fue tomada por otro usuario' });
     }
     if (req.file && req.file.mimetype !== 'application/pdf') return res.status(400).json({ success: false, error: 'La resolución debe ser un archivo PDF' });
-    let resolution = text(resolucion);
+    const resolutionName = text(resolucion);
+    let resolutionFile = '';
     if (req.file) {
-      resolution = await driveService.uploadFile(
+      resolutionFile = await driveService.uploadFile(
         req.file,
         process.env.DRIVE_UPLOADS_FOLDER,
         `resolucion-${id_solicitud}-${Date.now()}.pdf`
@@ -744,7 +745,7 @@ const createCorte = async (req, res, next) => {
       id_corte: await sheetsService.getLastId('CORTES_DECANATO') + 1,
       fecha_corte: now(), id_solicitud, estado_corte,
       id_usuario_envia: req.user.id, fecha_envio: now(), resultado, observaciones,
-      resolucion, estado_final: resultado
+      resolucion: resolutionName, archivo_resolucion: resolutionFile, estado_final: resultado
     };
     await append('CORTES_DECANATO', sheetsService.fieldDefinitions.CORTES_DECANATO, data);
     const updated = await updateStage(stage, {

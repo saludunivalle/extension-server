@@ -221,7 +221,7 @@ class SpreadsheetModel {
   const CORTES_DECANATO = new SpreadsheetModel('CORTES_DECANATO', [
     'id_corte', 'fecha_corte', 'id_solicitud', 'estado_corte',
     'id_usuario_envia', 'fecha_envio', 'resultado', 'observaciones', 'resolucion',
-    'estado_final'
+    'archivo_resolucion', 'estado_final'
   ]);
 
   const FIRMAS = new SpreadsheetModel('FIRMAS', [
