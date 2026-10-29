@@ -80,6 +80,30 @@ async function getEtapas(fuerzaRefresh = false) {
   return etapasCache.datos;
 }
 
+async function appendWorkflowHistory({ idSolicitud, userId, role, action, previousStage, previousState }) {
+  const fields = sheetsService.fieldDefinitions.HISTORIAL_ETAPAS;
+  const row = {
+    id_historial: await sheetsService.getLastId('HISTORIAL_ETAPAS') + 1,
+    id_solicitud: idSolicitud,
+    etapa: previousStage,
+    accion: action,
+    estado_anterior: previousState || 'borrador',
+    estado_nuevo: 'pendiente',
+    rol_actor: role || 'solicitante',
+    fecha: new Date().toISOString(),
+    comentario: '',
+    id_usuario_actor: userId
+  };
+
+  await sheetsService.getClient().spreadsheets.values.append({
+    spreadsheetId: sheetsService.spreadsheetId,
+    range: 'HISTORIAL_ETAPAS!A2:J',
+    valueInputOption: 'RAW',
+    insertDataOption: 'INSERT_ROWS',
+    resource: { values: [fields.map((field) => row[field] ?? '')] }
+  });
+}
+
 async function getUserRoleInfo(userId) {
   if (!userId) {
     return { role: '', isAdmin: false };
@@ -2221,6 +2245,20 @@ const enviarSolicitudRevision = async (req, res) => {
       rol_responsable: returnStage === 'revision_2' ? 'revisor_2' : 'revisor_1',
       usuario_asignado: '', estado_etapa: 'pendiente', fecha_fin: ''
     });
+
+    const isResubmission = currentStage === 'solicitud' && currentStageState === 'devuelta';
+    try {
+      await appendWorkflowHistory({
+        idSolicitud: id_solicitud,
+        userId,
+        role: isAdmin ? 'admin' : 'solicitante',
+        action: isResubmission ? 'reenviar_correcciones' : 'enviar_revision',
+        previousStage: currentStage,
+        previousState: currentStageState
+      });
+    } catch (historyError) {
+      console.warn('No se pudo registrar el envío en HISTORIAL_ETAPAS:', historyError.message);
+    }
 
     return res.status(200).json({
       success: true,

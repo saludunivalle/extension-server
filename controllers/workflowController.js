@@ -323,6 +323,23 @@ const getQueue = async (req, res, next) => {
     const role = assertRole(req, [...Object.keys(ROLE_STAGE), 'director']);
     const fields = sheetsService.fieldDefinitions.ETAPAS;
     const stages = (await readRows('ETAPAS')).map((row, i) => rowObject(fields, row, i));
+    const history = (await readRows('HISTORIAL_ETAPAS')).map((row, i) =>
+      rowObject(sheetsService.fieldDefinitions.HISTORIAL_ETAPAS, row, i));
+    const users = (await readRows('USUARIOS')).map((row, i) =>
+      rowObject(sheetsService.fieldDefinitions.USUARIOS, row, i));
+    const emailByUserId = new Map(
+      users.map((user) => [text(user.id_usuario), text(user.correo_usuario || user.email)])
+    );
+    const historyByRequest = new Map();
+    history.forEach((entry) => {
+      const id = text(entry.id_solicitud);
+      const current = historyByRequest.get(id) || [];
+      current.push({
+        ...entry,
+        email_actor: emailByUserId.get(text(entry.id_usuario_actor)) || 'Sin email disponible'
+      });
+      historyByRequest.set(id, current);
+    });
     const result = stages
       .filter(item => (text(item.rol_responsable) === role ||
         (['revisor_1', 'revisor_2'].includes(role) && item.etapa_codigo === STAGES.DECANATO)) &&
@@ -337,7 +354,14 @@ const getQueue = async (req, res, next) => {
       result.push(...stages.filter(item => signed.includes(text(item.id_solicitud)) &&
         !result.some(current => current.id_solicitud === item.id_solicitud)));
     }
-    res.json({ success: true, role, data: result });
+    res.json({
+      success: true,
+      role,
+      data: result.map((item) => ({
+        ...item,
+        historial: historyByRequest.get(text(item.id_solicitud)) || []
+      }))
+    });
   } catch (error) { next(error); }
 };
 
@@ -372,6 +396,11 @@ const getConsultationQueue = async (req, res, next) => {
       current.push(entry);
       historyByRequest.set(id, current);
     });
+    const userFields = sheetsService.fieldDefinitions.USUARIOS;
+    const users = (await readRows('USUARIOS')).map((row, i) => rowObject(userFields, row, i));
+    const emailByUserId = new Map(
+      users.map((user) => [text(user.id_usuario), text(user.correo_usuario || user.email)])
+    );
     let data = [];
     if (role === 'admin' || ['revisor_1', 'revisor_2'].includes(role)) {
       data = stages;
@@ -405,7 +434,10 @@ const getConsultationQueue = async (req, res, next) => {
               requestSignatures.some(signature => signature.tipo_firma === 'director_escuela' && signature.estado === 'firmada')
           };
         })() : {}),
-        historial: historyByRequest.get(text(item.id_solicitud)) || [],
+        historial: (historyByRequest.get(text(item.id_solicitud)) || []).map((entry) => ({
+          ...entry,
+          email_actor: emailByUserId.get(text(entry.id_usuario_actor)) || 'Sin email disponible'
+        })),
         ...(latestCorteByRequest.has(text(item.id_solicitud))
           ? { corte_decanato: latestCorteByRequest.get(text(item.id_solicitud)) }
           : {}),
