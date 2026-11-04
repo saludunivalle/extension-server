@@ -40,6 +40,17 @@ async function readRows(sheet) {
   return response.data.values || [];
 }
 
+async function readDependencyByRequest() {
+  const fields = sheetsService.fieldDefinitions.SOLICITUDES;
+  const rows = await readRows('SOLICITUDES');
+  return new Map(
+    rows.map((row, index) => {
+      const solicitud = rowObject(fields, row, index);
+      return [text(solicitud.id_solicitud), text(solicitud.nombre_dependencia)];
+    }),
+  );
+}
+
 function rowObject(fields, row, index) {
   return fields.reduce((obj, field, i) => {
     obj[field] = row[i] ?? '';
@@ -323,6 +334,7 @@ const getQueue = async (req, res, next) => {
     const role = assertRole(req, [...Object.keys(ROLE_STAGE), 'director']);
     const fields = sheetsService.fieldDefinitions.ETAPAS;
     const stages = (await readRows('ETAPAS')).map((row, i) => rowObject(fields, row, i));
+    const dependencyByRequest = await readDependencyByRequest();
     const history = (await readRows('HISTORIAL_ETAPAS')).map((row, i) =>
       rowObject(sheetsService.fieldDefinitions.HISTORIAL_ETAPAS, row, i));
     const users = (await readRows('USUARIOS')).map((row, i) =>
@@ -359,6 +371,9 @@ const getQueue = async (req, res, next) => {
       role,
       data: result.map((item) => ({
         ...item,
+        nombre_dependencia:
+          dependencyByRequest.get(text(item.id_solicitud)) ||
+          text(item.nombre_dependencia),
         historial: historyByRequest.get(text(item.id_solicitud)) || []
       }))
     });
@@ -370,6 +385,7 @@ const getConsultationQueue = async (req, res, next) => {
     const role = assertRole(req, ['revisor_1', 'revisor_2', 'presupuesto', 'director', 'admin']);
     const fields = sheetsService.fieldDefinitions.ETAPAS;
     const stages = (await readRows('ETAPAS')).map((row, i) => rowObject(fields, row, i));
+    const dependencyByRequest = await readDependencyByRequest();
     const cortes = (await readRows('CORTES_DECANATO')).map((row, i) =>
       rowObject(sheetsService.fieldDefinitions.CORTES_DECANATO, row, i));
     const latestCorteByRequest = new Map();
@@ -425,6 +441,9 @@ const getConsultationQueue = async (req, res, next) => {
       role,
       data: data.map(item => ({
         ...item,
+        nombre_dependencia:
+          dependencyByRequest.get(text(item.id_solicitud)) ||
+          text(item.nombre_dependencia),
         ...(signaturesByRequest.has(text(item.id_solicitud)) ? (() => {
           const requestSignatures = signaturesByRequest.get(text(item.id_solicitud));
           return {
