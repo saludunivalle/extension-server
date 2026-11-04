@@ -860,8 +860,24 @@ const getRequests = async (req, res) => {
       return res.status(404).json({ error: 'No se encontraron solicitudes activas o terminadas' });
     }
 
+    // ETAPAS no contiene la dependencia; se completa desde SOLICITUDES.
+    const solicitudesResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'SOLICITUDES!A2:BA',
+    });
+    const dependenciaBySolicitud = new Map(
+      (solicitudesResponse.data.values || []).map((row) => [
+        String(row[0] || ''),
+        row[9] || '',
+      ]),
+    );
+    const rowsWithDependency = rows.map((row) => [
+      ...row,
+      dependenciaBySolicitud.get(String(row[0] || '')) || '',
+    ]);
+
     const canAccessRow = (row) => isAdmin || row[1] === userId;
-    const visibleRows = rows.filter((row) => canAccessRow(row));
+    const visibleRows = rowsWithDependency.filter((row) => canAccessRow(row));
 
     const activeRequests = visibleRows.filter((row) => getEstadoGeneralFromRow(row) === ESTADOS_GENERALES.EN_PROCESO);
     const completedRequests = visibleRows.filter((row) => getEstadoGeneralFromRow(row) !== ESTADOS_GENERALES.EN_PROCESO);
