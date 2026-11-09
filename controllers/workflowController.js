@@ -2,7 +2,8 @@ const fs = require('fs');
 const sheetsService = require('../services/sheetsService');
 const driveService = require('../services/driveService');
 const emailService = require('../services/emailService');
-const { createDecanatoAttachments } = require('../services/workflowAttachmentService');
+const workflowNotificationService = require('../services/workflowNotificationService');
+const { createDecanatoAttachments, generateFormPdfBuffer } = require('../services/workflowAttachmentService');
 
 const STAGES = Object.freeze({
   SOLICITUD: 'solicitud',
@@ -133,14 +134,14 @@ function renderEmailTemplate(template, stage) {
     .replaceAll('{{fecha}}', now());
 }
 
-async function notifyRecipients({ stage, event, recipients, subject, body, attachments = [] }) {
+async function notifyRecipients({ stage, event, recipients, subject, body, html, attachments = [] }) {
   const uniqueRecipients = [...new Set(recipients.map(item => text(item).toLowerCase()).filter(Boolean))];
   if (!uniqueRecipients.length) {
-    return notifySignatureEvent({ stage, event, recipient: '', subject, body, attachments });
+    return notifySignatureEvent({ stage, event, recipient: '', subject, body, html, attachments });
   }
   const notifications = [];
   for (const recipient of uniqueRecipients) {
-    notifications.push(await notifySignatureEvent({ stage, event, recipient, subject, body, attachments }));
+    notifications.push(await notifySignatureEvent({ stage, event, recipient, subject, body, html, attachments }));
   }
   return notifications;
 }
@@ -283,50 +284,26 @@ async function appendObservation(stage, req, payload) {
 }
 
 async function recordNotification(id, event, recipient, subject, body, attachments = []) {
-  const fields = sheetsService.fieldDefinitions.NOTIFICACIONES;
-  const data = {
-    id_notificacion: await sheetsService.getLastId('NOTIFICACIONES') + 1,
-    id_solicitud: id,
-    evento: event,
-    estado: 'pendiente',
-    intentos: 1,
-    fecha_creacion: now(),
-    fecha_envio: '',
-    ultimo_error: ''
-  };
-
-  try {
-    await emailService.send({ to: recipient, subject, text: body, attachments });
-    data.estado = 'enviada';
-    data.fecha_envio = now();
-  } catch (error) {
-    data.estado = 'fallida';
-    data.ultimo_error = error.message;
-    console.error(`No se pudo enviar notificación ${event} para ${id}:`, error);
-  }
-
-  await append('NOTIFICACIONES', fields, data);
-  return data;
+  return workflowNotificationService.recordNotification({
+    idSolicitud: id,
+    event,
+    recipient,
+    subject,
+    text: body,
+    attachments
+  });
 }
 
-async function notifySignatureEvent({ stage, event, recipient, subject, body, attachments = [] }) {
-  if (!recipient) {
-    console.warn(`No se envió ${event}: no se encontró correo destinatario para ${stage.id_solicitud}`);
-    const fields = sheetsService.fieldDefinitions.NOTIFICACIONES;
-    const data = {
-      id_notificacion: await sheetsService.getLastId('NOTIFICACIONES') + 1,
-      id_solicitud: stage.id_solicitud,
-      evento: event,
-      estado: 'sin_destinatario',
-      intentos: 0,
-      fecha_creacion: now(),
-      fecha_envio: '',
-      ultimo_error: 'No se encontró correo destinatario'
-    };
-    await append('NOTIFICACIONES', fields, data);
-    return data;
-  }
-  return recordNotification(stage.id_solicitud, event, recipient, subject, body, attachments);
+async function notifySignatureEvent({ stage, event, recipient, subject, body, html, attachments = [] }) {
+  return workflowNotificationService.recordNotification({
+    idSolicitud: stage.id_solicitud,
+    event,
+    recipient,
+    subject,
+    text: body,
+    html,
+    attachments
+  });
 }
 
 const getQueue = async (req, res, next) => {
@@ -519,22 +496,31 @@ const decide = async (req, res, next) => {
     const comment = text(req.body.comentario);
     if (!['aprobar', 'devolver'].includes(action)) return res.status(400).json({ success: false, error: 'Acción inválida; el cierre se registra en Decanato' });
     if (action === 'devolver') {
+      if (role === 'revisor_1') {
+        return res.status(403).json({ success: false, error: 'El Revisor 1 no puede devolver la solicitud. Debe enviarla a Revisión 2 con sus observaciones.' });
+      }
       const inlineObservations = Array.isArray(req.body.observaciones) ? req.body.observaciones : [];
-      const existingObservations = parseObservationStore(stage.comentarios)[stage.etapa_codigo] || [];
+      const storeObservations = Object.values(parseObservationStore(stage.comentarios)).flat();
       const hasObservation = inlineObservations.length > 0 ||
-        existingObservations.some(item => normalizeObservationStatus(item.estado) === 'pendiente');
+        storeObservations.some(item => normalizeObservationStatus(item.estado) === 'pendiente');
       if (!hasObservation) {
         return res.status(400).json({ success: false, error: 'Debe incluir al menos una observación para devolver la solicitud' });
       }
     }
 
     const nextStage = action === 'devolver' ?
-      (stage.etapa_codigo === STAGES.PRESUPUESTO ? STAGES.REVISION_2 : STAGES.SOLICITUD) :
-      ({ revision_1: STAGES.REVISION_2, revision_2: STAGES.PRESUPUESTO, presupuesto: STAGES.FIRMAS }[stage.etapa_codigo] || STAGES.FINALIZADO);
+      (stage.etapa_codigo === STAGES.PRESUPUESTO ? STAGES.SOLICITUD : STAGES.SOLICITUD) :
+      ({
+        revision_1: STAGES.REVISION_2,
+        revision_2: STAGES.FIRMAS,
+        firmas: STAGES.PRESUPUESTO,
+        presupuesto: STAGES.DECANATO
+      }[stage.etapa_codigo] || STAGES.FINALIZADO);
     const nextRole = nextStage === STAGES.SOLICITUD ? 'solicitante' :
       nextStage === STAGES.REVISION_2 ? 'revisor_2' :
+      nextStage === STAGES.FIRMAS ? 'solicitante/director' :
       nextStage === STAGES.PRESUPUESTO ? 'presupuesto' :
-      nextStage === STAGES.FIRMAS ? 'solicitante/director' : '';
+      nextStage === STAGES.DECANATO ? 'decanato' : '';
     const newState = action === 'devolver' ? 'devuelta' : 'pendiente';
     const observations = [];
     if (Array.isArray(req.body.observaciones)) {
@@ -563,11 +549,61 @@ const decide = async (req, res, next) => {
       comentarios: stage.comentarios
     });
     await logHistory(stage.id_solicitud, stage.etapa_codigo, action, stage.estado_etapa, newState, req, comment);
+
+    let notifications = [];
+    if (action === 'aprobar') {
+      try {
+        let attachments = [];
+        let tempDir = null;
+        if (nextStage === STAGES.DECANATO) {
+          try {
+            const fields = sheetsService.fieldDefinitions.FIRMAS;
+            const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
+              .filter(item => text(item.id_solicitud) === text(stage.id_solicitud) && item.estado === 'firmada');
+            const result = await createDecanatoAttachments({ stage: updated, signatures });
+            attachments = result.attachments;
+            tempDir = result.tempDir;
+          } catch (attErr) {
+            console.warn('No se pudieron adjuntar los PDFs firmados al notificar a Decanato:', attErr.message);
+          }
+        }
+        notifications = await workflowNotificationService.notifyStageApproved({
+          stage: updated,
+          previousStage: stage.etapa_codigo,
+          nextStage,
+          nextRole,
+          comment,
+          approvedBy: req.user,
+          attachments
+        });
+        if (tempDir) {
+          await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        }
+      } catch (notifyErr) {
+        console.warn('Error al enviar notificaciones de aprobación:', notifyErr.message);
+      }
+    } else if (action === 'devolver') {
+      try {
+        notifications = await workflowNotificationService.notifyStageReturned({
+          stage: updated,
+          fromStage: stage.etapa_codigo,
+          toStage: nextStage,
+          returnRole: nextRole,
+          comment,
+          observations: observations.length > 0 ? observations : (req.body.observaciones || []),
+          returnedBy: req.user
+        });
+      } catch (notifyErr) {
+        console.warn('Error al enviar notificaciones de devolución:', notifyErr.message);
+      }
+    }
+
     res.json({
       success: true,
       data: {
         ...updated,
-        observaciones: observations
+        observaciones: observations,
+        notificaciones: notifications
       }
     });
   } catch (error) { next(error); }
@@ -578,7 +614,7 @@ const getObservations = async (req, res, next) => {
     const stage = await findStage(req.params.idSolicitud);
     if (!stage) return res.status(404).json({ success: false, error: 'Solicitud no encontrada' });
     const observations = await getObservationsForRequest(stage);
-    res.json({ success: true, data: observations });
+    res.json({ success: true, data: observations, etapa_actual: stage.etapa_codigo });
   } catch (error) { next(error); }
 };
 
@@ -617,8 +653,12 @@ const updateObservation = async (req, res, next) => {
     const isOwner = text(stage.id_usuario) === text(req.user.id);
     const isAuthor = text(current.id_usuario_autor) === text(req.user.id);
     const isStageReviewer = ROLE_STAGE[role] === currentStage;
-    if (role !== 'admin' && !isAuthor && !isOwner && !isStageReviewer) {
+    const isRevisor2InStage = role === 'revisor_2' && stage.etapa_codigo === STAGES.REVISION_2;
+    if (role !== 'admin' && !isAuthor && !isOwner && !isStageReviewer && !isRevisor2InStage) {
       return res.status(403).json({ success: false, error: 'No puedes modificar esta observación' });
+    }
+    if (isOwner && !isAuthor && !isStageReviewer && (stage.etapa_codigo !== STAGES.SOLICITUD || stage.estado_etapa !== 'devuelta')) {
+      return res.status(403).json({ success: false, error: 'No se pueden modificar observaciones una vez reenviada la solicitud' });
     }
     if (isOwner && !isAuthor && !isStageReviewer && req.body.observacion !== undefined) {
       return res.status(403).json({ success: false, error: 'El solicitante solo puede actualizar el estado de la observación' });
@@ -630,8 +670,8 @@ const updateObservation = async (req, res, next) => {
       fecha_actualizacion: now()
     };
     if (!next.observacion) return res.status(400).json({ success: false, error: 'La observación no puede estar vacía' });
-    if (isOwner && !isAuthor && !isStageReviewer && next.estado !== 'subsanada') {
-      return res.status(403).json({ success: false, error: 'El solicitante solo puede marcar la observación como subsanada' });
+    if (isOwner && !isAuthor && !isStageReviewer && !['subsanada', 'pendiente'].includes(next.estado)) {
+      return res.status(403).json({ success: false, error: 'El solicitante solo puede alternar la observación entre pendiente y subsanada' });
     }
     const observations = store[currentStage];
     const itemIndex = observations.findIndex(item => text(item.id_observacion) === text(req.params.idObservacion));
@@ -691,17 +731,28 @@ const sign = async (req, res, next) => {
     const updated = await updateStage(stage, { estado_etapa: 'en_revision' });
     await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'firmar', stage.estado_etapa, bothSigned ? 'completas' : 'parcial', req);
 
-    const recipient = type === 'solicitante' ? await findRoleEmail('director') : await findUserEmail(stage.id_usuario);
-    const notification = await notifySignatureEvent({
-      stage,
-      event: 'firma_registrada',
-      recipient,
-      subject: `Firma registrada - solicitud ${stage.id_solicitud}`,
-      body: `Se registró una firma en la solicitud ${stage.id_solicitud}. ${bothSigned ? 'La solicitud está lista para ser enviada a Decanato.' : 'Aún falta una firma.'}`
-    });
+    let notifications = [];
+    try {
+      notifications = await workflowNotificationService.notifySignatureRegistered({
+        stage: updated,
+        signature,
+        bothSigned,
+        signerUser: req.user
+      });
+    } catch (notifErr) {
+      console.warn('Error al enviar notificaciones de firma registrada:', notifErr.message);
+    }
+
     res.json({
       success: true,
-      data: { firma: signature, firmas: signatures, etapa: updated, notificacion: notification, notificaciones_decanato: [] }
+      data: {
+        firma: signature,
+        firmas: signatures,
+        etapa: updated,
+        notificacion: notifications[0] || null,
+        notificaciones: notifications,
+        notificaciones_decanato: []
+      }
     });
   } catch (error) {
     if (req.file?.path) fs.unlink(req.file.path, () => {});
@@ -709,7 +760,74 @@ const sign = async (req, res, next) => {
   }
 };
 
+const sendToPresupuesto = async (req, res, next) => {
+  try {
+    const role = assertRole(req, ['revisor_1', 'revisor_2', 'admin']);
+    const stage = await findStage(req.params.idSolicitud);
+    if (!stage || stage.etapa_codigo !== STAGES.FIRMAS) {
+      return res.status(409).json({ success: false, error: 'La solicitud no está en la etapa de firmas' });
+    }
+    const fields = sheetsService.fieldDefinitions.FIRMAS;
+    const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
+      .filter(item => text(item.id_solicitud) === text(req.params.idSolicitud) && item.estado === 'firmada');
+    const bothSigned = signatures.some(item => item.tipo_firma === 'solicitante') && signatures.some(item => item.tipo_firma === 'director_escuela');
+    if (!bothSigned) {
+      return res.status(409).json({ success: false, error: 'La solicitud aún no cuenta con las dos firmas' });
+    }
+
+    const recipients = [
+      ...(await findRoleEmails('presupuesto')),
+      ...parseRecipients(req.body.destinatarios_presupuesto || req.body.destinatarios_decanato)
+    ];
+    const customSubject = text(req.body.asunto_presupuesto || req.body.asunto_decanato);
+    const customBody = renderEmailTemplate(text(req.body.cuerpo_presupuesto || req.body.cuerpo_decanato), stage);
+
+    const { attachments, tempDir } = await createDecanatoAttachments({ stage, signatures });
+    try {
+      const updated = await updateStage(stage, {
+        etapa_codigo: STAGES.PRESUPUESTO,
+        etapa_actual: STAGES.PRESUPUESTO,
+        rol_responsable: 'presupuesto',
+        estado_etapa: 'pendiente',
+        usuario_asignado: '',
+        fecha_fin: now()
+      });
+
+      await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'enviar_presupuesto', stage.estado_etapa, 'presupuesto', req);
+
+      let notifications = [];
+      try {
+        notifications = await workflowNotificationService.notifyPresupuestoSubmission({
+          stage: updated,
+          recipients,
+          customSubject,
+          customBody,
+          attachments
+        });
+      } catch (e) {
+        console.warn('Error al notificar avance a presupuesto:', e.message);
+      }
+
+      res.json({
+        success: true,
+        data: {
+          etapa: updated,
+          notificaciones_presupuesto: notifications,
+          adjuntos: attachments.map(item => item.filename),
+          rol: role
+        }
+      });
+    } finally {
+      await fs.promises.rm(tempDir, { recursive: true, force: true });
+    }
+  } catch (error) { next(error); }
+};
+
 const sendToDecanato = async (req, res, next) => {
+  const existingStage = await findStage(req.params.idSolicitud);
+  if (existingStage && existingStage.etapa_codigo === STAGES.FIRMAS) {
+    return sendToPresupuesto(req, res, next);
+  }
   try {
     const role = assertRole(req, ['revisor_1', 'revisor_2']);
     const stage = await findStage(req.params.idSolicitud);
@@ -742,6 +860,18 @@ const sendToDecanato = async (req, res, next) => {
         estado_etapa: 'pendiente', usuario_asignado: '', fecha_fin: now()
       });
       await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'enviar_decanato', stage.estado_etapa, 'decanato', req);
+
+      try {
+        const applicantNotif = await workflowNotificationService.notifyDecanatoSubmissionToApplicant({
+          stage: updated
+        });
+        if (applicantNotif) {
+          notifications.push(applicantNotif);
+        }
+      } catch (applicantNotifyErr) {
+        console.warn('Error al notificar al solicitante el envío a Decanato:', applicantNotifyErr.message);
+      }
+
       res.json({ success: true, data: { etapa: updated, notificaciones_decanato: notifications, adjuntos: attachments.map(item => item.filename), rol: role } });
     } finally {
       await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -758,15 +888,17 @@ const remindSignature = async (req, res, next) => {
     if (!['solicitante', 'director_escuela'].includes(target)) return res.status(400).json({ success: false, error: 'tipo_firma debe ser solicitante o director_escuela' });
     if (role === 'solicitante' && target !== 'director_escuela') return res.status(403).json({ success: false, error: 'El solicitante solo puede recordar al director' });
     if (role === 'director' && target !== 'solicitante') return res.status(403).json({ success: false, error: 'El director solo puede recordar al solicitante' });
-    const recipient = target === 'solicitante' ? await findUserEmail(stage.id_usuario) : await findRoleEmail('director');
-    const notification = await notifySignatureEvent({
-      stage,
-      event: target === 'solicitante' ? 'recordatorio_firma_solicitante' : 'recordatorio_firma_director',
-      recipient,
-      subject: `Recordatorio de firma - solicitud ${stage.id_solicitud}`,
-      body: `Hay una firma pendiente para la solicitud ${stage.id_solicitud}.`
-    });
-    res.json({ success: true, data: notification });
+    let notifications = [];
+    try {
+      notifications = await workflowNotificationService.notifySignatureReminder({
+        stage,
+        target,
+        requestedBy: req.user
+      });
+    } catch (notifErr) {
+      console.warn('Error al enviar recordatorio de firma:', notifErr.message);
+    }
+    res.json({ success: true, data: notifications[0] || null, notificaciones: notifications });
   } catch (error) { next(error); }
 };
 
@@ -804,9 +936,96 @@ const createCorte = async (req, res, next) => {
       estado_etapa: 'finalizado', fecha_fin: now(), comentarios: observaciones
     });
     await logHistory(id_solicitud, STAGES.DECANATO, 'registrar_decision', stage.estado_etapa, 'finalizado', req, observaciones);
-    res.status(201).json({ success: true, data: { ...data, etapa: updated } });
+
+    let notificationCorte = null;
+    try {
+      notificationCorte = await workflowNotificationService.notifyDecanatoResolution({
+        stage: updated,
+        resultado,
+        resolucion: resolutionName,
+        observaciones
+      });
+    } catch (corteNotifyErr) {
+      console.warn('Error al notificar resolución de Decanato:', corteNotifyErr.message);
+    }
+
+    res.status(201).json({ success: true, data: { ...data, etapa: updated, notificacion: notificationCorte } });
   } catch (error) {
     if (req.file?.path) fs.unlink(req.file.path, () => {});
+    next(error);
+  }
+};
+
+const deleteObservation = async (req, res, next) => {
+  try {
+    const stage = await findStage(req.params.idSolicitud);
+    if (!stage) return res.status(404).json({ success: false, error: 'Solicitud no encontrada' });
+    const store = parseObservationStore(stage.comentarios);
+    let foundStage = null;
+    let itemIndex = -1;
+    let currentItem = null;
+
+    for (const [stageName, observations] of Object.entries(store)) {
+      const idx = observations.findIndex(item => text(item.id_observacion) === text(req.params.idObservacion));
+      if (idx !== -1) {
+        foundStage = stageName;
+        itemIndex = idx;
+        currentItem = observations[idx];
+        break;
+      }
+    }
+
+    if (!currentItem) {
+      return res.status(404).json({ success: false, error: 'Observación no encontrada' });
+    }
+
+    const role = text(req.user.role).toLowerCase();
+    const isAuthor = text(currentItem.id_usuario_autor) === text(req.user.id);
+    const isStageReviewer = ROLE_STAGE[role] === foundStage;
+    const isRevisor2InStage = role === 'revisor_2' && stage.etapa_codigo === STAGES.REVISION_2;
+
+    if (role !== 'admin' && !isAuthor && !isStageReviewer && !isRevisor2InStage) {
+      return res.status(403).json({ success: false, error: 'No tienes permisos para eliminar esta observación' });
+    }
+
+    store[foundStage].splice(itemIndex, 1);
+    await saveObservationStore(stage, store);
+
+    res.json({ success: true, message: 'Observación eliminada correctamente' });
+  } catch (error) { next(error); }
+};
+
+const getFormPdf = async (req, res, next) => {
+  try {
+    const { idSolicitud, formNumber } = req.params;
+    const stage = await findStage(idSolicitud);
+    if (!stage) {
+      return res.status(404).json({ success: false, error: 'Solicitud no encontrada' });
+    }
+    const formNum = parseInt(formNumber, 10);
+    if (![1, 2, 3, 4].includes(formNum)) {
+      return res.status(400).json({ success: false, error: 'Número de formulario inválido' });
+    }
+
+    const fields = sheetsService.fieldDefinitions.FIRMAS;
+    const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
+      .filter(item => text(item.id_solicitud) === text(idSolicitud) && item.estado === 'firmada');
+
+    const pdfBuffer = await generateFormPdfBuffer({
+      stage,
+      formNumber: formNum,
+      signatures
+    });
+
+    const isDownload = req.query.download === '1' || req.query.download === 'true';
+    const disposition = isDownload ? 'attachment' : 'inline';
+    const filename = `Formulario${formNum}_${idSolicitud}_firmado.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `${disposition}; filename="${filename}"`);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error('Error al generar PDF del formulario:', error);
     next(error);
   }
 };
@@ -815,13 +1034,16 @@ module.exports = {
   getQueue,
   getConsultationQueue,
   sendToDecanato,
+  sendToPresupuesto,
   getPendingSignatures,
   take,
   decide,
   getObservations,
   addObservation,
   updateObservation,
+  deleteObservation,
   sign,
   remindSignature,
-  createCorte
+  createCorte,
+  getFormPdf
 };

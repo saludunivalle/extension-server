@@ -2,6 +2,7 @@ const sheetsService = require('../services/sheetsService');
 const driveService = require('../services/driveService');
 const dateUtils = require('../utils/dateUtils');
 const progressService = require('../services/progressStateService'); // Añadir esta línea
+const workflowNotificationService = require('../services/workflowNotificationService');
 
 const ESTADOS_GENERALES = Object.freeze({
   EN_PROCESO: 'En proceso',
@@ -852,7 +853,7 @@ const getRequests = async (req, res) => {
 
     const activeResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'ETAPAS!A2:K',
+      range: 'ETAPAS!A2:U',
     });
 
     const rows = activeResponse.data.values;
@@ -875,9 +876,54 @@ const getRequests = async (req, res) => {
       ...row,
       dependenciaBySolicitud.get(String(row[0] || '')) || '',
     ]);
+    const cortesResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'CORTES_DECANATO!A2:K',
+    });
+    const latestCorteBySolicitud = new Map();
+    (cortesResponse.data.values || []).forEach((row) => {
+      const id = String(row[2] || '');
+      const current = latestCorteBySolicitud.get(id);
+      if (!current || Number(row[0] || 0) > Number(current[0] || 0)) {
+        latestCorteBySolicitud.set(id, row);
+      }
+    });
+
+    const firmasResponse = await client.spreadsheets.values.get({
+      spreadsheetId: sheetsService.spreadsheetId,
+      range: 'FIRMAS!A2:G',
+    }).catch(() => ({ data: { values: [] } }));
+    const firmasBySolicitud = new Map();
+    (firmasResponse.data.values || []).forEach((row) => {
+      const id = String(row[1] || '').trim();
+      const tipo = String(row[2] || '').trim();
+      const estado = String(row[5] || '').trim();
+      if (estado === 'firmada') {
+        const current = firmasBySolicitud.get(id) || { solicitante: false, director: false };
+        if (tipo === 'solicitante') current.solicitante = true;
+        if (tipo === 'director_escuela') current.director = true;
+        firmasBySolicitud.set(id, current);
+      }
+    });
+
+    const rowsWithCompletion = rowsWithDependency.map((row) => {
+      const solId = String(row[0] || '').trim();
+      const corte = latestCorteBySolicitud.get(solId) || [];
+      const firmas = firmasBySolicitud.get(solId) || { solicitante: false, director: false };
+      return [
+        ...row,
+        corte[6] || '',
+        corte[7] || '',
+        corte[8] || '',
+        corte[9] || '',
+        firmas.solicitante,
+        firmas.director,
+        firmas.solicitante && firmas.director,
+      ];
+    });
 
     const canAccessRow = (row) => isAdmin || row[1] === userId;
-    const visibleRows = rowsWithDependency.filter((row) => canAccessRow(row));
+    const visibleRows = rowsWithCompletion.filter((row) => canAccessRow(row));
 
     const activeRequests = visibleRows.filter((row) => getEstadoGeneralFromRow(row) === ESTADOS_GENERALES.EN_PROCESO);
     const completedRequests = visibleRows.filter((row) => getEstadoGeneralFromRow(row) !== ESTADOS_GENERALES.EN_PROCESO);
@@ -2252,10 +2298,13 @@ const enviarSolicitudRevision = async (req, res) => {
       }
     });
 
+    const targetReturnStage = String(fila[18] || req.body.etapa_anterior || '').trim();
     const returnStage = currentStage === 'solicitud' && currentStageState === 'devuelta' &&
-      ['revision_1', 'revision_2'].includes(String(fila[18] || '').trim())
-      ? String(fila[18]).trim()
-      : 'revision_1';
+      ['revision_1', 'revision_2'].includes(targetReturnStage)
+      ? targetReturnStage
+      : (['revision_1', 'revision_2'].includes(String(req.body.etapa_anterior || '').trim())
+        ? String(req.body.etapa_anterior).trim()
+        : 'revision_1');
     await syncWorkflowStage(id_solicitud, {
       etapa_codigo: returnStage,
       rol_responsable: returnStage === 'revision_2' ? 'revisor_2' : 'revisor_1',
@@ -2276,6 +2325,28 @@ const enviarSolicitudRevision = async (req, res) => {
       console.warn('No se pudo registrar el envío en HISTORIAL_ETAPAS:', historyError.message);
     }
 
+    let notifications = [];
+    try {
+      notifications = await workflowNotificationService.notifyRequestSubmitted({
+        idSolicitud: id_solicitud,
+        stage: {
+          id_solicitud,
+          id_usuario: fila[1] || userId,
+          nombre_solicitante: fila[3] || '',
+          nombre_actividad: fila[6] || '',
+          etapa_codigo: returnStage
+        },
+        applicantId: fila[1] || userId,
+        applicantName: fila[3] || '',
+        activityName: fila[6] || '',
+        targetStage: returnStage,
+        targetRole: returnStage === 'revision_2' ? 'revisor_2' : 'revisor_1',
+        isResubmission
+      });
+    } catch (notifyError) {
+      console.warn('No se pudieron enviar las notificaciones de envío a revisión:', notifyError.message);
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Formularios enviados a revisión',
@@ -2283,9 +2354,11 @@ const enviarSolicitudRevision = async (req, res) => {
         id_solicitud: String(id_solicitud),
         etapa_codigo: returnStage,
         rol_responsable: returnStage === 'revision_2' ? 'revisor_2' : 'revisor_1',
+        estado_etapa: 'pendiente',
         formularios_enviados: formulariosAEnviar,
         estado_formularios: estadoFormularios,
-        estado_general: estadoGeneral
+        estado_general: estadoGeneral,
+        notificaciones: notifications
       }
     });
   } catch (error) {
@@ -2448,6 +2521,25 @@ const aprobarSolicitudAdmin = async (req, res) => {
       usuario_asignado: '', estado_etapa: 'pendiente', fecha_fin: ''
     } : { estado_etapa: 'en_revision' });
 
+    if (todosAprobados) {
+      try {
+        await workflowNotificationService.notifyStageApproved({
+          stage: {
+            id_solicitud,
+            id_usuario: fila[1],
+            nombre_solicitante: fila[3],
+            nombre_actividad: fila[6]
+          },
+          previousStage: 'presupuesto',
+          nextStage: 'firmas',
+          nextRole: 'solicitante/director',
+          comment: 'Aprobación de formularios por administración'
+        });
+      } catch (notifyErr) {
+        console.warn('Error al notificar avance a firmas:', notifyErr.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Formularios aprobados correctamente',
@@ -2539,6 +2631,23 @@ const aprobarSolicitudCompletaAdmin = async (req, res) => {
       etapa_codigo: 'firmas', rol_responsable: 'solicitante/director',
       usuario_asignado: '', estado_etapa: 'pendiente', fecha_fin: ''
     });
+
+    try {
+      await workflowNotificationService.notifyStageApproved({
+        stage: {
+          id_solicitud,
+          id_usuario: fila[1],
+          nombre_solicitante: fila[3],
+          nombre_actividad: fila[6]
+        },
+        previousStage: 'presupuesto',
+        nextStage: 'firmas',
+        nextRole: 'solicitante/director',
+        comment: 'Aprobación completa por administración'
+      });
+    } catch (notifyErr) {
+      console.warn('Error al notificar avance a firmas:', notifyErr.message);
+    }
 
     return res.status(200).json({
       success: true,
@@ -2659,6 +2768,24 @@ const enviarCorreccionesAdmin = async (req, res) => {
       etapa_codigo: 'solicitud', rol_responsable: 'solicitante',
       usuario_asignado: '', estado_etapa: 'devuelta', fecha_fin: new Date().toISOString()
     });
+
+    try {
+      await workflowNotificationService.notifyStageReturned({
+        stage: {
+          id_solicitud,
+          id_usuario: fila[1],
+          nombre_solicitante: fila[3],
+          nombre_actividad: fila[6]
+        },
+        fromStage: fila[12] || 'revision_1',
+        toStage: 'solicitud',
+        returnRole: 'solicitante',
+        comment: comentarios || '',
+        observations: []
+      });
+    } catch (notifyErr) {
+      console.warn('Error al notificar correcciones admin:', notifyErr.message);
+    }
 
     return res.status(200).json({
       success: true,
