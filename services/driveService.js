@@ -186,7 +186,104 @@ class DriveService {
     }
   }
 
-  async exportFileAsPdf(fileId, outputPath) {
+  async sanitizeSpreadsheet(fileId, formNumber) {
+    try {
+      const auth = this.createDriveAuth();
+      const sheets = google.sheets({ version: 'v4', auth });
+      const meta = await sheets.spreadsheets.get({
+        spreadsheetId: fileId,
+        fields: 'sheets.properties'
+      });
+      const requests = [];
+      const sheetsList = meta.data?.sheets || [];
+
+      // Eliminar hoja "Notas" en Formulario 1 si existe
+      if (formNumber === 1 && sheetsList.length > 1) {
+        sheetsList.forEach((s) => {
+          if ((s.properties?.title || '').toLowerCase() === 'notas' && s.properties?.sheetId !== undefined) {
+            requests.push({ deleteSheet: { sheetId: s.properties.sheetId } });
+          }
+        });
+      }
+
+      // Truncar columnas sobrantes en Formulario 2 (mantener solo columnas 1-37 / A-AK)
+      if (formNumber === 2 && sheetsList.length > 0) {
+        const firstSheet = sheetsList[0];
+        if (firstSheet?.properties?.gridProperties?.columnCount > 37) {
+          requests.push({
+            updateSheetProperties: {
+              properties: {
+                sheetId: firstSheet.properties.sheetId,
+                gridProperties: { columnCount: 37 }
+              },
+              fields: 'gridProperties.columnCount'
+            }
+          });
+        }
+      }
+
+      if (requests.length > 0) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: fileId,
+          requestBody: { requests }
+        });
+        console.log(`✅ Hoja sanitizada (form ${formNumber}): eliminadas hojas o columnas sobrantes.`);
+      }
+    } catch (err) {
+      console.warn(`Aviso: no se pudo sanitizar la hoja de cálculo (${fileId}):`, err.message);
+    }
+  }
+
+  async exportFileAsPdf(fileId, outputPath, options = {}) {
+    const formNumber = options.formNumber;
+    try {
+      const auth = this.createDriveAuth();
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      let sheetGid = options.sheetGid;
+      if (sheetGid === undefined) {
+        try {
+          const meta = await sheets.spreadsheets.get({
+            spreadsheetId: fileId,
+            fields: 'sheets.properties'
+          });
+          const sheetsList = meta.data?.sheets || [];
+          if (sheetsList.length > 0) {
+            sheetGid = sheetsList[0].properties?.sheetId ?? 0;
+            if (formNumber) {
+              await this.sanitizeSpreadsheet(fileId, formNumber).catch(() => {});
+            }
+          }
+        } catch (metaErr) {
+          console.warn('Aviso: no se pudo consultar metadata para PDF export:', metaErr.message);
+        }
+      }
+
+      const gidParam = sheetGid !== undefined ? `&gid=${sheetGid}` : '';
+      const exportUrl = `https://docs.google.com/spreadsheets/d/${fileId}/export?format=pdf` +
+        `&portrait=true` +
+        `&size=letter` +
+        `&fitw=true` +
+        `&gridlines=false` +
+        `&printtitle=false` +
+        `&sheetnames=false` +
+        `&fzr=false` +
+        gidParam;
+
+      console.log(`📄 Exportando PDF desde Sheets con fitw=true y gid=${sheetGid ?? 'default'}`);
+      const response = await auth.request({
+        url: exportUrl,
+        responseType: 'arraybuffer'
+      });
+
+      if (response?.data && (response.data.byteLength > 0 || response.data.length > 0)) {
+        await fs.promises.writeFile(outputPath, Buffer.from(response.data));
+        return outputPath;
+      }
+    } catch (sheetErr) {
+      console.warn(`Aviso: exportación optimizada de Sheets falló (${sheetErr.message}). Usando fallback drive.files.export.`);
+    }
+
     const response = await this.drive.files.export(
       { fileId, mimeType: 'application/pdf' },
       { responseType: 'arraybuffer' }
@@ -723,6 +820,11 @@ class DriveService {
          console.log('⚠️ CONDICIÓN NO CUMPLIDA para insertar filas dinámicas de RIESGOS.');
       }
 
+
+      // Sanitizar la hoja (eliminar hojas o columnas sobrantes)
+      if (formNumber === 1 || formNumber === 2) {
+        await this.sanitizeSpreadsheet(finalFileId, formNumber).catch(() => {});
+      }
 
       // 6. Construir y devolver el enlace (using finalFileId)
       // --- FIX: Determine link based on the FINAL file type (should be Google Sheet now) ---

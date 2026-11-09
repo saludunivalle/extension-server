@@ -1690,12 +1690,27 @@ automático a Decanato. El frontend debe consultar el estado devuelto y
 `NOTIFICACIONES`; no debe asumir que un correo fue entregado si el estado es
 `fallida` o `sin_destinatario`.
 
-Los únicos eventos que activan correo son:
+Los eventos que activan correo a los actores involucrados son:
 
 ```text
+solicitud_enviada_revision
+solicitud_pendiente_revision
+solicitud_reenviada_revision
+solicitud_reenviada_notif_revisor
+etapa_aprobada_solicitante
+solicitud_asignada_revisor
+solicitud_asignada_presupuesto
+solicitud_avanza_firmas_solicitante
+solicitud_avanza_firmas_director
+solicitud_devuelta_solicitante
+solicitud_devuelta_revisor_2
+solicitud_devuelta_aviso_solicitante
 firma_registrada
 recordatorio_firma_solicitante
 recordatorio_firma_director
+solicitud_enviada_decanato
+solicitud_enviada_decanato_solicitante
+solicitud_finalizada_solicitante
 ```
 
 ## 18. Contrato vigente del workflow (octubre de 2026)
@@ -1792,12 +1807,25 @@ Valores permitidos: `solicitante` y `director_escuela`.
 
 ### 18.5 Correos SMTP
 
-El backend envía correo en estos cuatro eventos:
+El backend envía notificaciones por correo a los actores correspondientes en cada evento de avance o devolución de fase:
 
-1. `firma_registrada`
-2. `recordatorio_firma_solicitante`
-3. `recordatorio_firma_director`
-4. `solicitud_enviada_decanato`
+1. **Envío / Reenvío a revisión** (`enviarSolicitudRevision`):
+   - Al solicitante (`solicitud_enviada_revision` / `solicitud_reenviada_revision`): confirmación de avance a la etapa de revisión.
+   - Al revisor o revisores de la etapa (`solicitud_pendiente_revision` / `solicitud_reenviada_notif_revisor`): aviso de nueva solicitud en su cola.
+2. **Aprobación de etapa** (`decide` - acción `aprobar`):
+   - Al solicitante (`etapa_aprobada_solicitante`): aviso de aprobación y avance de etapa.
+   - Al nuevo responsable de la etapa (`solicitud_asignada_revisor` para `revision_2` o `solicitud_asignada_presupuesto` para `presupuesto`).
+   - Al avanzar a `firmas`: aviso al solicitante (`solicitud_avanza_firmas_solicitante`) y al director de escuela (`solicitud_avanza_firmas_director`) indicando que se requiere su firma.
+3. **Devolución de solicitud** (`decide` - acción `devolver`):
+   - Devolución al solicitante (`solicitud_devuelta_solicitante`): notificación detallada con comentarios y observaciones para corrección.
+   - Devolución desde Presupuesto a Revisión 2: aviso a `revisor_2` (`solicitud_devuelta_revisor_2`) y al solicitante (`solicitud_devuelta_aviso_solicitante`).
+4. **Firmas y recordatorios**:
+   - `firma_registrada`, `recordatorio_firma_solicitante`, `recordatorio_firma_director`.
+5. **Envío a Decanato** (`sendToDecanato`):
+   - Al rol `decanato` y destinatarios adicionales (`solicitud_enviada_decanato`).
+   - Al solicitante (`solicitud_enviada_decanato_solicitante`) confirmando remisión a Decanato.
+6. **Resolución final de Decanato** (`createCorte`):
+   - Al solicitante (`solicitud_finalizada_solicitante`) con resultado, número de resolución y observaciones.
 
 Cuando se registra la segunda firma, la solicitud pasa a `decanato` y se envía
 un correo a todos los usuarios de `USUARIOS` cuyo rol sea `decanato`. El frontend
