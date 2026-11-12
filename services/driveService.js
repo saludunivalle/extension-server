@@ -206,17 +206,53 @@ class DriveService {
         });
       }
 
-      // Truncar columnas sobrantes en Formulario 2 (mantener solo columnas 1-37 / A-AK)
-      if (formNumber === 2 && sheetsList.length > 0) {
-        const firstSheet = sheetsList[0];
-        if (firstSheet?.properties?.gridProperties?.columnCount > 37) {
+      const mainSheet = sheetsList.find(
+        (s) => !(formNumber === 1 && (s.properties?.title || '').toLowerCase() === 'notas')
+      ) || sheetsList[0];
+
+      const maxCols = formNumber === 1 ? 18 : formNumber === 2 ? 37 : null;
+      if (maxCols && mainSheet?.properties?.sheetId !== undefined) {
+        const sheetProps = mainSheet.properties;
+        const grid = sheetProps.gridProperties || {};
+        const nextGrid = {};
+        const fields = [];
+
+        if (grid.columnCount > maxCols) {
+          nextGrid.columnCount = maxCols;
+          fields.push('gridProperties.columnCount');
+        }
+
+        // Truncar filas vacías al final para evitar decenas de páginas en blanco al exportar a PDF
+        try {
+          const maxColLetter = formNumber === 1 ? 'R' : 'AK';
+          const sheetTitle = String(sheetProps.title || 'Sheet1').replace(/'/g, "''");
+          const valuesRes = await sheets.spreadsheets.values.get({
+            spreadsheetId: fileId,
+            range: `'${sheetTitle}'!A1:${maxColLetter}`
+          });
+          const rows = valuesRes.data?.values || [];
+          const lastNonEmptyRow = rows.reduce(
+            (last, row, idx) => (Array.isArray(row) && row.some((cell) => String(cell ?? '').trim() !== '') ? idx + 1 : last),
+            0
+          );
+          const minRows = formNumber === 1 ? 69 : formNumber === 2 ? 65 : 1;
+          const targetRows = Math.max(lastNonEmptyRow, minRows);
+          if (targetRows > 0 && grid.rowCount > targetRows) {
+            nextGrid.rowCount = targetRows;
+            fields.push('gridProperties.rowCount');
+          }
+        } catch (valErr) {
+          console.warn(`Aviso: no se pudo determinar la última fila usada (${fileId}):`, valErr.message);
+        }
+
+        if (fields.length > 0) {
           requests.push({
             updateSheetProperties: {
               properties: {
-                sheetId: firstSheet.properties.sheetId,
-                gridProperties: { columnCount: 37 }
+                sheetId: sheetProps.sheetId,
+                gridProperties: nextGrid
               },
-              fields: 'gridProperties.columnCount'
+              fields: fields.join(',')
             }
           });
         }
@@ -227,7 +263,7 @@ class DriveService {
           spreadsheetId: fileId,
           requestBody: { requests }
         });
-        console.log(`✅ Hoja sanitizada (form ${formNumber}): eliminadas hojas o columnas sobrantes.`);
+        console.log(`✅ Hoja sanitizada (form ${formNumber}): eliminadas hojas, filas o columnas sobrantes.`);
       }
     } catch (err) {
       console.warn(`Aviso: no se pudo sanitizar la hoja de cálculo (${fileId}):`, err.message);

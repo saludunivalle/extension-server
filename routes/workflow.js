@@ -18,6 +18,7 @@ router.post('/:idSolicitud/observaciones', controller.addObservation);
 router.patch('/:idSolicitud/observaciones/:idObservacion', controller.updateObservation);
 router.delete('/:idSolicitud/observaciones/:idObservacion', controller.deleteObservation);
 router.post('/:idSolicitud/firma', upload.single('evidencia_firma'), controller.sign);
+router.get('/:idSolicitud/firma/:tipoFirma/imagen', controller.getSignatureImage);
 router.get('/:idSolicitud/formulario/:formNumber/pdf', controller.getFormPdf);
 router.post('/:idSolicitud/enviar-presupuesto', controller.sendToPresupuesto);
 router.post('/:idSolicitud/enviar-decanato', controller.sendToDecanato);

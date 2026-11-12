@@ -3,7 +3,7 @@ const sheetsService = require('../services/sheetsService');
 const driveService = require('../services/driveService');
 const emailService = require('../services/emailService');
 const workflowNotificationService = require('../services/workflowNotificationService');
-const { createDecanatoAttachments, generateFormPdfBuffer } = require('../services/workflowAttachmentService');
+const { createDecanatoAttachments, generateFormPdfBuffer, getSignatureBuffer } = require('../services/workflowAttachmentService');
 
 const STAGES = Object.freeze({
   SOLICITUD: 'solicitud',
@@ -188,7 +188,7 @@ async function updateStage(stage, patch) {
 
 function normalizeObservationStatus(value) {
   const status = text(value).toLowerCase();
-  return ['pendiente', 'subsanada', 'anulada'].includes(status) ? status : 'pendiente';
+  return ['pendiente', 'corregida', 'subsanada', 'anulada'].includes(status) ? status : 'pendiente';
 }
 
 function resetReturnedForms(stage) {
@@ -251,7 +251,9 @@ async function saveObservationStore(stage, store) {
 async function getObservationsForRequest(stage) {
   const store = parseObservationStore(stage.comentarios);
   return Object.entries(store).flatMap(([etapa, observations]) =>
-    observations.map(item => ({ ...item, id_solicitud: stage.id_solicitud, etapa: item.etapa || etapa }))
+    observations
+      .map(item => ({ ...item, id_solicitud: stage.id_solicitud, etapa: item.etapa || etapa }))
+      .filter(item => normalizeObservationStatus(item.estado) !== 'subsanada')
   );
 }
 
@@ -306,27 +308,82 @@ async function notifySignatureEvent({ stage, event, recipient, subject, body, ht
   });
 }
 
+function buildUserDirectory(users = []) {
+  return new Map(
+    users.map((user) => [
+      text(user.id_usuario),
+      {
+        email: text(user.correo_usuario || user.email),
+        name: text(user.nombre_usuario || user.name || user.nombre),
+      },
+    ])
+  );
+}
+
+function enrichHistoryEntries(entries = [], userById) {
+  return entries.map((entry) => {
+    const actor = userById.get(text(entry.id_usuario_actor));
+    return {
+      ...entry,
+      email_actor: actor?.email || 'Sin email disponible',
+      nombre_actor: actor?.name || actor?.email || 'Usuario sin nombre',
+    };
+  });
+}
+
+function buildSignatureSummary(requestSignatures = []) {
+  const solSig = requestSignatures.find(
+    (signature) => signature.tipo_firma === 'solicitante' && signature.estado === 'firmada'
+  );
+  const dirSig = requestSignatures.find(
+    (signature) => signature.tipo_firma === 'director_escuela' && signature.estado === 'firmada'
+  );
+  return {
+    firma_solicitante: Boolean(solSig),
+    firma_director: Boolean(dirSig),
+    firmas_completas: Boolean(solSig && dirSig),
+    firma_solicitante_info: solSig
+      ? {
+          nombre_firmante: text(solSig.nombre_firmante),
+          fecha_firma: text(solSig.fecha_firma),
+          evidencia_firma: text(solSig.evidencia_firma),
+        }
+      : null,
+    firma_director_info: dirSig
+      ? {
+          nombre_firmante: text(dirSig.nombre_firmante),
+          fecha_firma: text(dirSig.fecha_firma),
+          evidencia_firma: text(dirSig.evidencia_firma),
+        }
+      : null,
+  };
+}
+
 const getQueue = async (req, res, next) => {
   try {
     const role = assertRole(req, [...Object.keys(ROLE_STAGE), 'director']);
     const fields = sheetsService.fieldDefinitions.ETAPAS;
     const stages = (await readRows('ETAPAS')).map((row, i) => rowObject(fields, row, i));
     const dependencyByRequest = await readDependencyByRequest();
+    const signatures = (await readRows('FIRMAS')).map((row, i) =>
+      rowObject(sheetsService.fieldDefinitions.FIRMAS, row, i));
+    const signaturesByRequest = new Map();
+    signatures.forEach((signature) => {
+      const id = text(signature.id_solicitud);
+      const current = signaturesByRequest.get(id) || [];
+      current.push(signature);
+      signaturesByRequest.set(id, current);
+    });
     const history = (await readRows('HISTORIAL_ETAPAS')).map((row, i) =>
       rowObject(sheetsService.fieldDefinitions.HISTORIAL_ETAPAS, row, i));
     const users = (await readRows('USUARIOS')).map((row, i) =>
       rowObject(sheetsService.fieldDefinitions.USUARIOS, row, i));
-    const emailByUserId = new Map(
-      users.map((user) => [text(user.id_usuario), text(user.correo_usuario || user.email)])
-    );
+    const userById = buildUserDirectory(users);
     const historyByRequest = new Map();
-    history.forEach((entry) => {
+    enrichHistoryEntries(history, userById).forEach((entry) => {
       const id = text(entry.id_solicitud);
       const current = historyByRequest.get(id) || [];
-      current.push({
-        ...entry,
-        email_actor: emailByUserId.get(text(entry.id_usuario_actor)) || 'Sin email disponible'
-      });
+      current.push(entry);
       historyByRequest.set(id, current);
     });
     const result = stages
@@ -334,7 +391,7 @@ const getQueue = async (req, res, next) => {
         (['revisor_1', 'revisor_2'].includes(role) && item.etapa_codigo === STAGES.DECANATO)) &&
         ['pendiente', 'en_revision', 'devuelta'].includes(text(item.estado_etapa)));
     if (role === 'director') {
-      const signed = (await readRows('FIRMAS')).map((row, i) => rowObject(sheetsService.fieldDefinitions.FIRMAS, row, i))
+      const signed = signatures
         .filter(item => item.tipo_firma === 'director_escuela' && item.estado === 'firmada')
         .map(item => text(item.id_solicitud));
       result.push(...stages.filter(item => item.etapa_codigo === STAGES.FIRMAS &&
@@ -351,6 +408,9 @@ const getQueue = async (req, res, next) => {
         nombre_dependencia:
           dependencyByRequest.get(text(item.id_solicitud)) ||
           text(item.nombre_dependencia),
+        ...(signaturesByRequest.has(text(item.id_solicitud))
+          ? buildSignatureSummary(signaturesByRequest.get(text(item.id_solicitud)))
+          : {}),
         historial: historyByRequest.get(text(item.id_solicitud)) || []
       }))
     });
@@ -391,9 +451,7 @@ const getConsultationQueue = async (req, res, next) => {
     });
     const userFields = sheetsService.fieldDefinitions.USUARIOS;
     const users = (await readRows('USUARIOS')).map((row, i) => rowObject(userFields, row, i));
-    const emailByUserId = new Map(
-      users.map((user) => [text(user.id_usuario), text(user.correo_usuario || user.email)])
-    );
+    const userById = buildUserDirectory(users);
     let data = [];
     if (role === 'admin' || ['revisor_1', 'revisor_2'].includes(role)) {
       data = stages;
@@ -421,19 +479,10 @@ const getConsultationQueue = async (req, res, next) => {
         nombre_dependencia:
           dependencyByRequest.get(text(item.id_solicitud)) ||
           text(item.nombre_dependencia),
-        ...(signaturesByRequest.has(text(item.id_solicitud)) ? (() => {
-          const requestSignatures = signaturesByRequest.get(text(item.id_solicitud));
-          return {
-            firma_solicitante: requestSignatures.some(signature => signature.tipo_firma === 'solicitante' && signature.estado === 'firmada'),
-            firma_director: requestSignatures.some(signature => signature.tipo_firma === 'director_escuela' && signature.estado === 'firmada'),
-            firmas_completas: requestSignatures.some(signature => signature.tipo_firma === 'solicitante' && signature.estado === 'firmada') &&
-              requestSignatures.some(signature => signature.tipo_firma === 'director_escuela' && signature.estado === 'firmada')
-          };
-        })() : {}),
-        historial: (historyByRequest.get(text(item.id_solicitud)) || []).map((entry) => ({
-          ...entry,
-          email_actor: emailByUserId.get(text(entry.id_usuario_actor)) || 'Sin email disponible'
-        })),
+        ...(signaturesByRequest.has(text(item.id_solicitud))
+          ? buildSignatureSummary(signaturesByRequest.get(text(item.id_solicitud)))
+          : {}),
+        historial: enrichHistoryEntries(historyByRequest.get(text(item.id_solicitud)) || [], userById),
         ...(latestCorteByRequest.has(text(item.id_solicitud))
           ? { corte_decanato: latestCorteByRequest.get(text(item.id_solicitud)) }
           : {}),
@@ -553,31 +602,18 @@ const decide = async (req, res, next) => {
     let notifications = [];
     if (action === 'aprobar') {
       try {
-        let attachments = [];
-        let tempDir = null;
         if (nextStage === STAGES.DECANATO) {
-          try {
-            const fields = sheetsService.fieldDefinitions.FIRMAS;
-            const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
-              .filter(item => text(item.id_solicitud) === text(stage.id_solicitud) && item.estado === 'firmada');
-            const result = await createDecanatoAttachments({ stage: updated, signatures });
-            attachments = result.attachments;
-            tempDir = result.tempDir;
-          } catch (attErr) {
-            console.warn('No se pudieron adjuntar los PDFs firmados al notificar a Decanato:', attErr.message);
-          }
-        }
-        notifications = await workflowNotificationService.notifyStageApproved({
-          stage: updated,
-          previousStage: stage.etapa_codigo,
-          nextStage,
-          nextRole,
-          comment,
-          approvedBy: req.user,
-          attachments
-        });
-        if (tempDir) {
-          await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+          const dispatched = await dispatchDecanatoNotifications({ stage, updated, body: req.body });
+          notifications = dispatched.notifications;
+        } else {
+          notifications = await workflowNotificationService.notifyStageApproved({
+            stage: updated,
+            previousStage: stage.etapa_codigo,
+            nextStage,
+            nextRole,
+            comment,
+            approvedBy: req.user
+          });
         }
       } catch (notifyErr) {
         console.warn('Error al enviar notificaciones de aprobación:', notifyErr.message);
@@ -652,7 +688,7 @@ const updateObservation = async (req, res, next) => {
     const role = text(req.user.role).toLowerCase() || 'solicitante';
     const isOwner = text(stage.id_usuario) === text(req.user.id);
     const isAuthor = text(current.id_usuario_autor) === text(req.user.id);
-    const isStageReviewer = ROLE_STAGE[role] === currentStage;
+    const isStageReviewer = ROLE_STAGE[role] === currentStage || ROLE_STAGE[role] === stage.etapa_codigo;
     const isRevisor2InStage = role === 'revisor_2' && stage.etapa_codigo === STAGES.REVISION_2;
     if (role !== 'admin' && !isAuthor && !isOwner && !isStageReviewer && !isRevisor2InStage) {
       return res.status(403).json({ success: false, error: 'No puedes modificar esta observación' });
@@ -670,8 +706,8 @@ const updateObservation = async (req, res, next) => {
       fecha_actualizacion: now()
     };
     if (!next.observacion) return res.status(400).json({ success: false, error: 'La observación no puede estar vacía' });
-    if (isOwner && !isAuthor && !isStageReviewer && !['subsanada', 'pendiente'].includes(next.estado)) {
-      return res.status(403).json({ success: false, error: 'El solicitante solo puede alternar la observación entre pendiente y subsanada' });
+    if (isOwner && !isAuthor && !isStageReviewer && !['corregida', 'pendiente'].includes(next.estado)) {
+      return res.status(403).json({ success: false, error: 'El solicitante solo puede alternar la observación entre pendiente y corregida' });
     }
     const observations = store[currentStage];
     const itemIndex = observations.findIndex(item => text(item.id_observacion) === text(req.params.idObservacion));
@@ -705,9 +741,13 @@ const sign = async (req, res, next) => {
     if (role === 'solicitante' && text(stage.id_usuario) !== text(req.user.id)) return res.status(403).json({ success: false, error: 'Solo el solicitante puede registrar esta firma' });
     const type = role === 'director' ? 'director_escuela' : 'solicitante';
     const fields = sheetsService.fieldDefinitions.FIRMAS;
-    const existing = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
-      .find(item => text(item.id_solicitud) === text(req.params.idSolicitud) && item.tipo_firma === type && item.estado === 'firmada');
+    const requestSignatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
+      .filter(item => text(item.id_solicitud) === text(req.params.idSolicitud) && item.estado === 'firmada');
+    const existing = requestSignatures.find(item => item.tipo_firma === type);
     if (existing) return res.status(409).json({ success: false, error: 'Esta firma ya fue registrada' });
+    if (role === 'solicitante' && !requestSignatures.some(item => item.tipo_firma === 'director_escuela')) {
+      return res.status(409).json({ success: false, error: 'Primero debe registrarse la firma del director de escuela' });
+    }
     if (!req.file) return res.status(400).json({ success: false, error: 'Debe cargar la imagen de la firma' });
     if (!/^image\/(png|jpeg|webp)$/.test(req.file.mimetype)) return res.status(400).json({ success: false, error: 'La firma debe ser una imagen PNG, JPEG o WEBP' });
 
@@ -759,6 +799,45 @@ const sign = async (req, res, next) => {
     next(error);
   }
 };
+
+async function prepareDecanatoAttachments(stage) {
+  const fields = sheetsService.fieldDefinitions.FIRMAS;
+  const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
+    .filter(item => text(item.id_solicitud) === text(stage.id_solicitud) && item.estado === 'firmada');
+  return createDecanatoAttachments({ stage, signatures });
+}
+
+async function dispatchDecanatoNotifications({ stage, updated, body = {} }) {
+  let attachments = [];
+  let tempDir = null;
+  try {
+    const result = await prepareDecanatoAttachments(updated);
+    attachments = result.attachments;
+    tempDir = result.tempDir;
+  } catch (attErr) {
+    console.warn('No se pudieron adjuntar los PDFs firmados al notificar a Decanato:', attErr.message);
+  }
+  try {
+    const recipients = [
+      ...(await findRoleEmails('decanato')),
+      ...parseRecipients(body.destinatarios_decanato)
+    ];
+    const customSubject = text(body.asunto_decanato);
+    const customBody = body.cuerpo_decanato ? renderEmailTemplate(body.cuerpo_decanato, stage) : '';
+    const notifications = await workflowNotificationService.notifyDecanatoSubmission({
+      stage: updated,
+      recipients,
+      customSubject,
+      customBody,
+      attachments
+    });
+    return { notifications, adjuntos: attachments.map(item => item.filename) };
+  } finally {
+    if (tempDir) {
+      await fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
 
 const sendToPresupuesto = async (req, res, next) => {
   try {
@@ -824,58 +903,67 @@ const sendToPresupuesto = async (req, res, next) => {
 };
 
 const sendToDecanato = async (req, res, next) => {
-  const existingStage = await findStage(req.params.idSolicitud);
-  if (existingStage && existingStage.etapa_codigo === STAGES.FIRMAS) {
-    return sendToPresupuesto(req, res, next);
-  }
   try {
-    const role = assertRole(req, ['revisor_1', 'revisor_2']);
     const stage = await findStage(req.params.idSolicitud);
-    if (!stage || stage.etapa_codigo !== STAGES.FIRMAS) return res.status(409).json({ success: false, error: 'La solicitud no está en la etapa de firmas' });
-    const fields = sheetsService.fieldDefinitions.FIRMAS;
-    const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
-      .filter(item => text(item.id_solicitud) === text(req.params.idSolicitud) && item.estado === 'firmada');
-    const bothSigned = signatures.some(item => item.tipo_firma === 'solicitante') && signatures.some(item => item.tipo_firma === 'director_escuela');
-    if (!bothSigned) return res.status(409).json({ success: false, error: 'La solicitud aún no cuenta con las dos firmas' });
-    const defaultSubject = `Solicitud enviada a Decanato - ${stage.id_solicitud}`;
-    const defaultBody = `La solicitud ${stage.id_solicitud} de ${stage.nombre_solicitante || 'un solicitante'} ya cuenta con ambas firmas y está pendiente de revisión por Decanato.`;
-    const subject = text(req.body.asunto_decanato) || defaultSubject;
-    const body = renderEmailTemplate(text(req.body.cuerpo_decanato) || defaultBody, stage);
-    const recipients = [
-      ...(await findRoleEmails('decanato')),
-      ...parseRecipients(req.body.destinatarios_decanato)
-    ];
-    const { attachments, tempDir } = await createDecanatoAttachments({ stage, signatures });
-    try {
-      const notifications = await notifyRecipients({
-        stage,
-        event: 'solicitud_enviada_decanato',
-        recipients,
-        subject,
-        body,
-        attachments
-      });
-      const updated = await updateStage(stage, {
-        etapa_codigo: STAGES.DECANATO, etapa_actual: STAGES.DECANATO, rol_responsable: 'decanato',
-        estado_etapa: 'pendiente', usuario_asignado: '', fecha_fin: now()
-      });
-      await logHistory(stage.id_solicitud, STAGES.FIRMAS, 'enviar_decanato', stage.estado_etapa, 'decanato', req);
-
-      try {
-        const applicantNotif = await workflowNotificationService.notifyDecanatoSubmissionToApplicant({
-          stage: updated
-        });
-        if (applicantNotif) {
-          notifications.push(applicantNotif);
-        }
-      } catch (applicantNotifyErr) {
-        console.warn('Error al notificar al solicitante el envío a Decanato:', applicantNotifyErr.message);
-      }
-
-      res.json({ success: true, data: { etapa: updated, notificaciones_decanato: notifications, adjuntos: attachments.map(item => item.filename), rol: role } });
-    } finally {
-      await fs.promises.rm(tempDir, { recursive: true, force: true });
+    if (stage && stage.etapa_codigo === STAGES.FIRMAS) {
+      return sendToPresupuesto(req, res, next);
     }
+
+    const role = assertRole(req, ['presupuesto']);
+    if (!stage || stage.etapa_codigo !== STAGES.PRESUPUESTO) {
+      return res.status(409).json({ success: false, error: 'La solicitud no está en la etapa de presupuesto' });
+    }
+    if (stage.usuario_asignado && stage.usuario_asignado !== req.user.id && role !== 'admin') {
+      return res.status(403).json({ success: false, error: 'La solicitud fue tomada por otro usuario' });
+    }
+
+    const comment = text(req.body.comentario);
+    await append('REVISIONES', sheetsService.fieldDefinitions.REVISIONES, {
+      id_revision: await sheetsService.getLastId('REVISIONES') + 1,
+      id_solicitud: stage.id_solicitud,
+      etapa: stage.etapa_codigo,
+      rol_revisor: role,
+      id_usuario_revisor: req.user.id,
+      estado: 'aprobada',
+      observaciones: comment,
+      fecha_inicio: stage.fecha_inicio || now(),
+      fecha_respuesta: now(),
+      comentarios_por_formulario: req.body.comentarios_por_formulario || '',
+      numero_intento: req.body.numero_intento || 1,
+      id_usuario_toma: stage.usuario_asignado || req.user.id,
+      fecha_toma: stage.fecha_inicio || now()
+    });
+
+    const updated = await updateStage(stage, {
+      etapa_codigo: STAGES.DECANATO,
+      etapa_actual: STAGES.DECANATO,
+      rol_responsable: 'decanato',
+      usuario_asignado: '',
+      estado_etapa: 'pendiente',
+      fecha_fin: now()
+    });
+
+    await logHistory(stage.id_solicitud, STAGES.PRESUPUESTO, 'enviar_decanato', stage.estado_etapa, 'decanato', req, comment);
+
+    let notifications = [];
+    let adjuntos = [];
+    try {
+      const dispatched = await dispatchDecanatoNotifications({ stage, updated, body: req.body });
+      notifications = dispatched.notifications;
+      adjuntos = dispatched.adjuntos;
+    } catch (notifyErr) {
+      console.warn('Error al notificar envío a Decanato:', notifyErr.message);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        etapa: updated,
+        notificaciones_decanato: notifications,
+        adjuntos,
+        rol: role
+      }
+    });
   } catch (error) { next(error); }
 };
 
@@ -1030,6 +1118,42 @@ const getFormPdf = async (req, res, next) => {
   }
 };
 
+const getSignatureImage = async (req, res, next) => {
+  try {
+    const { idSolicitud, tipoFirma } = req.params;
+    const normalizedType = text(tipoFirma).toLowerCase();
+    if (!['director_escuela', 'solicitante'].includes(normalizedType)) {
+      return res.status(400).json({ success: false, error: 'Tipo de firma inválido' });
+    }
+
+    const fields = sheetsService.fieldDefinitions.FIRMAS;
+    const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
+      .filter((item) => text(item.id_solicitud) === text(idSolicitud) && item.tipo_firma === normalizedType && item.estado === 'firmada');
+    const signature = signatures[signatures.length - 1];
+    if (!signature?.evidencia_firma) {
+      return res.status(404).json({ success: false, error: 'Firma no encontrada' });
+    }
+
+    const buffer = await getSignatureBuffer(signature);
+    if (!buffer || buffer.length === 0) {
+      return res.status(404).json({ success: false, error: 'No se pudo cargar la imagen de la firma' });
+    }
+
+    let contentType = 'image/png';
+    if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+      contentType = 'image/jpeg';
+    } else if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF' && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+      contentType = 'image/webp';
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    return res.send(buffer);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getQueue,
   getConsultationQueue,
@@ -1043,6 +1167,7 @@ module.exports = {
   updateObservation,
   deleteObservation,
   sign,
+  getSignatureImage,
   remindSignature,
   createCorte,
   getFormPdf

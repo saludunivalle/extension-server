@@ -394,14 +394,14 @@ class WorkflowNotificationService {
     const notifications = [];
     const applicantEmail = await this.getUserEmail(applicantId);
 
-    // Caso 1: Avance a FIRMAS (desde presupuesto)
+    // Caso 1: Avance a FIRMAS (desde revision_2)
     if (nextStage === 'firmas') {
-      // 1.1 Solicitante (debe registrar su firma)
-      const solSubject = `[Extensión] Solicitud #${idSolicitud} aprobada en Revisión 2 - Pendiente de Firmas`;
-      const solMsg = `¡Buenas noticias! Su solicitud #${idSolicitud} ("${activityName}") ha sido aprobada en la etapa de Revisión 2 y ha avanzado a la etapa de Firmas. Por favor ingrese al sistema para registrar su firma institucional.`;
+      // 1.1 Solicitante (aviso informativo: primero firma Director)
+      const solSubject = `[Extensión] Solicitud #${idSolicitud} aprobada en Revisión 2 - En etapa de Firmas`;
+      const solMsg = `¡Buenas noticias! Su solicitud #${idSolicitud} ("${activityName}") ha sido aprobada en la etapa de Revisión 2 y ha avanzado a la etapa de Firmas. Primero deberá registrar su firma el(la) Director(a) de Escuela; una vez lo haga, le notificaremos para que cargue su firma como solicitante.`;
       const solHtml = this.buildHtmlTemplate({
-        title: 'Solicitud Lista para Firmas',
-        badgeText: 'Firma Requerida',
+        title: 'Solicitud en Etapa de Firmas',
+        badgeText: 'Esperando Firma de Dirección',
         badgeColor: '#16a34a',
         recipientName: applicantName,
         message: solMsg,
@@ -412,7 +412,7 @@ class WorkflowNotificationService {
           { label: 'Etapa Actual', value: nextLabel },
           comment ? { label: 'Comentarios de Aprobación', value: comment } : null
         ].filter(Boolean),
-        callToActionText: 'Ingrese a la plataforma para cargar o registrar su firma y continuar el trámite hacia Presupuesto.'
+        callToActionText: 'Le notificaremos en cuanto el(la) Director(a) de Escuela registre su firma para que pueda subir la suya.'
       });
       notifications.push(await this.recordNotification({
         idSolicitud,
@@ -980,6 +980,50 @@ class WorkflowNotificationService {
   }
 
   /**
+   * Envía y registra una notificación para una lista de destinatarios (deduplicados).
+   * Si la lista está vacía, registra el intento con `sin_destinatario`.
+   */
+  async recordBatchNotifications({
+    idSolicitud,
+    event,
+    recipients = [],
+    subject,
+    message,
+    activityName = '',
+    applicantName = '',
+    html,
+    attachments = []
+  }) {
+    const notifications = [];
+    const uniqueRecipients = [...new Set(recipients.map(item => text(item).toLowerCase()).filter(Boolean))];
+    if (uniqueRecipients.length === 0) {
+      notifications.push(await this.recordNotification({
+        idSolicitud,
+        event,
+        recipient: '',
+        subject,
+        text: message,
+        html,
+        attachments
+      }));
+      return notifications;
+    }
+
+    for (const email of uniqueRecipients) {
+      notifications.push(await this.recordNotification({
+        idSolicitud,
+        event,
+        recipient: email,
+        subject,
+        text: `${message}\n\nSolicitud: #${idSolicitud}\nActividad: ${activityName}\nSolicitante: ${applicantName}`,
+        html,
+        attachments
+      }));
+    }
+    return notifications;
+  }
+
+  /**
    * Notifica el paso de la solicitud desde Firmas hacia Presupuesto:
    * 1. A los destinatarios de Presupuesto y adicionales (con PDFs firmados adjuntos y plantilla HTML).
    * 2. Al Solicitante (confirmando que su solicitud firmada ya está en Presupuesto).
@@ -1024,30 +1068,17 @@ class WorkflowNotificationService {
       callToActionText: 'Por favor ingrese al Sistema de Gestión de Extensión para consultar la información financiera, emitir concepto y continuar el flujo del trámite.'
     });
 
-    const uniqueRecipients = [...new Set(recipients.map(item => text(item).toLowerCase()).filter(Boolean))];
-    if (uniqueRecipients.length === 0) {
-      notifications.push(await this.recordNotification({
-        idSolicitud,
-        event: 'solicitud_enviada_presupuesto',
-        recipient: '',
-        subject: teamSubject,
-        text: teamMsg,
-        html: teamHtml,
-        attachments
-      }));
-    } else {
-      for (const email of uniqueRecipients) {
-        notifications.push(await this.recordNotification({
-          idSolicitud,
-          event: 'solicitud_enviada_presupuesto',
-          recipient: email,
-          subject: teamSubject,
-          text: `${teamMsg}\n\nSolicitud: #${idSolicitud}\nActividad: ${activityName}\nSolicitante: ${applicantName}`,
-          html: teamHtml,
-          attachments
-        }));
-      }
-    }
+    notifications.push(...await this.recordBatchNotifications({
+      idSolicitud,
+      event: 'solicitud_enviada_presupuesto',
+      recipients,
+      subject: teamSubject,
+      message: teamMsg,
+      activityName,
+      applicantName,
+      html: teamHtml,
+      attachments
+    }));
 
     // 2. Correo al Solicitante
     const solSubject = `[Extensión] Su solicitud #${idSolicitud} ha sido remitida a Presupuesto`;
@@ -1104,6 +1135,92 @@ class WorkflowNotificationService {
         html: dirHtml
       }));
     }
+
+    return notifications;
+  }
+
+  /**
+   * Notifica el paso de la solicitud desde Presupuesto hacia Decanato:
+   * 1. A los destinatarios de Decanato y adicionales (con PDFs firmados adjuntos y plantilla HTML).
+   * 2. Al Solicitante (confirmando aprobación en Presupuesto y remisión a Decanato).
+   */
+  async notifyDecanatoSubmission({
+    stage = {},
+    recipients = [],
+    customSubject = '',
+    customBody = '',
+    attachments = []
+  }) {
+    const idSolicitud = stage.id_solicitud;
+    const fullStage = stage.nombre_solicitante ? stage : (await this.getStage(idSolicitud)) || stage;
+    const applicantId = fullStage.id_usuario;
+    const applicantName = fullStage.nombre_solicitante || 'Solicitante';
+    const activityName = fullStage.nombre_actividad || 'Actividad de extensión';
+    const applicantEmail = await this.getUserEmail(applicantId);
+
+    const notifications = [];
+
+    // 1. Correo a Decanato y destinatarios adicionales
+    const teamSubject = customSubject || `[Extensión] Solicitud #${idSolicitud} aprobada en Presupuesto y remitida a Decanato - ${activityName}`;
+    const defaultTeamMsg = `Cordial saludo.\n\nPor medio del presente correo se remite para su conocimiento, revisión final y expedición de resolución la solicitud de extensión #${idSolicitud} ("${activityName}"), presentada por ${applicantName}.\n\nLa solicitud ya completó las revisiones de Extensión, cuenta con las firmas institucionales completas (Solicitante y Director de Escuela) y recibió el visto bueno en la etapa de Presupuesto. Se adjuntan los formularios oficiales debidamente diligenciados y firmados en formato PDF.\n\nAgradecemos su oportuna atención.`;
+    const teamMsg = customBody || defaultTeamMsg;
+
+    const teamHtml = this.buildHtmlTemplate({
+      title: 'Solicitud de Extensión Remitida a Decanato',
+      badgeText: 'Revisión de Decanato',
+      badgeColor: '#7c3aed',
+      recipientName: 'Decanato',
+      message: teamMsg,
+      details: [
+        { label: 'Número de Solicitud', value: `#${idSolicitud}` },
+        { label: 'Nombre de la Actividad', value: activityName },
+        { label: 'Solicitante / Coordinador(a)', value: applicantName },
+        { label: 'Estado', value: 'Aprobada en Presupuesto · Pendiente de Decanato' },
+        { label: 'Documentos Adjuntos', value: attachments.length > 0 ? attachments.map(a => a.filename || a.name || 'Formulario PDF').join(', ') : 'Formularios oficiales firmados (PDF)' },
+        { label: 'Fecha de Remisión', value: new Date().toLocaleString('es-CO') }
+      ],
+      callToActionText: 'Por favor ingrese al Sistema de Gestión de Extensión para revisar los documentos adjuntos y registrar la resolución final de Decanato.'
+    });
+
+    notifications.push(...await this.recordBatchNotifications({
+      idSolicitud,
+      event: 'solicitud_enviada_decanato',
+      recipients,
+      subject: teamSubject,
+      message: teamMsg,
+      activityName,
+      applicantName,
+      html: teamHtml,
+      attachments
+    }));
+
+    // 2. Correo al Solicitante
+    const solSubject = `[Extensión] Solicitud #${idSolicitud} aprobada en Presupuesto (Avanza a Decanato)`;
+    const solMsg = `Le informamos que su solicitud de extensión #${idSolicitud} ("${activityName}") fue aprobada en la etapa de Presupuesto y ha sido remitida a Decanato para la revisión final y expedición de resolución.`;
+    const solHtml = this.buildHtmlTemplate({
+      title: 'Solicitud Remitida a Decanato',
+      badgeText: 'En Trámite de Decanato',
+      badgeColor: '#7c3aed',
+      recipientName: applicantName,
+      message: solMsg,
+      details: [
+        { label: 'Número de Solicitud', value: `#${idSolicitud}` },
+        { label: 'Actividad', value: activityName },
+        { label: 'Etapa Anterior', value: 'Presupuesto' },
+        { label: 'Etapa Actual', value: 'Decanato' },
+        { label: 'Fecha de Envío', value: new Date().toLocaleString('es-CO') }
+      ],
+      callToActionText: 'Le estaremos notificando por este medio cuando Decanato expida la resolución final.'
+    });
+
+    notifications.push(await this.recordNotification({
+      idSolicitud,
+      event: 'solicitud_enviada_decanato_solicitante',
+      recipient: applicantEmail,
+      subject: solSubject,
+      text: `${solMsg}\n\nSolicitud: #${idSolicitud}\nActividad: ${activityName}`,
+      html: solHtml
+    }));
 
     return notifications;
   }

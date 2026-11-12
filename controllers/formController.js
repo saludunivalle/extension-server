@@ -891,17 +891,36 @@ const getRequests = async (req, res) => {
 
     const firmasResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'FIRMAS!A2:G',
+      range: 'FIRMAS!A2:H',
     }).catch(() => ({ data: { values: [] } }));
     const firmasBySolicitud = new Map();
     (firmasResponse.data.values || []).forEach((row) => {
       const id = String(row[1] || '').trim();
       const tipo = String(row[2] || '').trim();
+      const nombreFirmante = String(row[4] || '').trim();
       const estado = String(row[5] || '').trim();
+      const fechaFirma = String(row[6] || '').trim();
+      const evidenciaFirma = String(row[7] || '').trim();
       if (estado === 'firmada') {
-        const current = firmasBySolicitud.get(id) || { solicitante: false, director: false };
-        if (tipo === 'solicitante') current.solicitante = true;
-        if (tipo === 'director_escuela') current.director = true;
+        const current = firmasBySolicitud.get(id) || {
+          solicitante: false,
+          director: false,
+          solicitanteInfo: null,
+          directorInfo: null,
+        };
+        const info = {
+          nombre_firmante: nombreFirmante,
+          fecha_firma: fechaFirma,
+          evidencia_firma: evidenciaFirma,
+        };
+        if (tipo === 'solicitante') {
+          current.solicitante = true;
+          current.solicitanteInfo = info;
+        }
+        if (tipo === 'director_escuela') {
+          current.director = true;
+          current.directorInfo = info;
+        }
         firmasBySolicitud.set(id, current);
       }
     });
@@ -909,7 +928,12 @@ const getRequests = async (req, res) => {
     const rowsWithCompletion = rowsWithDependency.map((row) => {
       const solId = String(row[0] || '').trim();
       const corte = latestCorteBySolicitud.get(solId) || [];
-      const firmas = firmasBySolicitud.get(solId) || { solicitante: false, director: false };
+      const firmas = firmasBySolicitud.get(solId) || {
+        solicitante: false,
+        director: false,
+        solicitanteInfo: null,
+        directorInfo: null,
+      };
       return [
         ...row,
         corte[6] || '',
@@ -919,6 +943,8 @@ const getRequests = async (req, res) => {
         firmas.solicitante,
         firmas.director,
         firmas.solicitante && firmas.director,
+        firmas.solicitanteInfo,
+        firmas.directorInfo,
       ];
     });
 
@@ -1156,29 +1182,50 @@ const getGastos = async (req, res) => {
     
     console.log(`Obteniendo gastos para solicitud ${id_solicitud}`);
     
-    // Obtener cliente sheets
     const client = sheetsService.getClient();
-    
-    // Buscar todos los gastos para esta solicitud
-    const response = await client.spreadsheets.values.get({
-      spreadsheetId: sheetsService.spreadsheetId,
-      range: 'GASTOS!A2:F'
+    const targetSolicitudId = String(id_solicitud).trim();
+
+    const [gastosResponse, conceptosResponse] = await Promise.all([
+      client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'GASTOS!A2:F'
+      }),
+      client.spreadsheets.values.get({
+        spreadsheetId: sheetsService.spreadsheetId,
+        range: 'CONCEPTO$!A2:F'
+      }).catch(() => ({ data: { values: [] } }))
+    ]);
+
+    const conceptosByKey = new Map();
+    (conceptosResponse.data.values || []).forEach((row) => {
+      if (String(row[5] || '').trim() !== targetSolicitudId) return;
+      const normalizedConceptId = String(row[0] || '').trim().replace(/,/g, '.');
+      const nombreConcepto = String(row[3] || row[1] || '').trim();
+      if (normalizedConceptId && nombreConcepto) {
+        conceptosByKey.set(normalizedConceptId, nombreConcepto);
+      }
     });
-    
-    const rows = response.data.values || [];
-    const solicitudGastos = rows.filter(row => row[1] === id_solicitud);
-    
+
+    const rows = gastosResponse.data.values || [];
+    const solicitudGastos = rows.filter(
+      (row) => String(row[1] || '').trim() === targetSolicitudId
+    );
+
     console.log(`Se encontraron ${solicitudGastos.length} gastos para la solicitud ${id_solicitud}`);
-    
-    // Formatear los resultados
-    const gastos = solicitudGastos.map(row => ({
-      id_conceptos: row[0] || '',
-      id_solicitud: row[1] || '',
-      cantidad: parseFloat(row[2]) || 0,
-      valor_unit: parseFloat(row[3]) || 0,
-      valor_total: parseFloat(row[4]) || 0,
-      concepto_padre: row[5] || ''
-    }));
+
+    const gastos = solicitudGastos.map((row) => {
+      const idConceptos = String(row[0] || '').trim();
+      const normalizedConceptId = idConceptos.replace(/,/g, '.');
+      return {
+        id_conceptos: idConceptos,
+        id_solicitud: String(row[1] || '').trim(),
+        concepto: conceptosByKey.get(normalizedConceptId) || '',
+        cantidad: parseFloat(row[2]) || 0,
+        valor_unit: parseFloat(row[3]) || 0,
+        valor_total: parseFloat(row[4]) || 0,
+        concepto_padre: row[5] || ''
+      };
+    });
     
     res.status(200).json({
       success: true,
@@ -2204,7 +2251,7 @@ const enviarSolicitudRevision = async (req, res) => {
         return res.status(409).json({
           success: false,
           code: 'PENDING_OBSERVATIONS',
-          error: 'Debe marcar todas las observaciones como subsanadas antes de reenviar la solicitud',
+          error: 'Debe marcar todas las observaciones como corregidas antes de reenviar la solicitud',
           data: {
             pendientes: pendingObservations.map(item => ({
               id_observacion: item.id_observacion,
@@ -2233,11 +2280,16 @@ const enviarSolicitudRevision = async (req, res) => {
       ESTADOS_FORMULARIO.APROBADO
     ]);
 
+    const isReturnedRequest = currentStage === 'solicitud' && currentStageState === 'devuelta';
     const formulariosAEnviar = formulariosSolicitados.length > 0
-      ? formulariosSolicitados
+      ? (isReturnedRequest
+        ? formulariosSolicitados.filter((formularioId) => {
+          const estado = normalizeEstadoFormulario(estadoFormularios[String(formularioId)]);
+          return estado !== ESTADOS_FORMULARIO.EN_PROGRESO && estado !== ESTADOS_FORMULARIO.APROBADO;
+        })
+        : formulariosSolicitados)
       : formulariosRealizados.filter((formularioId) => {
         const estado = normalizeEstadoFormulario(estadoFormularios[String(formularioId)]);
-        const isReturnedRequest = currentStage === 'solicitud' && currentStageState === 'devuelta';
         return estado !== ESTADOS_FORMULARIO.APROBADO &&
           (isReturnedRequest || estado !== ESTADOS_FORMULARIO.ENVIADO_REVISION);
       });
@@ -2318,7 +2370,7 @@ const enviarSolicitudRevision = async (req, res) => {
         userId,
         role: isAdmin ? 'admin' : 'solicitante',
         action: isResubmission ? 'reenviar_correcciones' : 'enviar_revision',
-        previousStage: currentStage,
+        previousStage: currentStage || 'solicitud',
         previousState: currentStageState
       });
     } catch (historyError) {
