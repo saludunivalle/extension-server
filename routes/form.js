@@ -25,11 +25,20 @@ const {
 const { verifyToken, isAdmin } = require('../middleware/auth');
 const { loadProgressMiddleware } = require('../middleware/progressMiddleware');
 const router = express.Router();
+const os = require('os');
+const path = require('path');
+const fs = require('fs');
 const multer = require('multer');
-const upload = multer({ dest: '/tmp/uploads/' });
+const tempUploadDir = path.join(os.tmpdir(), 'extension-form-uploads');
+if (!fs.existsSync(tempUploadDir)) {
+  fs.mkdirSync(tempUploadDir, { recursive: true });
+}
+const upload = multer({ dest: tempUploadDir });
 const uploadAdjuntos = upload.fields([
   { name: 'pieza_grafica', maxCount: 1 },
-  { name: 'archivo_fondo_comun', maxCount: 1 }
+  { name: 'archivo_fondo_comun', maxCount: 1 },
+  { name: 'soporte', maxCount: 1 },
+  { name: 'url_soporte_fondo', maxCount: 1 }
 ]);
 
 router.use(loadProgressMiddleware);

@@ -110,13 +110,7 @@ async function getUserRoleInfo(userId) {
     return { role: '', isAdmin: false };
   }
 
-  const client = sheetsService.getClient();
-  const response = await client.spreadsheets.values.get({
-    spreadsheetId: sheetsService.spreadsheetId,
-    range: 'USUARIOS!A2:D'
-  });
-
-  const rows = response.data.values || [];
+  const rows = await sheetsService.getUsers();
   const normalizedUserId = String(userId).trim();
   const matchingRows = rows.filter(
     (row) => String(row[0] || '').trim() === normalizedUserId
@@ -436,7 +430,7 @@ const guardarProgreso = async (req, res) => {
 
 
   const piezaGrafica = getUploadedFile(req, 'pieza_grafica');
-  const archivoFondoComun = getUploadedFile(req, 'archivo_fondo_comun');
+  const archivoFondoComun = getUploadedFile(req, 'soporte') || getUploadedFile(req, 'url_soporte_fondo') || getUploadedFile(req, 'archivo_fondo_comun');
 
   console.log('Recibiendo datos para guardar progreso:', { id_solicitud, paso, hoja, id_usuario, name });
   console.log('Datos del formulario:', formData);
@@ -548,29 +542,34 @@ const guardarProgreso = async (req, res) => {
       console.log('ℹ️ No se recibió archivo en el campo pieza_grafica para esta solicitud/paso.');
     }
 
-    // Manejar archivo de fondo común (imagen/pdf) y guardar URL en archivo_fondo_comun
+    // Manejar archivo de fondo común / soporte (imagen/pdf) y guardar URL en archivo_fondo_comun y url_soporte_fondo
+    let uploadedArchivoFondoComunUrl = null;
     const archivoFondoComunFieldName = 'archivo_fondo_comun';
     const archivoFondoComunColIndex = allFields.indexOf(archivoFondoComunFieldName);
+    const urlSoporteFondoColIndex = allFields.indexOf('url_soporte_fondo');
     if (archivoFondoComun) {
       try {
-        console.log('📎 Procesando archivo_fondo_comun para subida a Drive...');
+        console.log('📎 Procesando archivo soporte fondo común para subida a Drive...');
         if (!isValidImageOrPdf(archivoFondoComun)) {
           return res.status(400).json({
             success: false,
-            error: 'El campo archivo_fondo_comun solo acepta imágenes o PDF'
+            error: 'El campo soporte solo acepta archivos PDF o imágenes'
           });
         }
 
         const archivoFondoComunUrl = await driveService.uploadFile(archivoFondoComun);
-        console.log('✅ archivo_fondo_comun subido a Drive:', archivoFondoComunUrl);
+        uploadedArchivoFondoComunUrl = archivoFondoComunUrl;
+        console.log('✅ Soporte fondo común subido a Drive:', archivoFondoComunUrl);
         if (archivoFondoComunColIndex >= columnaInicialIndex && archivoFondoComunColIndex <= columnaFinalIndex) {
           valoresOrdenados[archivoFondoComunColIndex - columnaInicialIndex] = archivoFondoComunUrl;
           console.log(`✅ URL archivo_fondo_comun escrita en índice relativo ${archivoFondoComunColIndex - columnaInicialIndex}`);
-        } else {
-          console.log(`ℹ️ archivo_fondo_comun subido pero no escrito en este paso. Columna absoluta=${archivoFondoComunColIndex}, rango actual=${columnaInicialIndex}-${columnaFinalIndex}`);
+        }
+        if (urlSoporteFondoColIndex >= columnaInicialIndex && urlSoporteFondoColIndex <= columnaFinalIndex) {
+          valoresOrdenados[urlSoporteFondoColIndex - columnaInicialIndex] = archivoFondoComunUrl;
+          console.log(`✅ URL url_soporte_fondo escrita en índice relativo ${urlSoporteFondoColIndex - columnaInicialIndex}`);
         }
       } catch (error) {
-        console.error('Error al subir archivo_fondo_comun a Google Drive:', error);
+        console.error('Error al subir soporte fondo común a Google Drive:', error);
       }
     }
 
@@ -748,7 +747,13 @@ const guardarProgreso = async (req, res) => {
     }
     // --- Fin lógica ETAPAS ---
 
-    res.status(200).json({ success: true });
+    res.status(200).json({
+      success: true,
+      ...(uploadedArchivoFondoComunUrl ? {
+        url_soporte_fondo: uploadedArchivoFondoComunUrl,
+        archivo_fondo_comun: uploadedArchivoFondoComunUrl
+      } : {})
+    });
   } catch (error) {
     console.error("Error en guardarProgreso:", error);
     res.status(500).json({
@@ -872,10 +877,16 @@ const getRequests = async (req, res) => {
         row[9] || '',
       ]),
     );
-    const rowsWithDependency = rows.map((row) => [
-      ...row,
-      dependenciaBySolicitud.get(String(row[0] || '')) || '',
-    ]);
+    const rowsWithDependency = rows.map((row) => {
+      const paddedRow = Array(21).fill('');
+      row.forEach((cell, idx) => {
+        if (idx < 21) paddedRow[idx] = cell;
+      });
+      return [
+        ...paddedRow,
+        dependenciaBySolicitud.get(String(row[0] || '')) || '',
+      ];
+    });
     const cortesResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
       range: 'CORTES_DECANATO!A2:K',
@@ -896,9 +907,9 @@ const getRequests = async (req, res) => {
     const firmasBySolicitud = new Map();
     (firmasResponse.data.values || []).forEach((row) => {
       const id = String(row[1] || '').trim();
-      const tipo = String(row[2] || '').trim();
+      const tipo = String(row[2] || '').trim().toLowerCase();
       const nombreFirmante = String(row[4] || '').trim();
-      const estado = String(row[5] || '').trim();
+      const estado = String(row[5] || '').trim().toLowerCase();
       const fechaFirma = String(row[6] || '').trim();
       const evidenciaFirma = String(row[7] || '').trim();
       if (estado === 'firmada') {
@@ -917,7 +928,7 @@ const getRequests = async (req, res) => {
           current.solicitante = true;
           current.solicitanteInfo = info;
         }
-        if (tipo === 'director_escuela') {
+        if (tipo === 'director_escuela' || tipo === 'director') {
           current.director = true;
           current.directorInfo = info;
         }
@@ -1967,7 +1978,7 @@ const guardarForm2Paso2 = async (req, res) => {
  */
 const guardarForm2Paso3 = async (req, res) => {
   try {
-    const archivoFondoComunFile = getUploadedFile(req, 'archivo_fondo_comun');
+    const archivoFondoComunFile = getUploadedFile(req, 'soporte') || getUploadedFile(req, 'url_soporte_fondo') || getUploadedFile(req, 'archivo_fondo_comun');
 
     let requestData = req.body || {};
     if (typeof requestData.formData === 'string') {
@@ -1988,6 +1999,8 @@ const guardarForm2Paso3 = async (req, res) => {
       fondo_comun_porcentaje, 
       fondo_comun,
       archivo_fondo_comun,
+      soporte,
+      url_soporte_fondo,
       facultad_instituto_porcentaje, // Campo editable
       facultad_instituto, 
       escuela_departamento_porcentaje, 
@@ -2052,12 +2065,12 @@ const guardarForm2Paso3 = async (req, res) => {
       totalGastosImprevistosValor = subtotalGastosValor + imprevistos3Valor;
     }
 
-    let archivoFondoComunUrl = archivo_fondo_comun || '';
+    let archivoFondoComunUrl = url_soporte_fondo || archivo_fondo_comun || (typeof soporte === 'string' ? soporte : '') || '';
     if (archivoFondoComunFile) {
       if (!isValidImageOrPdf(archivoFondoComunFile)) {
         return res.status(400).json({
           success: false,
-          error: 'El campo archivo_fondo_comun solo acepta imágenes o PDF'
+          error: 'El campo soporte solo acepta archivos PDF o imágenes'
         });
       }
       archivoFondoComunUrl = await driveService.uploadFile(archivoFondoComunFile);
@@ -2074,7 +2087,7 @@ const guardarForm2Paso3 = async (req, res) => {
       }
 
       // 2. Actualizar la hoja SOLICITUDES2 con los valores calculados
-      // Actualizar las columnas L-T que corresponden al paso 3
+      // Actualizar las columnas L-U que corresponden al paso 3
       const valoresAportes = [
         fondoComunPorcentaje.toString(), // Columna L: fondo_comun_porcentaje
         fondoComun.toString(), // Columna M: fondo_comun
@@ -2084,17 +2097,18 @@ const guardarForm2Paso3 = async (req, res) => {
         escuelaDepartamentoPorcentaje.toString(), // Columna Q: escuela_departamento_porcentaje
         escuelaDepartamentoValor.toString(), // Columna R: escuela_departamento
         totalRecursosValor.toString(), // Columna S: total_recursos
-        observacionesValor // Columna T: observaciones
+        observacionesValor, // Columna T: observaciones
+        archivoFondoComunUrl // Columna U: url_soporte_fondo
       ];
 
       console.log(`Actualizando datos de aportes en SOLICITUDES2 para la solicitud ${id_solicitud}: `, valoresAportes);
 
-      // 4. Actualizar solo las columnas L a T (correspondiente al paso 3)
+      // 4. Actualizar las columnas L a U (correspondiente al paso 3)
       await sheetsService.updateRequestProgress({
         sheetName: 'SOLICITUDES2',
         rowIndex: rowInfo.rowIndex,
         startColumn: 'L',    // Columna inicial para el paso 3
-        endColumn: 'T',      // Columna final para el paso 3
+        endColumn: 'U',      // Columna final para el paso 3 (url_soporte_fondo)
         values: valoresAportes
       });
 
@@ -2186,7 +2200,9 @@ const guardarForm2Paso3 = async (req, res) => {
       console.log('✅ Datos del formulario 2 paso 3 guardados correctamente');
       res.status(200).json({
         success: true,
-        message: 'Datos de aportes guardados correctamente'
+        message: 'Datos de aportes guardados correctamente',
+        url_soporte_fondo: archivoFondoComunUrl,
+        archivo_fondo_comun: archivoFondoComunUrl
       });
     } catch (sheetsError) {
       console.error('❌ Error al guardar datos en Google Sheets:', sheetsError);

@@ -12,20 +12,36 @@ class SheetsService {
     this.spreadsheetId = process.env.SPREADSHEET_ID || '16XaKQ0UAljlVmKKqB3xXN8L9NQlMoclCUqBPRVxI-sA';
     this.client = this.getClient();
     this.models = models.getModels(); // Usar los modelos definidos
+    this.usersCache = null;
+    this.usersCacheExpiresAt = 0;
+  }
+
+  async getUsers() {
+    const now = Date.now();
+    if (this.usersCache && now < this.usersCacheExpiresAt) {
+      return this.usersCache;
+    }
+    const response = await this.client.spreadsheets.values.get({
+      spreadsheetId: this.spreadsheetId,
+      range: 'USUARIOS!A2:D'
+    });
+    this.usersCache = response.data.values || [];
+    this.usersCacheExpiresAt = now + 60000; // 60 segundos de caché
+    return this.usersCache;
+  }
+
+  invalidateUsersCache() {
+    this.usersCache = null;
+    this.usersCacheExpiresAt = 0;
   }
 
   async saveUserIfNotExists(userId, email, name, role = '') {
     try {
-      const userCheckRange = 'USUARIOS!A2:A';
-      const userCheckResponse = await this.client.spreadsheets.values.get({
-        spreadsheetId: this.spreadsheetId,
-        range: userCheckRange,
-      });
-  
-      const existingUsers = userCheckResponse.data.values ? userCheckResponse.data.values.flat() : [];
+      const existingUsersRows = await this.getUsers();
+      const userExists = existingUsersRows.some(row => String(row[0] || '').trim() === String(userId).trim());
       
       // Verificar si el usuario ya existe
-      if (!existingUsers.includes(userId)) {
+      if (!userExists) {
         const userRange = 'USUARIOS!A2:D2';
         const normalizedRole = String(role || '').trim().toLowerCase() || 'solicitante';
         const userValues = [[userId, email, name, normalizedRole]];
@@ -37,6 +53,7 @@ class SheetsService {
           insertDataOption: 'INSERT_ROWS',
           resource: { values: userValues },
         });
+        this.invalidateUsersCache();
         return true; // Usuario nuevo añadido
       }
       return false; // Usuario ya existía
