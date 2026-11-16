@@ -17,11 +17,17 @@ router.get('/:idSolicitud/observaciones', controller.getObservations);
 router.post('/:idSolicitud/observaciones', controller.addObservation);
 router.patch('/:idSolicitud/observaciones/:idObservacion', controller.updateObservation);
 router.delete('/:idSolicitud/observaciones/:idObservacion', controller.deleteObservation);
+router.post('/:idSolicitud/observaciones/:idObservacion/comentarios', controller.addObservationComment);
+router.delete('/:idSolicitud/observaciones/:idObservacion/comentarios/:idComentario', controller.deleteObservationComment);
 router.post('/:idSolicitud/firma', upload.single('evidencia_firma'), controller.sign);
+router.delete('/:idSolicitud/firma', controller.deleteSignature);
+router.delete('/:idSolicitud/firma/:tipoFirma', controller.deleteSignature);
 router.get('/:idSolicitud/firma/:tipoFirma/imagen', controller.getSignatureImage);
 router.get('/:idSolicitud/formulario/:formNumber/pdf', controller.getFormPdf);
 router.post('/:idSolicitud/enviar-presupuesto', controller.sendToPresupuesto);
 router.post('/:idSolicitud/enviar-decanato', controller.sendToDecanato);
+router.post('/:idSolicitud/guardar-notas-decanato', controller.saveDecanatoNotes);
+router.post('/:idSolicitud/confirmar-plataforma-decanato', controller.confirmPlataformaDecanato);
 router.post('/:idSolicitud/firma/recordatorio', controller.remindSignature);
 router.post('/cortes-decanato', upload.single('pdf_resolucion'), controller.createCorte);
 

@@ -7,6 +7,7 @@ const STAGE_LABELS = Object.freeze({
   revision_2: 'Revisión 2',
   presupuesto: 'Presupuesto',
   firmas: 'Firmas',
+  lista_para_decanato: 'Lista para Decanato',
   decanato: 'Decanato',
   finalizado: 'Finalizado'
 });
@@ -133,8 +134,24 @@ class WorkflowNotificationService {
     recipientName = '',
     message,
     details = [],
-    callToActionText = 'Ingrese a la plataforma para gestionar o revisar la solicitud.'
+    callToActionText = 'Ingrese a la plataforma para gestionar o revisar la solicitud.',
+    idSolicitud = null
   }) {
+    let resolvedId = idSolicitud;
+    if (!resolvedId && Array.isArray(details)) {
+      const idItem = details.find(d => d && (
+        String(d.label || '').toLowerCase().includes('solicitud') ||
+        String(d.label || '').toLowerCase().includes('número')
+      ));
+      if (idItem && idItem.value) {
+        const match = String(idItem.value).match(/\d+/);
+        if (match) resolvedId = match[0];
+      }
+    }
+    const platformUrl = resolvedId
+      ? `https://siac-extension-form.vercel.app/?solicitud=${resolvedId}`
+      : 'https://siac-extension-form.vercel.app/';
+
     const detailRows = details
       .filter(item => item && item.label && item.value)
       .map(item => `
@@ -156,24 +173,25 @@ class WorkflowNotificationService {
         <meta charset="utf-8">
         <style>
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f3f4f6; margin: 0; padding: 20px; color: #1f2937; }
-          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
-          .header { background-color: #BA0C2F; padding: 24px; text-align: center; color: #ffffff; }
-          .header h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
-          .header p { margin: 6px 0 0 0; font-size: 13px; opacity: 0.9; }
+          .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); border: 1px solid #e5e7eb; }
+          .header { background-color: #f3f4f6; padding: 24px; text-align: center; color: #111827; border-bottom: 1px solid #e5e7eb; }
+          .header h1 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px; color: #111827; }
+          .header p { margin: 6px 0 0 0; font-size: 13px; color: #4b5563; }
           .content { padding: 24px; }
           .badge { display: inline-block; padding: 4px 12px; font-size: 12px; font-weight: 700; text-transform: uppercase; border-radius: 9999px; color: #ffffff; background-color: ${badgeColor}; margin-bottom: 16px; }
           .message { font-size: 15px; line-height: 1.6; color: #374151; margin-bottom: 20px; }
           .details-card { background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; margin-bottom: 24px; }
           .details-table { width: 100%; border-collapse: collapse; font-size: 14px; }
           .cta { background-color: #eff6ff; border-left: 4px solid #2563eb; padding: 14px 16px; border-radius: 4px; font-size: 14px; color: #1e40af; margin-bottom: 20px; }
+          .btn-platform { background-color: #2563eb; color: #ffffff !important; text-decoration: none; padding: 12px 28px; font-size: 14px; font-weight: 600; border-radius: 6px; display: inline-block; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2); }
           .footer { background-color: #f9fafb; border-top: 1px solid #e5e7eb; padding: 16px 24px; text-align: center; font-size: 12px; color: #6b7280; }
         </style>
       </head>
       <body>
         <div class="container">
-          <div class="header">
-            <h1>Sistema de Gestión de Extensión</h1>
-            <p>Facultad de Salud · Universidad del Valle</p>
+          <div class="header" style="background-color: #f3f4f6; padding: 24px; text-align: center; color: #111827; border-bottom: 1px solid #e5e7eb;">
+            <h1 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.5px; color: #111827;">Sistema de Gestión de Extensión</h1>
+            <p style="margin: 6px 0 0 0; font-size: 13px; color: #4b5563;">Facultad de Salud · Universidad del Valle</p>
           </div>
           <div class="content">
             <span class="badge">${badgeText}</span>
@@ -190,6 +208,14 @@ class WorkflowNotificationService {
               </div>
             ` : ''}
             ${callToActionText ? `<div class="cta">${callToActionText}</div>` : ''}
+            <div style="text-align: center; margin: 28px 0 12px 0;">
+              <a href="${platformUrl}"
+                 class="btn-platform"
+                 style="background-color: #2563eb; color: #ffffff !important; text-decoration: none; padding: 12px 28px; font-size: 14px; font-weight: 600; border-radius: 6px; display: inline-block; box-shadow: 0 2px 4px rgba(37, 99, 235, 0.2);"
+                 target="_blank" rel="noopener noreferrer">
+                Ingresar a la plataforma
+              </a>
+            </div>
           </div>
           <div class="footer">
             Este es un mensaje institucional automático del Sistema de Gestión de Solicitudes de Extensión.<br/>
@@ -672,6 +698,52 @@ class WorkflowNotificationService {
         text: `${solMsg}\n\nSolicitud: #${idSolicitud}\n${formattedObs}`,
         html: solHtml
       }));
+
+      return notifications;
+    }
+
+    // Caso 3: Devuelta desde Revisión 2 hacia Revisión 1
+    if (fromStage === 'revision_2' && toStage === 'revision_1') {
+      const r1Emails = await this.getRoleEmails('revisor_1');
+      const r1Subject = `[Extensión] Solicitud #${idSolicitud} remitida de Revisión 2 a Revisión 1`;
+      const r1Msg = `La solicitud #${idSolicitud} ("${activityName}") de ${applicantName} ha sido devuelta desde Revisión 2 a su bandeja de Revisión 1 para su gestión con el solicitante.`;
+      const r1Html = this.buildHtmlTemplate({
+        title: 'Remisión desde Revisión 2',
+        badgeText: 'Devuelta a Revisión 1',
+        badgeColor: '#d97706',
+        recipientName: 'Equipo de Revisión 1',
+        message: r1Msg,
+        details: [
+          { label: 'Número de Solicitud', value: `#${idSolicitud}` },
+          { label: 'Actividad', value: activityName },
+          { label: 'Solicitante', value: applicantName },
+          { label: 'Devuelto Por', value: 'Revisión 2' },
+          formattedObs ? { label: 'Observaciones / Comentarios', value: formattedObs } : null
+        ].filter(Boolean),
+        callToActionText: 'Por favor ingrese al sistema para revisar las observaciones y tramitarlas con el solicitante.'
+      });
+
+      if (r1Emails.length === 0) {
+        notifications.push(await this.recordNotification({
+          idSolicitud,
+          event: 'solicitud_devuelta_revisor_1',
+          recipient: '',
+          subject: r1Subject,
+          text: r1Msg,
+          html: r1Html
+        }));
+      } else {
+        for (const email of r1Emails) {
+          notifications.push(await this.recordNotification({
+            idSolicitud,
+            event: 'solicitud_devuelta_revisor_1',
+            recipient: email,
+            subject: r1Subject,
+            text: `${r1Msg}\n\nSolicitud: #${idSolicitud}\n${formattedObs}`,
+            html: r1Html
+          }));
+        }
+      }
 
       return notifications;
     }

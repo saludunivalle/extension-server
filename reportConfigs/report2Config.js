@@ -13,12 +13,12 @@ const report2Config = {
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES2: {
-      range: 'SOLICITUDES2!A2:T',
+      range: 'SOLICITUDES2!A2:U',
       fields: [
         'id_solicitud', 'nombre_actividad', 'fecha_solicitud', 'ingresos_cantidad', 'ingresos_vr_unit', 'total_ingresos',
         'subtotal_gastos','imprevistos_porcentaje' ,'imprevistos_3', 'total_gastos_imprevistos', 'diferencia',
         'fondo_comun_porcentaje', 'fondo_comun', 'archivo_fondo_comun', 'facultad_instituto_porcentaje', 'facultad_instituto',
-        'escuela_departamento_porcentaje', 'escuela_departamento', 'total_recursos', 'observaciones'
+        'escuela_departamento_porcentaje', 'escuela_departamento', 'total_recursos', 'observaciones', 'url_soporte_fondo'
       ]
     },
     SOLICITUDES: {

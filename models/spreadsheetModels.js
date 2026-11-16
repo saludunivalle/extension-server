@@ -95,12 +95,13 @@ class SpreadsheetModel {
       'escuela_departamento_porcentaje', // Q
       'escuela_departamento', // R
       'total_recursos', // S
-      'observaciones' // T
+      'observaciones', // T
+      'url_soporte_fondo' // U
     ],
     {
       1: ['B', 'C'], // Paso 1: nombre_actividad, fecha_solicitud
       2: ['D', 'E', 'F', 'G', 'H', 'I', 'J', 'K'], // Paso 2: Ingresos, Gastos Totales y Diferencia
-      3: ['L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'] // Paso 3: Aportes y Resumen
+      3: ['L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'] // Paso 3: Aportes y Resumen
     }
   );
   

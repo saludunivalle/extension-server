@@ -107,7 +107,109 @@ async function addSignaturePageToDoc(pdf, signatures, requestId, formNumber) {
     page.drawText(signature?.nombre_firmante || 'Firma pendiente', { x: x + 8, y: 43, size: 9, font: bold, color: rgb(0.12, 0.18, 0.28), maxWidth: 189 });
     page.drawText(signature?.tipo_firma === 'director_escuela' ? 'Director de escuela' : 'Solicitante', { x: x + 8, y: 26, size: 8, font, color: rgb(0.35, 0.4, 0.48) });
   }
-  return pdf.save();
+  return pdf;
+}
+
+function sanitizeForPdf(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[–—]/g, '-')
+    .replace(/…/g, '...')
+    .replace(/[^\u0020-\u007E\u00A0-\u00FF\n\r\t]/g, '');
+}
+
+async function appendNotesPageToPdf(pdf, notasText, requestId, formNumber) {
+  const sanitized = sanitizeForPdf(notasText).trim();
+  if (!sanitized) return;
+
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
+  const pageWidth = 595;
+  const pageHeight = 842;
+  const margin = 50;
+  const contentWidth = pageWidth - (margin * 2);
+
+  let page = pdf.addPage([pageWidth, pageHeight]);
+
+  page.drawRectangle({
+    x: margin,
+    y: pageHeight - 95,
+    width: contentWidth,
+    height: 50,
+    color: rgb(0.96, 0.97, 0.99),
+    borderWidth: 1,
+    borderColor: rgb(0.80, 0.85, 0.92),
+  });
+
+  page.drawText('NOTAS Y REGISTRO DE TRÁMITE / PRESUPUESTO', {
+    x: margin + 16,
+    y: pageHeight - 68,
+    size: 13,
+    font: bold,
+    color: rgb(0.10, 0.18, 0.32),
+  });
+
+  page.drawText(`Solicitud #${requestId} · Formulario ${formNumber} · Remitido para Decanato`, {
+    x: margin + 16,
+    y: pageHeight - 84,
+    size: 8.5,
+    font,
+    color: rgb(0.40, 0.46, 0.54),
+  });
+
+  const fontSize = 10;
+  const lineHeight = 16;
+  let currentY = pageHeight - 125;
+
+  const paragraphs = sanitized.split(/\r?\n/);
+  for (const paragraph of paragraphs) {
+    if (!paragraph.trim()) {
+      currentY -= lineHeight;
+      continue;
+    }
+    const words = paragraph.split(' ');
+    let currentLine = '';
+
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+
+      if (textWidth > contentWidth - 20) {
+        if (currentY < 70) {
+          page = pdf.addPage([pageWidth, pageHeight]);
+          currentY = pageHeight - 60;
+        }
+        page.drawText(currentLine, {
+          x: margin + 10,
+          y: currentY,
+          size: fontSize,
+          font,
+          color: rgb(0.18, 0.22, 0.28),
+        });
+        currentLine = word;
+        currentY -= lineHeight;
+      } else {
+        currentLine = testLine;
+      }
+    }
+
+    if (currentLine) {
+      if (currentY < 70) {
+        page = pdf.addPage([pageWidth, pageHeight]);
+        currentY = pageHeight - 60;
+      }
+      page.drawText(currentLine, {
+        x: margin + 10,
+        y: currentY,
+        size: fontSize,
+        font,
+        color: rgb(0.18, 0.22, 0.28),
+      });
+      currentY -= (lineHeight + 6);
+    }
+  }
 }
 
 const IDENTITY_MATRIX = [1, 0, 0, 1, 0, 0];
@@ -769,7 +871,7 @@ function resolveSignatureTarget(pdf, formNum) {
   };
 }
 
-async function embedSignaturesInPdf(pdfBytes, orderedSignatures = [], requestId, formNumber) {
+async function embedSignaturesInPdf(pdfBytes, orderedSignatures = [], requestId, formNumber, notasPdf = '') {
   const formNum = parseInt(formNumber, 10);
   const pdf = await PDFDocument.load(pdfBytes);
   sanitizePdfPages(pdf);
@@ -787,19 +889,32 @@ async function embedSignaturesInPdf(pdfBytes, orderedSignatures = [], requestId,
     if (directorSig) {
       await drawSignatureBox({ page, signature: directorSig, ...directorBox });
     }
-    return pdf.save();
+  } else {
+    // Formularios 3 y 4: mantener ubicación donde se ubicaba la firma (página de firmas agregada al final)
+    await addSignaturePageToDoc(pdf, orderedSignatures, requestId, formNum);
   }
 
-  // Formularios 3 y 4: mantener ubicación donde se ubicaba la firma (página de firmas agregada al final)
-  return addSignaturePageToDoc(pdf, orderedSignatures, requestId, formNum);
+  if (notasPdf && String(notasPdf).trim()) {
+    await appendNotesPageToPdf(pdf, notasPdf, requestId, formNum);
+  }
+
+  return pdf.save();
 }
 
-async function generateFormPdfBuffer({ stage, formNumber, signatures = [] }) {
+async function generateFormPdfBuffer({ stage, formNumber, signatures = [], notasPdf = '' }) {
   const formNum = parseInt(formNumber, 10);
   const orderedSignatures = [
     signatures.find((item) => item?.tipo_firma === 'solicitante'),
     signatures.find((item) => item?.tipo_firma === 'director_escuela'),
   ].filter(Boolean);
+
+  let effectiveNotas = notasPdf;
+  if (!effectiveNotas && stage?.comentarios) {
+    try {
+      const store = typeof stage.comentarios === 'string' ? JSON.parse(stage.comentarios) : stage.comentarios;
+      effectiveNotas = store?.notas_presupuesto_pdf || '';
+    } catch (e) {}
+  }
 
   let reportId;
   try {
@@ -824,21 +939,21 @@ async function generateFormPdfBuffer({ stage, formNumber, signatures = [] }) {
   try {
     await driveService.exportFileAsPdf(reportId, tempSourcePath, { formNumber: formNum });
     const sourceBytes = await fs.promises.readFile(tempSourcePath);
-    const signedBytes = await embedSignaturesInPdf(sourceBytes, orderedSignatures, stage.id_solicitud, formNum);
+    const signedBytes = await embedSignaturesInPdf(sourceBytes, orderedSignatures, stage.id_solicitud, formNum, effectiveNotas);
     return Buffer.from(signedBytes);
   } finally {
     await fs.promises.unlink(tempSourcePath).catch(() => {});
   }
 }
 
-async function createDecanatoAttachments({ stage, signatures }) {
+async function createDecanatoAttachments({ stage, signatures, notasPdf = '' }) {
   const tempDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'decanato-pdfs-'));
   const completedForms = getCompletedFormNumbers(stage);
   const attachments = [];
   try {
     for (const formNumber of completedForms) {
       const outputPath = path.join(tempDir, `Formulario${formNumber}_${stage.id_solicitud}_firmado.pdf`);
-      const signedBytes = await generateFormPdfBuffer({ stage, formNumber, signatures });
+      const signedBytes = await generateFormPdfBuffer({ stage, formNumber, signatures, notasPdf });
       await fs.promises.writeFile(outputPath, signedBytes);
       attachments.push({ filename: path.basename(outputPath), path: outputPath, contentType: 'application/pdf' });
     }

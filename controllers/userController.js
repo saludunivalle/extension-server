@@ -43,10 +43,10 @@ const saveUser = async (req, res) => {
         (row) => String(row[3] || '').trim().toLowerCase() === 'admin'
       ) || matchingRows[0];
 
-      resolvedRole = String(preferredRow[3] || '').trim().toLowerCase() === 'admin' ? 'admin' : '';
+      resolvedRole = String(preferredRow[3] || '').trim().toLowerCase() || 'solicitante';
     }
 
-    const normalizedRole = (role || '').toString().trim().toLowerCase() === 'admin' ? 'admin' : '';
+    const normalizedRole = (role || '').toString().trim().toLowerCase() || 'solicitante';
 
     // Si el usuario no existe, guardarlo
     if (!existingUsers.includes(normalizedId)) {
