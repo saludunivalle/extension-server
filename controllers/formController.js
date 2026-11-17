@@ -37,10 +37,19 @@ function isValidImage(file) {
 }
 
 function isValidImageOrPdf(file) {
+  if (!file) return false;
+  const mime = typeof file.mimetype === 'string' ? file.mimetype.toLowerCase() : '';
+  const name = typeof file.originalname === 'string' ? file.originalname.toLowerCase() : '';
   return Boolean(
-    file &&
-    typeof file.mimetype === 'string' &&
-    (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf')
+    mime.startsWith('image/') ||
+    mime === 'application/pdf' ||
+    mime.includes('pdf') ||
+    mime === 'application/x-pdf' ||
+    (mime === 'application/octet-stream' && name.endsWith('.pdf')) ||
+    name.endsWith('.pdf') ||
+    name.endsWith('.jpg') ||
+    name.endsWith('.jpeg') ||
+    name.endsWith('.png')
   );
 }
 
@@ -549,7 +558,11 @@ const guardarProgreso = async (req, res) => {
     const urlSoporteFondoColIndex = allFields.indexOf('url_soporte_fondo');
     if (archivoFondoComun) {
       try {
-        console.log('📎 Procesando archivo soporte fondo común para subida a Drive...');
+        console.log('📎 Procesando archivo soporte fondo común para subida a Drive...', {
+          originalname: archivoFondoComun.originalname,
+          mimetype: archivoFondoComun.mimetype,
+          size: archivoFondoComun.size
+        });
         if (!isValidImageOrPdf(archivoFondoComun)) {
           return res.status(400).json({
             success: false,
@@ -570,6 +583,17 @@ const guardarProgreso = async (req, res) => {
         }
       } catch (error) {
         console.error('Error al subir soporte fondo común a Google Drive:', error);
+      }
+    } else {
+      // Si no se adjuntó archivo nuevo, asegurar sincronización si vino URL existente
+      const incomingSoporteUrl = (formData.url_soporte_fondo || formData.archivo_fondo_comun || (typeof formData.soporte === 'string' ? formData.soporte : '') || '').trim();
+      if (incomingSoporteUrl) {
+        if (archivoFondoComunColIndex >= columnaInicialIndex && archivoFondoComunColIndex <= columnaFinalIndex && !valoresOrdenados[archivoFondoComunColIndex - columnaInicialIndex]) {
+          valoresOrdenados[archivoFondoComunColIndex - columnaInicialIndex] = incomingSoporteUrl;
+        }
+        if (urlSoporteFondoColIndex >= columnaInicialIndex && urlSoporteFondoColIndex <= columnaFinalIndex && !valoresOrdenados[urlSoporteFondoColIndex - columnaInicialIndex]) {
+          valoresOrdenados[urlSoporteFondoColIndex - columnaInicialIndex] = incomingSoporteUrl;
+        }
       }
     }
 
@@ -2067,6 +2091,11 @@ const guardarForm2Paso3 = async (req, res) => {
 
     let archivoFondoComunUrl = url_soporte_fondo || archivo_fondo_comun || (typeof soporte === 'string' ? soporte : '') || '';
     if (archivoFondoComunFile) {
+      console.log('📎 Procesando archivo soporte fondo común en guardarForm2Paso3:', {
+        originalname: archivoFondoComunFile.originalname,
+        mimetype: archivoFondoComunFile.mimetype,
+        size: archivoFondoComunFile.size
+      });
       if (!isValidImageOrPdf(archivoFondoComunFile)) {
         return res.status(400).json({
           success: false,
@@ -2074,6 +2103,7 @@ const guardarForm2Paso3 = async (req, res) => {
         });
       }
       archivoFondoComunUrl = await driveService.uploadFile(archivoFondoComunFile);
+      console.log('✅ Soporte fondo común subido con éxito a Drive:', archivoFondoComunUrl);
     }
     
     // Asegurar que observaciones tenga valor
