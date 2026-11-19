@@ -741,7 +741,10 @@ const decide = async (req, res, next) => {
     await logHistory(stage.id_solicitud, stage.etapa_codigo, action, stage.estado_etapa, newState, req, comment);
 
     let notifications = [];
-    if (action === 'aprobar') {
+    // "enviar_revision_2" es la acción que usa la interfaz cuando Revisor 1
+    // remite explícitamente la solicitud a la bandeja de Revisor 2. También
+    // debe disparar la notificación de nueva solicitud.
+    if (action === 'aprobar' || action === 'enviar_revision_2') {
       try {
         if (nextStage === STAGES.DECANATO) {
           // Ya no se envía correo a Decanato; el paso se gestiona mediante la carga en plataforma externa
