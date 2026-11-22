@@ -85,6 +85,57 @@ const loadTemplateWorkbook = async (templatePath) => {
     return Number.isFinite(parsed) ? parsed : null;
   };
 
+  // Ajusta la altura de la fila de una celda según la longitud del texto para evitar que se corte
+  const adjustRowHeightForCell = (sheet, cell) => {
+    try {
+      // No modificar la altura de filas de firmas (64 a 68) para mantener intactas las posiciones originales de firmas
+      if (cell.row >= 64 && cell.row <= 68) return;
+
+      const text = String(cell.value || '');
+      if (!text || text.length <= 15) return;
+
+      let effectiveWidth = 0;
+      let targetRowNumber = cell.row;
+      let isSingleRowMerge = true;
+
+      if (cell.isMerged && cell.master) {
+        const mergeModel = sheet._merges?.[cell.master.address]?.model;
+        if (mergeModel) {
+          targetRowNumber = mergeModel.top;
+          isSingleRowMerge = mergeModel.top === mergeModel.bottom;
+          for (let colIdx = mergeModel.left; colIdx <= mergeModel.right; colIdx++) {
+            effectiveWidth += (sheet.getColumn(colIdx).width || 10);
+          }
+        }
+      }
+
+      if (effectiveWidth <= 0) {
+        effectiveWidth = sheet.getColumn(cell.col).width || 12;
+      }
+
+      // Estimar caracteres por línea (aprox. 0.85 caracteres por unidad de ancho de columna)
+      const charsPerLine = Math.max(15, Math.floor(effectiveWidth * 0.85));
+      const paragraphs = text.split(/\r?\n/);
+      let totalLines = 0;
+
+      for (const para of paragraphs) {
+        const linesInPara = Math.max(1, Math.ceil(para.length / charsPerLine));
+        totalLines += linesInPara;
+      }
+
+      const neededHeight = Math.max(22, totalLines * 16.5 + 8);
+      
+      if (isSingleRowMerge) {
+        const row = sheet.getRow(targetRowNumber);
+        if ((row.height || 0) < neededHeight) {
+          row.height = neededHeight;
+        }
+      }
+    } catch (err) {
+      console.warn('Error al ajustar altura de fila:', err.message);
+    }
+  };
+
   const replaceMarkers = (workbook, data, debug = false) => {
     if (!data) return;
     
@@ -136,13 +187,101 @@ const loadTemplateWorkbook = async (templatePath) => {
                 ? parseNumericValue(data[exactField])
                 : null;
               cell.value = numericValue !== null ? numericValue : newValue;
+
               if (exactField && isMonetaryField(exactField)) {
                 cell.numFmt = COP_NUM_FORMAT;
+              } else if (typeof cell.value === 'string') {
+                const trimmed = cell.value.trim().toLowerCase();
+                const isShortOrBinary =
+                  ['x', 'si', 'no', 'n/a', 'na'].includes(trimmed) ||
+                  ['dia', 'mes', 'anio'].includes(exactField);
+                
+                if (!isShortOrBinary) {
+                  const textAlignment = {
+                    ...(cell.alignment || {}),
+                    wrapText: true,
+                    horizontal: 'justify',
+                    vertical: 'top',
+                  };
+                  cell.alignment = textAlignment;
+
+                  if (cell.isMerged && cell.master) {
+                    const mergeRange = sheet._merges?.[cell.master.address]?.model;
+                    if (mergeRange) {
+                      for (let r = mergeRange.top; r <= mergeRange.bottom; r++) {
+                        const mRow = sheet.getRow(r);
+                        for (let c = mergeRange.left; c <= mergeRange.right; c++) {
+                          mRow.getCell(c).alignment = textAlignment;
+                        }
+                      }
+                    }
+                  }
+
+                  adjustRowHeightForCell(sheet, cell);
+                }
               }
             }
           }
         });
       });
+
+      // Manejo específico para Formulario 1 (fila 66: Nombre de Solicitante y Director en una sola línea)
+      const row66 = sheet.getRow(66);
+      const row67 = sheet.getRow(67);
+      const row67Col2 = String(row67.getCell(2).value || '').toLowerCase();
+      const row67Col10 = String(row67.getCell(10).value || '').toLowerCase();
+      const isForm1Signature = row67Col2.includes('coordinador') || row67Col10.includes('visto bueno');
+
+      if (isForm1Signature) {
+        const nombreSol = data.nombre_solicitante || data.nombre_coordinador || data.nombre_solicitante_firma;
+        const nombreDir = data.nombre_director || data.nombre_director_firma;
+
+        if (nombreSol) {
+          try { sheet.unMergeCells('C66:H66'); } catch (e) {}
+          try { sheet.unMergeCells('B66:H66'); } catch (e) {}
+          sheet.mergeCells('B66:H66');
+          const cellSol = sheet.getCell('B66');
+          cellSol.value = `Nombre: ${nombreSol}`;
+          cellSol.alignment = { horizontal: 'left', vertical: 'middle', wrapText: false };
+          cellSol.font = { name: 'Arial', size: 8, color: { theme: 1 }, family: 2 };
+        }
+
+        if (nombreDir) {
+          try { sheet.unMergeCells('J66:K66'); } catch (e) {}
+          try { sheet.unMergeCells('J66:Q66'); } catch (e) {}
+          sheet.mergeCells('J66:Q66');
+          const cellDir = sheet.getCell('J66');
+          cellDir.value = `Nombre: ${nombreDir}`;
+          cellDir.alignment = { horizontal: 'left', vertical: 'middle', wrapText: false };
+          cellDir.font = { name: 'Arial', size: 8, color: { theme: 1 }, family: 2 };
+        }
+
+        // Mantener las alturas exactas de las filas de firma para que el PDF posicione las firmas perfectamente
+        sheet.getRow(65).height = 35.25;
+        row66.height = 15.75;
+        row67.height = 15.75;
+      }
+
+      // Manejo específico para Formulario 2 (fila 66 bajo los títulos de Coordinador y Visto Bueno)
+      if (sheet.name === 'F-06-MP-05-01-01') {
+        const row65 = sheet.getRow(65);
+        const cell1Val = String(row65.getCell(1).value || '');
+        if (cell1Val.includes('Coordinador')) {
+          const row66 = sheet.getRow(66);
+          const nombreSol = data.nombre_solicitante || data.nombre_coordinador || data.nombre_solicitante_firma;
+          const nombreDir = data.nombre_director || data.nombre_director_firma;
+          if (nombreSol) {
+            const cellSol = row66.getCell(1);
+            cellSol.value = `Nombre: ${nombreSol}`;
+            cellSol.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          }
+          if (nombreDir) {
+            const cellDir = row66.getCell(22);
+            cellDir.value = `Nombre: ${nombreDir}`;
+            cellDir.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+          }
+        }
+      }
       
       // Mostrar información de depuración si está habilitado
       if (debug) {
@@ -341,41 +480,64 @@ const loadTemplateWorkbook = async (templatePath) => {
             newCell.alignment = { 
               ...newCell.alignment, 
               wrapText: true, 
-              vertical: 'middle', 
-              horizontal: 'center' 
+              vertical: 'top', 
+              horizontal: 'justify' 
             };
             newCell.border = {
               bottom: { style: 'thin', color: { argb: 'FF000000' } }
             };
-                     } else if (colNumber >= 2 && colNumber <= 3) { // Columnas B, C
-             // Bordes externos completos para columnas B, C
-             newCell.border = {
-               top: { style: 'thin', color: { argb: 'FF000000' } },
-               bottom: { style: 'thin', color: { argb: 'FF000000' } },
-               left: { style: 'thin', color: { argb: 'FF000000' } },
-               right: { style: 'thin', color: { argb: 'FF000000' } }
-             };
-             newCell.alignment = { 
-               ...newCell.alignment, 
-               wrapText: true, 
-               vertical: 'middle' 
-             };
-           } else if (colNumber === 4) { // Columna D
-             // Solo bordes superior, izquierdo e inferior (sin borde derecho)
-             newCell.border = {
-               top: { style: 'thin', color: { argb: 'FF000000' } },
-               bottom: { style: 'thin', color: { argb: 'FF000000' } },
-               left: { style: 'thin', color: { argb: 'FF000000' } }
-               // Sin borde derecho
-             };
-             newCell.alignment = { 
-               ...newCell.alignment, 
-               wrapText: true, 
-               vertical: 'middle' 
-             };
-           }
+          } else if (colNumber >= 2 && colNumber <= 3) { // Columnas B, C
+            // Bordes externos completos para columnas B, C
+            newCell.border = {
+              top: { style: 'thin', color: { argb: 'FF000000' } },
+              bottom: { style: 'thin', color: { argb: 'FF000000' } },
+              left: { style: 'thin', color: { argb: 'FF000000' } },
+              right: { style: 'thin', color: { argb: 'FF000000' } }
+            };
+            newCell.alignment = { 
+              ...newCell.alignment, 
+              wrapText: true, 
+              vertical: 'top',
+              horizontal: colNumber === 3 ? 'center' : 'justify'
+            };
+          } else if (colNumber === 4) { // Columna D
+            // Solo bordes superior, izquierdo e inferior (sin borde derecho)
+            newCell.border = {
+              top: { style: 'thin', color: { argb: 'FF000000' } },
+              bottom: { style: 'thin', color: { argb: 'FF000000' } },
+              left: { style: 'thin', color: { argb: 'FF000000' } }
+              // Sin borde derecho
+            };
+            newCell.alignment = { 
+              ...newCell.alignment, 
+              wrapText: true, 
+              vertical: 'top',
+              horizontal: 'justify'
+            };
+          }
         }
       });
+
+      if (tipo === 'riesgos') {
+        let maxLines = 1;
+        const colWidths = { 1: 15, 2: 35, 3: 10, 4: 40 };
+        [1, 2, 3, 4].forEach((cNum) => {
+          const val = String(newRow.getCell(cNum).value || '');
+          if (val) {
+            const w = colWidths[cNum] || 25;
+            const charsPerLine = Math.max(12, Math.floor(w * 0.85));
+            let lines = 0;
+            val.split(/\r?\n/).forEach((p) => {
+              lines += Math.max(1, Math.ceil(p.length / charsPerLine));
+            });
+            if (lines > maxLines) maxLines = lines;
+          }
+        });
+        const needed = Math.max(28, maxLines * 16.5 + 8);
+        if ((newRow.height || 0) < needed) {
+          newRow.height = needed;
+        }
+      }
     }
 
     // --- Manejo más seguro de merges para riesgos ---
@@ -461,6 +623,24 @@ const loadTemplateWorkbook = async (templatePath) => {
               console.warn(`⚠️ No se pudo combinar ${mergeRange}: ${e.message}`);
             }
           });
+
+          // Formato justificado para la descripción del gasto (columna F)
+          const descCell = sheet.getCell(`F${rowNum}`);
+          descCell.alignment = {
+            ...(descCell.alignment || {}),
+            wrapText: true,
+            horizontal: 'justify',
+            vertical: 'middle'
+          };
+
+          const descVal = String(descCell.value || '');
+          if (descVal.length > 45) {
+            const lines = Math.ceil(descVal.length / 42);
+            const neededH = Math.max(22, lines * 16 + 6);
+            if ((sheet.getRow(rowNum).height || 0) < neededH) {
+              sheet.getRow(rowNum).height = neededH;
+            }
+          }
 
           // Centrar campos numéricos para dinámicos: cantidad, valor unitario, valor total
           ['W', 'Z', 'AC'].forEach((startCol) => {

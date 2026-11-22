@@ -80,6 +80,134 @@ const saveUser = async (req, res) => {
   }
 };
 
+/**
+ * Obtiene todos los usuarios que tienen rol de director
+ */
+const getDirectors = async (req, res) => {
+  try {
+    const directors = await sheetsService.getDirectorsList();
+    return res.status(200).json({
+      success: true,
+      directors,
+    });
+  } catch (error) {
+    console.error('Error al obtener lista de directores:', error);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al obtener la lista de directores',
+      details: error.message,
+    });
+  }
+};
+
+/**
+ * Agrega un nuevo usuario con rol de director
+ */
+const addDirector = async (req, res) => {
+  try {
+    const { email, name } = req.body;
+    if (!email || !String(email).trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'El correo electrónico es obligatorio',
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(String(email).trim())) {
+      return res.status(400).json({
+        success: false,
+        error: 'El formato del correo electrónico no es válido',
+      });
+    }
+
+    const director = await sheetsService.addDirectorUser({ email, name });
+    return res.status(201).json({
+      success: true,
+      message: 'Director agregado exitosamente',
+      director,
+    });
+  } catch (error) {
+    console.error('Error al agregar director:', error);
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Error al agregar el director',
+    });
+  }
+};
+
+/**
+ * Modifica el correo y/o nombre de un director
+ */
+const updateDirector = async (req, res) => {
+  try {
+    const { currentEmail, newEmail, name } = req.body;
+    if (!currentEmail || !newEmail) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere el correo actual y el nuevo correo',
+      });
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(String(newEmail).trim())) {
+      return res.status(400).json({
+        success: false,
+        error: 'El formato del nuevo correo electrónico no es válido',
+      });
+    }
+
+    const updated = await sheetsService.updateDirectorEmail({
+      currentEmail,
+      newEmail,
+      name,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Director actualizado exitosamente',
+      director: updated,
+    });
+  } catch (error) {
+    console.error('Error al actualizar director:', error);
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Error al actualizar el director',
+    });
+  }
+};
+
+/**
+ * Elimina a un usuario con rol de director
+ */
+const deleteDirector = async (req, res) => {
+  try {
+    const email = req.params.email || req.body?.email;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'El correo del director a eliminar es obligatorio',
+      });
+    }
+
+    await sheetsService.deleteDirectorUser(email);
+    return res.status(200).json({
+      success: true,
+      message: `Director con correo ${email} eliminado correctamente`,
+    });
+  } catch (error) {
+    console.error('Error al eliminar director:', error);
+    return res.status(400).json({
+      success: false,
+      error: error.message || 'Error al eliminar el director',
+    });
+  }
+};
+
 module.exports = {
-  saveUser
+  saveUser,
+  getDirectors,
+  addDirector,
+  updateDirector,
+  deleteDirector,
 };

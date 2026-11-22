@@ -25,6 +25,17 @@ const ROLE_LABELS = Object.freeze({
 const now = () => new Date().toISOString();
 const text = value => String(value ?? '').trim();
 
+function normalizeRole(value) {
+  const role = text(value).toLowerCase().replace(/\s+/g, '_');
+  if (['revisor2', 'revisor_2', 'revisor_2_de_extension', 'revisor_2_de_extensión'].includes(role)) {
+    return 'revisor_2';
+  }
+  if (['revisor1', 'revisor_1', 'revisor_1_de_extension', 'revisor_1_de_extensión'].includes(role)) {
+    return 'revisor_1';
+  }
+  return role;
+}
+
 function rowObject(fields, row, index) {
   return fields.reduce((obj, field, i) => {
     obj[field] = row[i] ?? '';
@@ -78,11 +89,11 @@ class WorkflowNotificationService {
 
   async getRoleEmails(role) {
     if (!role) return [];
-    const normalizedRole = text(role).toLowerCase();
+    const normalizedRole = normalizeRole(role);
     const fields = sheetsService.fieldDefinitions.USUARIOS;
     const rows = (await readRows('USUARIOS')).map((row, i) => rowObject(fields, row, i));
     const emails = rows
-      .filter(user => text(user.role).toLowerCase() === normalizedRole)
+      .filter(user => normalizeRole(user.role) === normalizedRole)
       .map(user => text(user.correo_usuario || user.email))
       .filter(Boolean);
     return [...new Set(emails)];
@@ -419,6 +430,44 @@ class WorkflowNotificationService {
 
     const notifications = [];
     const applicantEmail = await this.getUserEmail(applicantId);
+
+    // Confirmar al Revisor 2 que su aprobación quedó registrada.
+    // La notificación de avance al solicitante y al siguiente responsable
+    // se mantiene más abajo, pero el actor también debe recibir constancia.
+    if (previousStage === 'revision_2') {
+      const reviewerEmail = await this.getUserEmail(approvedBy?.id || approvedBy?.id_usuario);
+      const reviewerRecipients = reviewerEmail
+        ? [reviewerEmail]
+        : await this.getRoleEmails('revisor_2');
+      const reviewerSubject = `[Extensión] Aprobación registrada para la solicitud #${idSolicitud}`;
+      const reviewerMsg = `Su aprobación de la solicitud #${idSolicitud} ("${activityName}") quedó registrada correctamente. La solicitud avanzó a la etapa de ${nextLabel}.`;
+      const reviewerHtml = this.buildHtmlTemplate({
+        title: 'Aprobación Registrada',
+        badgeText: 'Acción completada',
+        badgeColor: '#16a34a',
+        recipientName: approvedBy?.name || 'Revisor 2',
+        message: reviewerMsg,
+        details: [
+          { label: 'Número de Solicitud', value: `#${idSolicitud}` },
+          { label: 'Actividad', value: activityName },
+          { label: 'Etapa aprobada', value: prevLabel },
+          { label: 'Nueva etapa', value: nextLabel },
+          comment ? { label: 'Comentarios', value: comment } : null
+        ].filter(Boolean),
+        callToActionText: 'Puede consultar el historial de la solicitud desde el sistema.'
+      });
+
+      for (const recipient of reviewerRecipients) {
+        notifications.push(await this.recordNotification({
+          idSolicitud,
+          event: 'solicitud_aprobada_revisor_2',
+          recipient,
+          subject: reviewerSubject,
+          text: `${reviewerMsg}\n\nSolicitud: #${idSolicitud}\nActividad: ${activityName}`,
+          html: reviewerHtml
+        }));
+      }
+    }
 
     // Caso 1: Avance a FIRMAS (desde revision_2)
     if (nextStage === 'firmas') {

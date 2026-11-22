@@ -406,7 +406,7 @@ function enrichHistoryEntries(entries = [], userById) {
   });
 }
 
-function buildSignatureSummary(requestSignatures = []) {
+function buildSignatureSummary(requestSignatures = [], defaultDirectorName = '') {
   const solSig = requestSignatures.find(
     (signature) =>
       text(signature.tipo_firma).toLowerCase() === 'solicitante' &&
@@ -421,6 +421,8 @@ function buildSignatureSummary(requestSignatures = []) {
     firma_solicitante: Boolean(solSig),
     firma_director: Boolean(dirSig),
     firmas_completas: Boolean(solSig && dirSig),
+    nombre_solicitante: solSig ? text(solSig.nombre_firmante) : '',
+    nombre_director: dirSig ? text(dirSig.nombre_firmante) : defaultDirectorName,
     firma_solicitante_info: solSig
       ? {
           nombre_firmante: text(solSig.nombre_firmante),
@@ -450,6 +452,12 @@ const getQueue = async (req, res, next) => {
         return [text(solicitud.id_solicitud), text(solicitud.nombre_dependencia)];
       })
     );
+    const solicitanteByRequest = new Map(
+      batch['SOLICITUDES'].map((row, index) => {
+        const solicitud = rowObject(sheetsService.fieldDefinitions.SOLICITUDES, row, index);
+        return [text(solicitud.id_solicitud), text(solicitud.nombre_solicitante)];
+      })
+    );
     const signatures = batch['FIRMAS'].map((row, i) =>
       rowObject(sheetsService.fieldDefinitions.FIRMAS, row, i));
     const signaturesByRequest = new Map();
@@ -463,6 +471,11 @@ const getQueue = async (req, res, next) => {
       rowObject(sheetsService.fieldDefinitions.HISTORIAL_ETAPAS, row, i));
     const users = batch['USUARIOS'].map((row, i) =>
       rowObject(sheetsService.fieldDefinitions.USUARIOS, row, i));
+    const defaultDirectorUser = users.find(u =>
+      ['director', 'director_escuela'].includes(text(u.role).toLowerCase()) ||
+      text(u.role).toLowerCase().includes('director')
+    );
+    const defaultDirectorName = defaultDirectorUser ? text(defaultDirectorUser.nombre_usuario) : '';
     const userById = buildUserDirectory(users);
     const historyByRequest = new Map();
     enrichHistoryEntries(history, userById).forEach((entry) => {
@@ -489,17 +502,31 @@ const getQueue = async (req, res, next) => {
     res.json({
       success: true,
       role,
-      data: result.map((item) => ({
-        ...item,
-        nombre_dependencia:
-          dependencyByRequest.get(text(item.id_solicitud)) ||
-          text(item.nombre_dependencia),
-        ...(signaturesByRequest.has(text(item.id_solicitud))
-          ? buildSignatureSummary(signaturesByRequest.get(text(item.id_solicitud)))
-          : {}),
-        historial: historyByRequest.get(text(item.id_solicitud)) || [],
-        observaciones: getObservationsList(item.comentarios, item.id_solicitud)
-      }))
+      data: result.map((item) => {
+        let storedNotes = '';
+        try {
+          const parsed = typeof item.comentarios === 'string' ? JSON.parse(item.comentarios) : item.comentarios;
+          storedNotes = parsed?.notas_presupuesto_pdf || parsed?.notas_decanato_pdf || '';
+        } catch (e) {}
+        const sigSummary = buildSignatureSummary(signaturesByRequest.get(text(item.id_solicitud)) || [], defaultDirectorName);
+        return {
+          ...item,
+          notas_presupuesto_pdf: storedNotes,
+          nombre_dependencia:
+            dependencyByRequest.get(text(item.id_solicitud)) ||
+            text(item.nombre_dependencia),
+          nombre_solicitante:
+            sigSummary.nombre_solicitante ||
+            solicitanteByRequest.get(text(item.id_solicitud)) ||
+            text(item.nombre_solicitante),
+          nombre_director:
+            sigSummary.nombre_director ||
+            defaultDirectorName,
+          ...sigSummary,
+          historial: historyByRequest.get(text(item.id_solicitud)) || [],
+          observaciones: getObservationsList(item.comentarios, item.id_solicitud)
+        };
+      })
     });
   } catch (error) { next(error); }
 };
@@ -514,6 +541,12 @@ const getConsultationQueue = async (req, res, next) => {
       batch['SOLICITUDES'].map((row, index) => {
         const solicitud = rowObject(sheetsService.fieldDefinitions.SOLICITUDES, row, index);
         return [text(solicitud.id_solicitud), text(solicitud.nombre_dependencia)];
+      })
+    );
+    const solicitanteByRequest = new Map(
+      batch['SOLICITUDES'].map((row, index) => {
+        const solicitud = rowObject(sheetsService.fieldDefinitions.SOLICITUDES, row, index);
+        return [text(solicitud.id_solicitud), text(solicitud.nombre_solicitante)];
       })
     );
     const cortes = batch['CORTES_DECANATO'].map((row, i) =>
@@ -544,6 +577,11 @@ const getConsultationQueue = async (req, res, next) => {
     });
     const userFields = sheetsService.fieldDefinitions.USUARIOS;
     const users = batch['USUARIOS'].map((row, i) => rowObject(userFields, row, i));
+    const defaultDirectorUser = users.find(u =>
+      ['director', 'director_escuela'].includes(text(u.role).toLowerCase()) ||
+      text(u.role).toLowerCase().includes('director')
+    );
+    const defaultDirectorName = defaultDirectorUser ? text(defaultDirectorUser.nombre_usuario) : '';
     const userById = buildUserDirectory(users);
     let data = [];
     if (role === 'admin' || ['revisor_1', 'revisor_2'].includes(role)) {
@@ -570,20 +608,33 @@ const getConsultationQueue = async (req, res, next) => {
     res.json({
       success: true,
       role,
-      data: data.map(item => ({
-        ...item,
-        nombre_dependencia:
-          dependencyByRequest.get(text(item.id_solicitud)) ||
-          text(item.nombre_dependencia),
-        ...(signaturesByRequest.has(text(item.id_solicitud))
-          ? buildSignatureSummary(signaturesByRequest.get(text(item.id_solicitud)))
-          : {}),
-        historial: enrichHistoryEntries(historyByRequest.get(text(item.id_solicitud)) || [], userById),
-        ...(latestCorteByRequest.has(text(item.id_solicitud))
-          ? { corte_decanato: latestCorteByRequest.get(text(item.id_solicitud)) }
-          : {}),
-        observaciones: getObservationsList(item.comentarios, item.id_solicitud),
-        puede_actuar: role === 'admin'
+      data: data.map(item => {
+        let storedNotes = '';
+        try {
+          const parsed = typeof item.comentarios === 'string' ? JSON.parse(item.comentarios) : item.comentarios;
+          storedNotes = parsed?.notas_presupuesto_pdf || parsed?.notas_decanato_pdf || '';
+        } catch (e) {}
+        const sigSummary = buildSignatureSummary(signaturesByRequest.get(text(item.id_solicitud)) || [], defaultDirectorName);
+        return {
+          ...item,
+          notas_presupuesto_pdf: storedNotes,
+          nombre_dependencia:
+            dependencyByRequest.get(text(item.id_solicitud)) ||
+            text(item.nombre_dependencia),
+          nombre_solicitante:
+            sigSummary.nombre_solicitante ||
+            solicitanteByRequest.get(text(item.id_solicitud)) ||
+            text(item.nombre_solicitante),
+          nombre_director:
+            sigSummary.nombre_director ||
+            defaultDirectorName,
+          ...sigSummary,
+          historial: enrichHistoryEntries(historyByRequest.get(text(item.id_solicitud)) || [], userById),
+          ...(latestCorteByRequest.has(text(item.id_solicitud))
+            ? { corte_decanato: latestCorteByRequest.get(text(item.id_solicitud)) }
+            : {}),
+          observaciones: getObservationsList(item.comentarios, item.id_solicitud),
+          puede_actuar: role === 'admin'
           ? false
           : role === 'revisor_1'
           ? item.etapa_codigo === STAGES.REVISION_1
@@ -597,8 +648,9 @@ const getConsultationQueue = async (req, res, next) => {
         motivo_sin_permiso: role === 'admin'
           ? 'La vista global de administración es de solo lectura'
           : 'La consulta es de solo lectura fuera de la etapa asignada'
-      }))
-    });
+      };
+    })
+  });
   } catch (error) { next(error); }
 };
 
@@ -729,6 +781,20 @@ const decide = async (req, res, next) => {
       comentarios_por_formulario: req.body.comentarios_por_formulario || '', numero_intento: req.body.numero_intento || 1,
       id_usuario_toma: stage.usuario_asignado || req.user.id, fecha_toma: stage.fecha_inicio || now()
     });
+    let comentariosActualizados = stage.comentarios;
+    if (stage.etapa_codigo === STAGES.PRESUPUESTO && action === 'aprobar') {
+      let store = {};
+      try {
+        store = typeof stage.comentarios === 'string' ? JSON.parse(stage.comentarios || '{}') : (stage.comentarios || {});
+      } catch {
+        store = {};
+      }
+      const incomingNotes = text(req.body.notas_pdf ?? req.body.notasPdf ?? req.body.notas ?? '');
+      store.notas_presupuesto_pdf = incomingNotes;
+      store.incluir_historial_pdf = true;
+      comentariosActualizados = JSON.stringify(store);
+    }
+
     const updated = await updateStage(stage, {
       etapa_codigo: nextStage,
       etapa_actual: nextStage,
@@ -736,12 +802,15 @@ const decide = async (req, res, next) => {
       usuario_asignado: '',
       estado_etapa: newState,
       fecha_fin: now(),
-      comentarios: stage.comentarios
+      comentarios: comentariosActualizados
     });
     await logHistory(stage.id_solicitud, stage.etapa_codigo, action, stage.estado_etapa, newState, req, comment);
 
     let notifications = [];
-    if (action === 'aprobar') {
+    // "enviar_revision_2" es la acción que usa la interfaz cuando Revisor 1
+    // remite explícitamente la solicitud a la bandeja de Revisor 2. También
+    // debe disparar la notificación de nueva solicitud.
+    if (action === 'aprobar' || action === 'enviar_revision_2') {
       try {
         if (nextStage === STAGES.DECANATO) {
           // Ya no se envía correo a Decanato; el paso se gestiona mediante la carga en plataforma externa
@@ -1007,11 +1076,154 @@ const deleteSignature = async (req, res, next) => {
   }
 };
 
+const STAGE_LABELS_FOR_PDF = {
+  solicitud: 'Solicitud',
+  revision_1: 'Revisión 1',
+  'revision 1': 'Revisión 1',
+  'revisión 1': 'Revisión 1',
+  revision_2: 'Revisión 2',
+  'revision 2': 'Revisión 2',
+  'revisión 2': 'Revisión 2',
+  firmas: 'Firmas',
+  presupuesto: 'Presupuesto',
+  lista_para_decanato: 'Lista para Decanato',
+  'lista para decanato': 'Lista para Decanato',
+  decanato: 'Decanato',
+  'en decanato': 'Decanato',
+  finalizado: 'Finalizado'
+};
+
+const ACTION_LABELS_FOR_PDF = {
+  aprobar: 'Aprobado',
+  devolver: 'Devuelto con observaciones',
+  tomar: 'Tomado en revisión',
+  firmar: 'Firmado',
+  eliminar_firma: 'Firma eliminada',
+  enviar_revision: 'Enviado a Revisión 1',
+  reenviar_correcciones: 'Correcciones reenviadas a revisión',
+  enviar_presupuesto: 'Enviado a Presupuesto',
+  enviar_decanato: 'Enviado a Decanato',
+  cargar_plataforma: 'Cargado en plataforma externa y remitido a Decanato',
+  registrar_decision: 'Decisión registrada'
+};
+
+const ROLE_LABELS_FOR_PDF = {
+  solicitante: 'Solicitante',
+  revisor_1: 'Revisor 1',
+  revisor_2: 'Revisor 2',
+  presupuesto: 'Presupuesto',
+  director: 'Director',
+  director_escuela: 'Director',
+  decanato: 'Decanato',
+  admin: 'Administrador'
+};
+
+function formatHistoryDateStr(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return 'Fecha no disponible';
+  const normalizedRaw = raw.includes(' ') && !raw.includes('T') ? raw.replace(' ', 'T') : raw;
+  const parsed = new Date(normalizedRaw);
+  if (Number.isNaN(parsed.getTime())) return raw;
+  return parsed.toLocaleString('es-CO', {
+    timeZone: 'America/Bogota',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+}
+
+function formatHistoryEntryForPdf(entry) {
+  const dateStr = formatHistoryDateStr(entry.fecha);
+  const rawStage = String(entry.etapa || '').trim().toLowerCase();
+  const rawAction = String(entry.accion || '').trim().toLowerCase();
+  const rawRole = String(entry.rol_actor || '').trim().toLowerCase();
+
+  const stage = STAGE_LABELS_FOR_PDF[rawStage] || entry.etapa || 'Etapa';
+  const action = ACTION_LABELS_FOR_PDF[rawAction] || entry.accion || 'Movimiento';
+  const role = ROLE_LABELS_FOR_PDF[rawRole] || entry.rol_actor || '';
+  const actor = entry.nombre_actor || entry.id_usuario_actor || 'Sistema';
+  const roleStr = role ? ` (${role})` : '';
+  const comment = entry.comentario ? ` | Obs: ${entry.comentario}` : '';
+
+  return `- [${dateStr}] Etapa: ${stage} - Acción: ${action} (por: ${actor}${roleStr})${comment}`;
+}
+
+async function getHistoryForSolicitud(idSolicitud) {
+  try {
+    const [historyRows, userRows] = await Promise.all([
+      readRows('HISTORIAL_ETAPAS'),
+      readRows('USUARIOS')
+    ]);
+    const userFields = sheetsService.fieldDefinitions.USUARIOS;
+    const historyFields = sheetsService.fieldDefinitions.HISTORIAL_ETAPAS;
+
+    const userById = new Map();
+    userRows.forEach((row, i) => {
+      const u = rowObject(userFields, row, i);
+      userById.set(text(u.id_usuario), {
+        name: text(u.name || u.nombre || u.nombre_usuario),
+        email: text(u.correo_usuario || u.email),
+        role: text(u.role || u.rol)
+      });
+    });
+
+    const matching = historyRows
+      .map((row, i) => rowObject(historyFields, row, i))
+      .filter(item => text(item.id_solicitud) === text(idSolicitud));
+
+    return enrichHistoryEntries(matching, userById);
+  } catch (error) {
+    console.error('Error al obtener historial para solicitud:', error);
+    return [];
+  }
+}
+
+async function buildFullNotesAndHistoryText(stage, customNotas = '') {
+  let userNotes = text(customNotas);
+  if (!userNotes && stage?.comentarios) {
+    try {
+      const store = typeof stage.comentarios === 'string' ? JSON.parse(stage.comentarios) : stage.comentarios;
+      userNotes = text(store?.notas_presupuesto_pdf || store?.notas_decanato_pdf || '');
+    } catch (e) {}
+  }
+  userNotes = userNotes.replace(/\n*--- REGISTRO DEL PASO RECIENTE \(HISTORIAL\) ---[\s\S]*$/, '').trim();
+
+  const isListaOrLater = ['lista_para_decanato', 'decanato', 'finalizado'].includes(String(stage?.etapa_codigo || '').toLowerCase());
+
+  let fullText = '';
+  if (userNotes) {
+    fullText += `OBSERVACIONES / NOTAS DE PRESUPUESTO:\n${userNotes}\n\n`;
+  }
+
+  if (isListaOrLater || userNotes) {
+    const historyEntries = await getHistoryForSolicitud(stage.id_solicitud);
+    if (historyEntries.length > 0) {
+      const historyLines = historyEntries
+        .slice()
+        .sort((a, b) => {
+          const dateA = a?.fecha ? new Date(a.fecha).getTime() : 0;
+          const dateB = b?.fecha ? new Date(b.fecha).getTime() : 0;
+          return dateA - dateB;
+        })
+        .map(entry => formatHistoryEntryForPdf(entry));
+
+      fullText += `REGISTRO INSTITUCIONAL DE MOVIMIENTOS (HISTORIAL):\n${historyLines.join('\n')}`;
+    }
+  }
+
+  return fullText.trim();
+}
+
 async function prepareDecanatoAttachments(stage, options = {}) {
   const fields = sheetsService.fieldDefinitions.FIRMAS;
   const signatures = (await readRows('FIRMAS')).map((row, i) => rowObject(fields, row, i))
     .filter(item => text(item.id_solicitud) === text(stage.id_solicitud) && item.estado === 'firmada');
-  return createDecanatoAttachments({ stage, signatures, notasPdf: options.notasPdf });
+  const fullNotes = await buildFullNotesAndHistoryText(stage, options.notasPdf);
+  return createDecanatoAttachments({ stage, signatures, notasPdf: fullNotes });
 }
 
 async function dispatchDecanatoNotifications({ stage, updated, body = {} }) {
@@ -1394,11 +1606,12 @@ const getFormPdf = async (req, res, next) => {
       .filter(item => text(item.id_solicitud) === text(idSolicitud) && item.estado === 'firmada');
 
     const customNotas = text(req.query.notas || req.query.notas_pdf);
+    const fullNotes = await buildFullNotesAndHistoryText(stage, customNotas);
     const pdfBuffer = await generateFormPdfBuffer({
       stage,
       formNumber: formNum,
       signatures,
-      notasPdf: customNotas || undefined
+      notasPdf: fullNotes || undefined
     });
 
     const isDownload = req.query.download === '1' || req.query.download === 'true';
