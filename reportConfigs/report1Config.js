@@ -12,7 +12,7 @@ const report1Config = {
   // Definición de hojas necesarias para este reporte
   sheetDefinitions: {
     SOLICITUDES: {
-      range: 'SOLICITUDES!A2:BA',
+      range: 'SOLICITUDES!A2:BB',
       fields: [
         'id_solicitud', 'nombre_actividad','fecha_solicitud', 'programa', 'nombre_solicitante', 'dependencia_tipo',
         'nombre_escuela', 'nombre_departamento', 'nombre_seccion', 'nombre_dependencia', 'entradas_diseño', 'introduccion',
@@ -24,7 +24,7 @@ const report1Config = {
         'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios', 'becas_otros',
         'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act', 'extension_solidaria',
         'costo_extension_solidaria', 'pieza_grafica', 'personal_externo',
-         'observaciones_cambios', 
+        'observaciones_cambios', 'aplica_creditos',
         'porcentaje_asistencia_minima', 'metodo_control_asistencia', 'escala_calificacion',
         'metodo_evaluacion', 'registro_calificacion_participante'
       ]

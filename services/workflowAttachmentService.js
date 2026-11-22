@@ -104,7 +104,10 @@ async function addSignaturePageToDoc(pdf, signatures, requestId, formNumber) {
         }
       }
     }
-    page.drawText(signature?.nombre_firmante || 'Firma pendiente', { x: x + 8, y: 43, size: 9, font: bold, color: rgb(0.12, 0.18, 0.28), maxWidth: 189 });
+    const signerLabel = signature?.nombre_firmante
+      ? `Nombre: ${signature.nombre_firmante}`
+      : 'Firma pendiente';
+    page.drawText(signerLabel, { x: x + 8, y: 43, size: 9, font: bold, color: rgb(0.12, 0.18, 0.28), maxWidth: 189 });
     page.drawText(signature?.tipo_firma === 'director_escuela' ? 'Director de escuela' : 'Solicitante', { x: x + 8, y: 26, size: 8, font, color: rgb(0.35, 0.4, 0.48) });
   }
   return pdf;
@@ -117,6 +120,7 @@ function sanitizeForPdf(text) {
     .replace(/[‘’]/g, "'")
     .replace(/[–—]/g, '-')
     .replace(/…/g, '...')
+    .replace(/[•]/g, '-')
     .replace(/[^\u0020-\u007E\u00A0-\u00FF\n\r\t]/g, '');
 }
 
@@ -126,88 +130,121 @@ async function appendNotesPageToPdf(pdf, notasText, requestId, formNumber) {
 
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
-  const pageWidth = 595;
-  const pageHeight = 842;
+  const formNum = parseInt(formNumber, 10);
+
+  // 1. Determine target page (the page where the template content ends)
+  let targetPage = null;
+  if (SIGNATURE_FORM_LAYOUTS[formNum]) {
+    const target = resolveSignatureTarget(pdf, formNum);
+    targetPage = target?.page || null;
+  }
+  if (!targetPage) {
+    const pageCount = pdf.getPageCount();
+    if (pageCount > 0) {
+      targetPage = pdf.getPage(pageCount - 1);
+    }
+  }
+
+  if (!targetPage) return;
+
+  const pageWidth = targetPage.getWidth();
+  const pageHeight = targetPage.getHeight();
   const margin = 50;
   const contentWidth = pageWidth - (margin * 2);
+  const bottomMargin = 35;
 
-  let page = pdf.addPage([pageWidth, pageHeight]);
+  // 2. Find the lowest drawn content/box/text on this target page
+  const layout = extractPageLayoutInfo(pdf, targetPage);
+  let minContentY = pageHeight;
+  for (const c of layout.clusters) {
+    if (c.y > 25 && c.y < minContentY) {
+      minContentY = c.y;
+    }
+  }
+  if (layout.minDrawnY !== null && layout.minDrawnY > 25) {
+    minContentY = Math.min(minContentY, layout.minDrawnY);
+  }
 
-  page.drawRectangle({
-    x: margin,
-    y: pageHeight - 95,
-    width: contentWidth,
-    height: 50,
-    color: rgb(0.96, 0.97, 0.99),
-    borderWidth: 1,
-    borderColor: rgb(0.80, 0.85, 0.92),
-  });
+  const availableSpace = minContentY - bottomMargin;
+  let page = targetPage;
+  let currentY;
 
-  page.drawText('NOTAS Y REGISTRO DE TRÁMITE / PRESUPUESTO', {
-    x: margin + 16,
-    y: pageHeight - 68,
-    size: 13,
-    font: bold,
-    color: rgb(0.10, 0.18, 0.32),
-  });
-
-  page.drawText(`Solicitud #${requestId} · Formulario ${formNumber} · Remitido para Decanato`, {
-    x: margin + 16,
-    y: pageHeight - 84,
-    size: 8.5,
-    font,
-    color: rgb(0.40, 0.46, 0.54),
-  });
-
-  const fontSize = 10;
-  const lineHeight = 16;
-  let currentY = pageHeight - 125;
+  // If there are at least 60 points available below the last content, place directly below it
+  if (availableSpace >= 60) {
+    currentY = minContentY - 14;
+    page.drawLine({
+      start: { x: margin, y: currentY + 6 },
+      end: { x: margin + contentWidth, y: currentY + 6 },
+      thickness: 0.75,
+      color: rgb(0.78, 0.83, 0.90),
+    });
+  } else {
+    // Otherwise, create a new page
+    page = pdf.addPage([pageWidth, pageHeight]);
+    currentY = pageHeight - 50;
+  }
 
   const paragraphs = sanitized.split(/\r?\n/);
   for (const paragraph of paragraphs) {
-    if (!paragraph.trim()) {
-      currentY -= lineHeight;
+    const trimmed = paragraph.trim();
+    if (!trimmed) {
+      currentY -= 5;
       continue;
     }
-    const words = paragraph.split(' ');
+
+    const isSectionHeader =
+      trimmed.startsWith('OBSERVACIONES / NOTAS') ||
+      trimmed.startsWith('REGISTRO INSTITUCIONAL') ||
+      trimmed.startsWith('NOTAS Y REGISTRO');
+
+    const currentFont = isSectionHeader ? bold : font;
+    const currentSize = isSectionHeader ? 8.5 : 7.5;
+    const currentLineHeight = isSectionHeader ? 12 : 10.5;
+    const textColor = isSectionHeader ? rgb(0.08, 0.20, 0.38) : rgb(0.18, 0.22, 0.28);
+
+    if (isSectionHeader) {
+      currentY -= 4;
+    }
+
+    const words = trimmed.split(' ');
     let currentLine = '';
 
     for (const word of words) {
       const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const textWidth = font.widthOfTextAtSize(testLine, fontSize);
+      const textWidth = currentFont.widthOfTextAtSize(testLine, currentSize);
 
-      if (textWidth > contentWidth - 20) {
-        if (currentY < 70) {
+      if (textWidth > contentWidth - 8) {
+        if (currentY < bottomMargin) {
           page = pdf.addPage([pageWidth, pageHeight]);
-          currentY = pageHeight - 60;
+          currentY = pageHeight - 50;
         }
         page.drawText(currentLine, {
-          x: margin + 10,
+          x: margin + 4,
           y: currentY,
-          size: fontSize,
-          font,
-          color: rgb(0.18, 0.22, 0.28),
+          size: currentSize,
+          font: currentFont,
+          color: textColor,
         });
         currentLine = word;
-        currentY -= lineHeight;
+        currentY -= currentLineHeight;
       } else {
         currentLine = testLine;
       }
     }
 
     if (currentLine) {
-      if (currentY < 70) {
+      if (currentY < bottomMargin) {
         page = pdf.addPage([pageWidth, pageHeight]);
-        currentY = pageHeight - 60;
+        currentY = pageHeight - 50;
       }
       page.drawText(currentLine, {
-        x: margin + 10,
+        x: margin + 4,
         y: currentY,
-        size: fontSize,
-        font,
-        color: rgb(0.18, 0.22, 0.28),
+        size: currentSize,
+        font: currentFont,
+        color: textColor,
       });
-      currentY -= (lineHeight + 6);
+      currentY -= (currentLineHeight + 2);
     }
   }
 }
@@ -220,7 +257,7 @@ const SIGNATURE_FORM_LAYOUTS = {
     maxWidth: 170,
     maxHeight: 28,
     offsetAboveName: 8,
-    offsetAboveTitle: 22,
+    offsetAboveTitle: 26,
     fallbackBottomOffset: 58,
     fallbackLeftX: 60,
     fallbackRightX: 295,
@@ -794,7 +831,7 @@ function pickSignatureAnchors(layout) {
     return nombreCandidates.find(
       (n) =>
         n.y > anchor.y + 3 &&
-        n.y <= anchor.y + 28 &&
+        n.y <= anchor.y + 35 &&
         (isRightSide ? n.centerX >= pageWidth * 0.4 : n.centerX < pageWidth * 0.6)
     ) || null;
   };
@@ -898,7 +935,35 @@ async function embedSignaturesInPdf(pdfBytes, orderedSignatures = [], requestId,
     await appendNotesPageToPdf(pdf, notasPdf, requestId, formNum);
   }
 
+  await addPageNumbersToPdf(pdf);
+
   return pdf.save();
+}
+
+async function addPageNumbersToPdf(pdf) {
+  try {
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const totalPages = pdf.getPageCount();
+    if (totalPages === 0) return;
+
+    for (let i = 0; i < totalPages; i++) {
+      const page = pdf.getPage(i);
+      const { width } = page.getSize();
+      const pageText = `Página ${i + 1} de ${totalPages}`;
+      const textSize = 8.5;
+      const textWidth = font.widthOfTextAtSize(pageText, textSize);
+
+      page.drawText(pageText, {
+        x: (width - textWidth) / 2,
+        y: 16,
+        size: textSize,
+        font,
+        color: rgb(0.35, 0.4, 0.48),
+      });
+    }
+  } catch (err) {
+    console.warn('Aviso: no se pudo agregar la numeración de páginas al PDF:', err.message);
+  }
 }
 
 async function generateFormPdfBuffer({ stage, formNumber, signatures = [], notasPdf = '' }) {
@@ -970,4 +1035,6 @@ module.exports = {
   embedSignaturesInPdf,
   getCompletedFormNumbers,
   getSignatureBuffer,
+  extractPageLayoutInfo,
+  resolveSignatureTarget,
 };

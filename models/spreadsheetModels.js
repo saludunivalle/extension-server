@@ -61,14 +61,14 @@ class SpreadsheetModel {
       'certificado_solicitado', 'calificacion_minima', 'razon_no_certificado', 'tipo_valor','valor_unitario','valor_inscripcion',
       'becas_convenio', 'becas_estudiantes', 'becas_docentes', 'becas_egresados', 'becas_funcionarios',
       'becas_otros', 'becas_total', 'periodicidad_oferta', 'organizacion_actividad', 'otro_tipo_act','extension_solidaria','costo_extension_solidaria','pieza_grafica','personal_externo',
-      'observaciones_cambios'
+      'observaciones_cambios', 'aplica_creditos'
     ],
     {
       1: ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'],
       2: ['K', 'L', 'M', 'N', 'O', 'P'],
       3: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'AA'],
-      4: ['AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI', 'AJ', 'AK', 'AL'],
-      5: ['AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA']
+      4: ['AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AI'],
+      5: ['AJ', 'AK', 'AL', 'AM', 'AN', 'AO', 'AP', 'AQ', 'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'BA']
     }
   );
   

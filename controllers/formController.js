@@ -678,6 +678,23 @@ const guardarProgreso = async (req, res) => {
       values: valoresOrdenados         // Usar el array ordenado
     });
 
+    // Guardar aplica_creditos en columna BB de SOLICITUDES si viene en formData
+    if (sheetName === 'SOLICITUDES' && formData.hasOwnProperty('aplica_creditos')) {
+      const val = ['si', 'sí', 'true', '1'].includes(String(formData.aplica_creditos || '').trim().toLowerCase()) ? 'sí' : 'no';
+      try {
+        await sheetsService.updateRequestProgress({
+          sheetName: 'SOLICITUDES',
+          rowIndex: rowInfo.rowIndex,
+          startColumn: 'BB',
+          endColumn: 'BB',
+          values: [val]
+        });
+        console.log(`✅ aplica_creditos guardado en columna BB: ${val}`);
+      } catch (colBbError) {
+        console.error('Error al actualizar columna BB (aplica_creditos):', colBbError);
+      }
+    }
+
     console.log(`✅ Progreso guardado para ${sheetName}, Solicitud ${id_solicitud}, Paso ${parsedPaso}`);
 
     // --- Lógica para actualizar ETAPAS ---
@@ -893,7 +910,7 @@ const getRequests = async (req, res) => {
     // ETAPAS no contiene la dependencia; se completa desde SOLICITUDES.
     const solicitudesResponse = await client.spreadsheets.values.get({
       spreadsheetId: sheetsService.spreadsheetId,
-      range: 'SOLICITUDES!A2:BA',
+      range: 'SOLICITUDES!A2:BB',
     });
     const dependenciaBySolicitud = new Map(
       (solicitudesResponse.data.values || []).map((row) => [

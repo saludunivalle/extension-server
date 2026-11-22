@@ -253,6 +253,9 @@ class ReportGenerationService {
       // Transformar datos utilizando la función específica de la configuración del reporte
       console.log(`🔄 Transformando datos para el reporte...`);
       const transformedData = reportConfig.transformData(combinedData);
+      const firmantesInfo = await this.getFirmantesInfo(solicitudId);
+      transformedData.nombre_director = transformedData.nombre_director || firmantesInfo.nombre_director;
+      transformedData.nombre_solicitante = transformedData.nombre_solicitante || firmantesInfo.nombre_solicitante_firma;
       console.log(`✅ Datos transformados: ${Object.keys(transformedData).length} campos`);
   
       // Generar el reporte usando el servicio de Drive
@@ -417,6 +420,9 @@ class ReportGenerationService {
         }
       }
       const transformedData = reportConfig.transformData(combinedData);
+      const firmantesInfo = await this.getFirmantesInfo(solicitudId);
+      transformedData.nombre_director = transformedData.nombre_director || firmantesInfo.nombre_director;
+      transformedData.nombre_solicitante = transformedData.nombre_solicitante || firmantesInfo.nombre_solicitante_firma;
       
       // Generar usando el modo especificado
       console.log(`🔄 Generando reporte para ${mode}...`);
@@ -562,6 +568,9 @@ class ReportGenerationService {
       }
     }
     const transformedData = reportConfig.transformData(combinedData);
+    const firmantesInfo = await this.getFirmantesInfo(solicitudId);
+    transformedData.nombre_director = transformedData.nombre_director || firmantesInfo.nombre_director;
+    transformedData.nombre_solicitante = transformedData.nombre_solicitante || firmantesInfo.nombre_solicitante_firma;
     // Generar archivo Excel local usando driveService
     const { filePath, fileName } = await driveService.generateLocalExcelReport(
       formNum,
@@ -633,6 +642,56 @@ class ReportGenerationService {
       console.error(`❌ Error al obtener datos de la solicitud ${solicitudId}:`, error.message);
       console.error('📚 Stack de error:', error.stack);
       throw new Error(`Error al obtener datos de la solicitud: ${error.message}`);
+    }
+  }
+
+  /**
+   * Obtiene la información de los firmantes (solicitante y director) para el reporte
+   * @param {String} solicitudId - ID de la solicitud
+   * @returns {Promise<Object>} { nombre_director, nombre_solicitante_firma }
+   */
+  async getFirmantesInfo(solicitudId) {
+    try {
+      if (!sheetsService || !sheetsService.client) {
+        return { nombre_director: '', nombre_solicitante_firma: '' };
+      }
+      const response = await sheetsService.client.spreadsheets.values.batchGet({
+        spreadsheetId: sheetsService.spreadsheetId,
+        ranges: ['FIRMAS!A2:J', 'USUARIOS!A2:D', 'SOLICITUDES!A2:E']
+      });
+      const valueRanges = response.data.valueRanges || [];
+      const firmasRows = valueRanges[0]?.values || [];
+      const usuariosRows = valueRanges[1]?.values || [];
+      const solicitudesRows = valueRanges[2]?.values || [];
+
+      const sid = String(solicitudId).trim();
+
+      const reqFirmas = firmasRows.filter(r => String(r[1] || '').trim() === sid);
+      const dirFirma = reqFirmas.find(r =>
+        ['director', 'director_escuela'].includes(String(r[2] || '').trim().toLowerCase()) &&
+        String(r[5] || '').trim().toLowerCase() === 'firmada'
+      );
+      const solFirma = reqFirmas.find(r =>
+        String(r[2] || '').trim().toLowerCase() === 'solicitante' &&
+        String(r[5] || '').trim().toLowerCase() === 'firmada'
+      );
+
+      const dirUsuario = usuariosRows.find(r =>
+        String(r[3] || '').trim().toLowerCase().includes('director')
+      );
+
+      const solRow = solicitudesRows.find(r => String(r[0] || '').trim() === sid);
+
+      const nombreDirector = (dirFirma && dirFirma[4]) ? String(dirFirma[4]).trim() : ((dirUsuario && dirUsuario[2]) ? String(dirUsuario[2]).trim() : '');
+      const nombreSolicitanteFirma = (solFirma && solFirma[4]) ? String(solFirma[4]).trim() : ((solRow && solRow[4]) ? String(solRow[4]).trim() : '');
+
+      return {
+        nombre_director: nombreDirector,
+        nombre_solicitante_firma: nombreSolicitanteFirma
+      };
+    } catch (err) {
+      console.warn('⚠️ No se pudo obtener información de firmantes en reportService:', err.message);
+      return { nombre_director: '', nombre_solicitante_firma: '' };
     }
   }
 

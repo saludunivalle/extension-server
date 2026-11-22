@@ -63,6 +63,182 @@ class SheetsService {
     }
   }
 
+  /**
+   * Obtiene la lista de usuarios con rol de director
+   */
+  async getDirectorsList() {
+    const rows = await this.getUsers();
+    return rows
+      .map((row, index) => ({
+        id: String(row[0] || '').trim(),
+        email: String(row[1] || '').trim(),
+        name: String(row[2] || '').trim(),
+        role: String(row[3] || '').trim().toLowerCase(),
+        rowIndex: index + 2,
+      }))
+      .filter((u) => {
+        const r = u.role;
+        return r === 'director' || r === 'director_escuela' || r.includes('director');
+      });
+  }
+
+  /**
+   * Agrega un nuevo usuario con rol director o promueve a director si ya existe
+   */
+  async addDirectorUser({ email, name = '' }) {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedName = String(name || '').trim();
+    if (!normalizedEmail) {
+      throw new Error('El correo electrónico es obligatorio');
+    }
+
+    const rows = await this.getUsers();
+    const existingIndex = rows.findIndex(
+      (row) => String(row[1] || '').trim().toLowerCase() === normalizedEmail
+    );
+
+    if (existingIndex !== -1) {
+      const existingRow = rows[existingIndex];
+      const existingRole = String(existingRow[3] || '').trim().toLowerCase();
+      const rowIndex = existingIndex + 2;
+
+      if (existingRole === 'director' || existingRole === 'director_escuela') {
+        throw new Error(`El correo ${normalizedEmail} ya se encuentra registrado con rol de director`);
+      }
+
+      // Si existía con otro rol, actualizar a rol director
+      const updatedName = normalizedName || String(existingRow[2] || '').trim();
+      await this.client.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: `USUARIOS!C${rowIndex}:D${rowIndex}`,
+        valueInputOption: 'RAW',
+        resource: {
+          values: [[updatedName, 'director']],
+        },
+      });
+      this.invalidateUsersCache();
+      return {
+        id: String(existingRow[0] || '').trim(),
+        email: normalizedEmail,
+        name: updatedName,
+        role: 'director',
+      };
+    }
+
+    // Si no existía, agregar nueva fila
+    const userRange = 'USUARIOS!A2:D2';
+    const userValues = [['', normalizedEmail, normalizedName, 'director']];
+
+    await this.client.spreadsheets.values.append({
+      spreadsheetId: this.spreadsheetId,
+      range: userRange,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      resource: { values: userValues },
+    });
+
+    this.invalidateUsersCache();
+    return {
+      id: '',
+      email: normalizedEmail,
+      name: normalizedName,
+      role: 'director',
+    };
+  }
+
+  /**
+   * Actualiza el correo y/o nombre de un director
+   */
+  async updateDirectorEmail({ currentEmail, newEmail, name }) {
+    const curr = String(currentEmail || '').trim().toLowerCase();
+    const next = String(newEmail || '').trim().toLowerCase();
+    if (!curr || !next) {
+      throw new Error('Se requieren tanto el correo actual como el nuevo correo');
+    }
+
+    const rows = await this.getUsers();
+    if (next !== curr) {
+      const emailConflict = rows.some(
+        (row) => String(row[1] || '').trim().toLowerCase() === next
+      );
+      if (emailConflict) {
+        throw new Error(`Ya existe otro usuario con el correo ${next}`);
+      }
+    }
+
+    const directorIndex = rows.findIndex(
+      (row) => String(row[1] || '').trim().toLowerCase() === curr
+    );
+
+    if (directorIndex === -1) {
+      throw new Error(`No se encontró ningún usuario con el correo ${curr}`);
+    }
+
+    const rowIndex = directorIndex + 2;
+    const existingRow = rows[directorIndex];
+    const updatedName = name !== undefined ? String(name || '').trim() : String(existingRow[2] || '').trim();
+
+    await this.client.spreadsheets.values.update({
+      spreadsheetId: this.spreadsheetId,
+      range: `USUARIOS!B${rowIndex}:D${rowIndex}`,
+      valueInputOption: 'RAW',
+      resource: {
+        values: [[next, updatedName, 'director']],
+      },
+    });
+
+    this.invalidateUsersCache();
+    return {
+      id: String(existingRow[0] || '').trim(),
+      email: next,
+      name: updatedName,
+      role: 'director',
+    };
+  }
+
+  /**
+   * Elimina un director de la hoja de USUARIOS
+   */
+  async deleteDirectorUser(email) {
+    const targetEmail = String(email || '').trim().toLowerCase();
+    if (!targetEmail) {
+      throw new Error('El correo electrónico es obligatorio');
+    }
+
+    const rows = await this.getUsers();
+    const directorIndex = rows.findIndex(
+      (row) => String(row[1] || '').trim().toLowerCase() === targetEmail
+    );
+
+    if (directorIndex === -1) {
+      throw new Error(`No se encontró ningún usuario con el correo ${targetEmail}`);
+    }
+
+    const rowIndex = directorIndex + 2; // 1-based row index in Sheets
+    const sheetId = await this.getSheetIdByName('USUARIOS');
+
+    await this.client.spreadsheets.batchUpdate({
+      spreadsheetId: this.spreadsheetId,
+      resource: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIndex - 1, // 0-based start
+                endIndex: rowIndex, // 0-based end (exclusive)
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    this.invalidateUsersCache();
+    return { success: true, email: targetEmail };
+  }
+
   // Método para obtener el cliente de Google Sheets  
   getClient() {
     return google.sheets({ version: 'v4', auth: jwtClient });
@@ -246,7 +422,7 @@ class SheetsService {
     try {
       const hojas = definicionesHojas || {
         SOLICITUDES: {
-          range: 'SOLICITUDES!A2:BA',
+          range: 'SOLICITUDES!A2:BB',
           fields: this.fieldDefinitions.SOLICITUDES
         },
         SOLICITUDES2: {
