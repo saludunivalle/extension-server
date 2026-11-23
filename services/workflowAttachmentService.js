@@ -124,15 +124,36 @@ function sanitizeForPdf(text) {
     .replace(/[^\u0020-\u007E\u00A0-\u00FF\n\r\t]/g, '');
 }
 
-async function appendNotesPageToPdf(pdf, notasText, requestId, formNumber) {
-  const sanitized = sanitizeForPdf(notasText).trim();
-  if (!sanitized) return;
+async function appendNotesPageToPdf(pdf, notasInput, requestId, formNumber) {
+  if (!notasInput) return;
 
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
   const formNum = parseInt(formNumber, 10);
 
-  // 1. Determine target page (the page where the template content ends)
+  let userNotes = '';
+  let historyText = '';
+
+  if (typeof notasInput === 'object' && notasInput !== null) {
+    userNotes = sanitizeForPdf(notasInput.userNotes || notasInput.notas || '').trim();
+    historyText = sanitizeForPdf(notasInput.historyText || notasInput.historial || '').trim();
+  } else {
+    const raw = sanitizeForPdf(notasInput).trim();
+    const historyMarker = 'REGISTRO INSTITUCIONAL DE MOVIMIENTOS (HISTORIAL):';
+    if (raw.includes(historyMarker)) {
+      const parts = raw.split(historyMarker);
+      userNotes = parts[0].trim();
+      historyText = (historyMarker + '\n' + parts[1]).trim();
+    } else if (raw.startsWith('REGISTRO INSTITUCIONAL')) {
+      historyText = raw;
+    } else {
+      userNotes = raw;
+    }
+  }
+
+  if (!userNotes && !historyText) return;
+
+  // 1. Determinar página destino de la plantilla
   let targetPage = null;
   if (SIGNATURE_FORM_LAYOUTS[formNum]) {
     const target = resolveSignatureTarget(pdf, formNum);
@@ -145,107 +166,156 @@ async function appendNotesPageToPdf(pdf, notasText, requestId, formNumber) {
     }
   }
 
-  if (!targetPage) return;
-
-  const pageWidth = targetPage.getWidth();
-  const pageHeight = targetPage.getHeight();
+  const basePage = targetPage || (pdf.getPageCount() > 0 ? pdf.getPage(pdf.getPageCount() - 1) : null);
+  const pageWidth = basePage ? basePage.getWidth() : 595;
+  const pageHeight = basePage ? basePage.getHeight() : 842;
   const margin = 50;
   const contentWidth = pageWidth - (margin * 2);
   const bottomMargin = 35;
 
-  // 2. Find the lowest drawn content/box/text on this target page
-  const layout = extractPageLayoutInfo(pdf, targetPage);
-  let minContentY = pageHeight;
-  for (const c of layout.clusters) {
-    if (c.y > 25 && c.y < minContentY) {
-      minContentY = c.y;
-    }
-  }
-  if (layout.minDrawnY !== null && layout.minDrawnY > 25) {
-    minContentY = Math.min(minContentY, layout.minDrawnY);
-  }
+  function drawTextLines(startPage, textContent, initialY) {
+    let currentPage = startPage;
+    let currentY = initialY;
 
-  const availableSpace = minContentY - bottomMargin;
-  let page = targetPage;
-  let currentY;
+    const paragraphs = textContent.split(/\r?\n/);
+    for (const paragraph of paragraphs) {
+      const trimmed = paragraph.trim();
+      if (!trimmed) {
+        currentY -= 5;
+        continue;
+      }
 
-  // If there are at least 60 points available below the last content, place directly below it
-  if (availableSpace >= 60) {
-    currentY = minContentY - 14;
-    page.drawLine({
-      start: { x: margin, y: currentY + 6 },
-      end: { x: margin + contentWidth, y: currentY + 6 },
-      thickness: 0.75,
-      color: rgb(0.78, 0.83, 0.90),
-    });
-  } else {
-    // Otherwise, create a new page
-    page = pdf.addPage([pageWidth, pageHeight]);
-    currentY = pageHeight - 50;
-  }
+      const isSectionHeader =
+        trimmed.startsWith('OBSERVACIONES / NOTAS') ||
+        trimmed.startsWith('REGISTRO INSTITUCIONAL') ||
+        trimmed.startsWith('NOTAS Y REGISTRO');
 
-  const paragraphs = sanitized.split(/\r?\n/);
-  for (const paragraph of paragraphs) {
-    const trimmed = paragraph.trim();
-    if (!trimmed) {
-      currentY -= 5;
-      continue;
-    }
+      const currentFont = isSectionHeader ? bold : font;
+      const currentSize = isSectionHeader ? 8.5 : 7.5;
+      const currentLineHeight = isSectionHeader ? 12 : 10.5;
+      const textColor = isSectionHeader ? rgb(0.08, 0.20, 0.38) : rgb(0.18, 0.22, 0.28);
 
-    const isSectionHeader =
-      trimmed.startsWith('OBSERVACIONES / NOTAS') ||
-      trimmed.startsWith('REGISTRO INSTITUCIONAL') ||
-      trimmed.startsWith('NOTAS Y REGISTRO');
+      if (isSectionHeader) {
+        currentY -= 4;
+      }
 
-    const currentFont = isSectionHeader ? bold : font;
-    const currentSize = isSectionHeader ? 8.5 : 7.5;
-    const currentLineHeight = isSectionHeader ? 12 : 10.5;
-    const textColor = isSectionHeader ? rgb(0.08, 0.20, 0.38) : rgb(0.18, 0.22, 0.28);
+      const words = trimmed.split(' ');
+      let currentLine = '';
 
-    if (isSectionHeader) {
-      currentY -= 4;
-    }
+      for (const word of words) {
+        const testLine = currentLine ? `${currentLine} ${word}` : word;
+        const textWidth = currentFont.widthOfTextAtSize(testLine, currentSize);
 
-    const words = trimmed.split(' ');
-    let currentLine = '';
+        if (textWidth > contentWidth - 8) {
+          if (currentY < bottomMargin) {
+            currentPage = pdf.addPage([pageWidth, pageHeight]);
+            currentY = pageHeight - 50;
+          }
+          currentPage.drawText(currentLine, {
+            x: margin + 4,
+            y: currentY,
+            size: currentSize,
+            font: currentFont,
+            color: textColor,
+          });
+          currentLine = word;
+          currentY -= currentLineHeight;
+        } else {
+          currentLine = testLine;
+        }
+      }
 
-    for (const word of words) {
-      const testLine = currentLine ? `${currentLine} ${word}` : word;
-      const textWidth = currentFont.widthOfTextAtSize(testLine, currentSize);
-
-      if (textWidth > contentWidth - 8) {
+      if (currentLine) {
         if (currentY < bottomMargin) {
-          page = pdf.addPage([pageWidth, pageHeight]);
+          currentPage = pdf.addPage([pageWidth, pageHeight]);
           currentY = pageHeight - 50;
         }
-        page.drawText(currentLine, {
+        currentPage.drawText(currentLine, {
           x: margin + 4,
           y: currentY,
           size: currentSize,
           font: currentFont,
           color: textColor,
         });
-        currentLine = word;
-        currentY -= currentLineHeight;
-      } else {
-        currentLine = testLine;
+        currentY -= (currentLineHeight + 2);
       }
     }
 
-    if (currentLine) {
-      if (currentY < bottomMargin) {
-        page = pdf.addPage([pageWidth, pageHeight]);
-        currentY = pageHeight - 50;
+    return { page: currentPage, y: currentY };
+  }
+
+  // PASO 1: La nota / observación sale justo después del último contenido de la plantilla
+  if (userNotes && targetPage) {
+    const layout = extractPageLayoutInfo(pdf, targetPage);
+    let minContentY = pageHeight;
+    for (const c of layout.clusters) {
+      if (c.y > 25 && c.y < minContentY) {
+        minContentY = c.y;
       }
-      page.drawText(currentLine, {
-        x: margin + 4,
-        y: currentY,
-        size: currentSize,
-        font: currentFont,
-        color: textColor,
-      });
-      currentY -= (currentLineHeight + 2);
     }
+    if (layout.minDrawnY !== null && layout.minDrawnY > 25) {
+      minContentY = Math.min(minContentY, layout.minDrawnY);
+    }
+
+    const availableSpace = minContentY - bottomMargin;
+    let notesPage = targetPage;
+    let notesY;
+
+    if (availableSpace >= 50) {
+      notesY = minContentY - 14;
+      notesPage.drawLine({
+        start: { x: margin, y: notesY + 6 },
+        end: { x: margin + contentWidth, y: notesY + 6 },
+        thickness: 0.75,
+        color: rgb(0.78, 0.83, 0.90),
+      });
+    } else {
+      notesPage = pdf.addPage([pageWidth, pageHeight]);
+      notesY = pageHeight - 50;
+    }
+
+    drawTextLines(notesPage, userNotes, notesY);
+  }
+
+  // PASO 2: El registro del historial institucional se coloca A PARTE en la página siguiente
+  if (historyText) {
+    const historyPage = pdf.addPage([pageWidth, pageHeight]);
+
+    // Encabezado institucional exclusivo para el historial
+    historyPage.drawRectangle({
+      x: margin,
+      y: pageHeight - 85,
+      width: contentWidth,
+      height: 42,
+      color: rgb(0.96, 0.97, 0.99),
+      borderWidth: 1,
+      borderColor: rgb(0.80, 0.85, 0.92),
+    });
+
+    historyPage.drawText('REGISTRO INSTITUCIONAL DE MOVIMIENTOS (HISTORIAL)', {
+      x: margin + 14,
+      y: pageHeight - 62,
+      size: 10,
+      font: bold,
+      color: rgb(0.10, 0.18, 0.32),
+    });
+
+    historyPage.drawText(`Solicitud #${requestId} · Formulario ${formNumber}`, {
+      x: margin + 14,
+      y: pageHeight - 75,
+      size: 8,
+      font,
+      color: rgb(0.40, 0.46, 0.54),
+    });
+
+    const historyY = pageHeight - 105;
+
+    let cleanHistory = historyText;
+    if (cleanHistory.startsWith('REGISTRO INSTITUCIONAL DE MOVIMIENTOS (HISTORIAL):')) {
+      cleanHistory = cleanHistory.replace('REGISTRO INSTITUCIONAL DE MOVIMIENTOS (HISTORIAL):', '').trim();
+    }
+
+    drawTextLines(historyPage, cleanHistory, historyY);
   }
 }
 
@@ -931,7 +1001,11 @@ async function embedSignaturesInPdf(pdfBytes, orderedSignatures = [], requestId,
     await addSignaturePageToDoc(pdf, orderedSignatures, requestId, formNum);
   }
 
-  if (notasPdf && String(notasPdf).trim()) {
+  const hasNotas = Boolean(
+    (typeof notasPdf === 'object' && notasPdf !== null && (notasPdf.userNotes || notasPdf.historyText)) ||
+    (notasPdf && String(notasPdf).trim())
+  );
+  if (hasNotas) {
     await appendNotesPageToPdf(pdf, notasPdf, requestId, formNum);
   }
 

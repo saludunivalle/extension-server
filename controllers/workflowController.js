@@ -1194,11 +1194,12 @@ async function buildFullNotesAndHistoryText(stage, customNotas = '') {
 
   const isListaOrLater = ['lista_para_decanato', 'decanato', 'finalizado'].includes(String(stage?.etapa_codigo || '').toLowerCase());
 
-  let fullText = '';
+  let notesSection = '';
   if (userNotes) {
-    fullText += `OBSERVACIONES / NOTAS DE PRESUPUESTO:\n${userNotes}\n\n`;
+    notesSection = `OBSERVACIONES / NOTAS DE PRESUPUESTO:\n${userNotes}`;
   }
 
+  let historySection = '';
   if (isListaOrLater || userNotes) {
     const historyEntries = await getHistoryForSolicitud(stage.id_solicitud);
     if (historyEntries.length > 0) {
@@ -1211,11 +1212,17 @@ async function buildFullNotesAndHistoryText(stage, customNotas = '') {
         })
         .map(entry => formatHistoryEntryForPdf(entry));
 
-      fullText += `REGISTRO INSTITUCIONAL DE MOVIMIENTOS (HISTORIAL):\n${historyLines.join('\n')}`;
+      historySection = `REGISTRO INSTITUCIONAL DE MOVIMIENTOS (HISTORIAL):\n${historyLines.join('\n')}`;
     }
   }
 
-  return fullText.trim();
+  return {
+    userNotes: notesSection.trim(),
+    historyText: historySection.trim(),
+    toString() {
+      return [this.userNotes, this.historyText].filter(Boolean).join('\n\n');
+    }
+  };
 }
 
 async function prepareDecanatoAttachments(stage, options = {}) {
